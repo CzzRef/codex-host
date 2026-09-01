@@ -442,14 +442,16 @@ export function inspectRendererComposerContract(
   return result;
 }
 
+function nativeControlState(element: HTMLElement): NativeControlState {
+  return {
+    element,
+    hidden: element.hidden,
+    ariaHidden: element.getAttribute("aria-hidden"),
+  };
+}
+
 function captureNativeControl(element: HTMLElement | null): NativeControlState | null {
-  return element
-    ? {
-        element,
-        hidden: element.hidden,
-        ariaHidden: element.getAttribute("aria-hidden"),
-      }
-    : null;
+  return element ? nativeControlState(element) : null;
 }
 
 function restoreNativeControl(state: NativeControlState | null | undefined): void {
@@ -587,7 +589,7 @@ function refreshHiddenNativePermissionModeControls(
     const existing = control.extraHiddenNativePermissionModeControls.find(
       (state) => state.element === element,
     );
-    return existing ?? captureNativeControl(element)!;
+    return existing ?? nativeControlState(element);
   });
   for (const state of control.extraHiddenNativePermissionModeControls) {
     setNativeControlHidden(state, hide);
