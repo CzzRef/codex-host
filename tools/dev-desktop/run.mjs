@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { constants, accessSync, statSync } from "node:fs";
+import { constants, accessSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -274,6 +274,50 @@ export function validateDevelopmentArtifacts(artifacts, stat = statSync) {
     }
     if (!metadata.isFile()) throw new Error(`${label} artifact is not a file: ${filePath}`);
   }
+}
+
+const SOURCE_FILE_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".css"]);
+const IGNORED_SOURCE_DIRECTORIES = new Set([".git", "dist", "node_modules"]);
+
+// The Renderer bundle inlines these trees, so an unbuilt contract change ships a browser copy of
+// the schema that rejects what the Host now returns. Only esbuild rewrites its output on every
+// build, so it is the sole artifact whose modification time is a sound freshness signal here:
+// `tsc -b` and `cargo build` both leave unchanged outputs untouched.
+const BUNDLED_RENDERER_SOURCE_TREES = [
+  path.join("packages", "renderer-extension", "src"),
+  path.join("packages", "shared-contracts", "src"),
+];
+
+export function newestSourceModification(directory, stat = statSync, readDirectory = readdirSync) {
+  const pending = [directory];
+  let newest = 0;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    let entries;
+    try {
+      entries = readDirectory(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!IGNORED_SOURCE_DIRECTORIES.has(entry.name)) pending.push(entryPath);
+      } else if (entry.isFile() && SOURCE_FILE_EXTENSIONS.has(path.extname(entry.name))) {
+        newest = Math.max(newest, stat(entryPath).mtimeMs);
+      }
+    }
+  }
+  return newest;
+}
+
+export function staleRendererBundle(root, artifacts, stat = statSync, readDirectory = readdirSync) {
+  const newestSource = Math.max(
+    ...BUNDLED_RENDERER_SOURCE_TREES.map((tree) =>
+      newestSourceModification(path.join(root, tree), stat, readDirectory),
+    ),
+  );
+  return stat(artifacts.renderer).mtimeMs < newestSource;
 }
 
 export function npmBuildInvocation(

@@ -17,6 +17,7 @@ import {
   developmentArtifacts,
   findPathExecutable,
   launcherInvocation,
+  staleRendererBundle,
   validateDevelopmentArtifacts,
 } from "../dev-desktop/run.mjs";
 
@@ -26,6 +27,13 @@ const quoteShell = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 
 export function sourceLauncherContents() {
   return `#!/bin/sh\n# codexhost managed source launcher\nexec ${quoteShell(process.execPath)} ${quoteShell(fileURLToPath(import.meta.url))} "$@"\n`;
+}
+
+export function assertRendererBundleCurrent(root, artifacts) {
+  if (!staleRendererBundle(root, artifacts)) return;
+  throw new Error(
+    "The Renderer bundle is older than the TypeScript sources it inlines. Run npm run build:renderer before launch; nothing was started.",
+  );
 }
 
 export function assertSourceLauncherInstalled(destination = installedCommand) {
@@ -103,6 +111,7 @@ function child(invocation, environment, cwd = sourceRoot) {
 async function launch(artifacts, environment) {
   assertSourceLauncherInstalled();
   validateDevelopmentArtifacts(artifacts);
+  assertRendererBundleCurrent(sourceRoot, artifacts);
   assertDesktopStopped(artifacts.launcher);
   const pi = findPathExecutable("pi", { environment });
   const invocation = launcherInvocation(artifacts, pi);
@@ -168,7 +177,9 @@ async function doctor(artifacts) {
   };
   try {
     validateDevelopmentArtifacts(artifacts);
-    report.build = "present";
+    report.build = staleRendererBundle(sourceRoot, artifacts)
+      ? "Renderer bundle is stale; run npm run build:renderer"
+      : "present";
   } catch (error) {
     report.build = error.message;
   }
