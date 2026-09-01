@@ -184,6 +184,7 @@ export interface RendererBindingProbeStatus {
   mountedComposers: number;
   enabledAgents: RendererAgent[];
   availability: HarnessAvailability;
+  availabilityErrors: HarnessAvailabilityErrors;
   selections: Array<{
     composerId: string;
     agent: RendererAgent;
@@ -2307,6 +2308,7 @@ export function installRendererBindingProbe(
         mountedComposers: selections.length,
         enabledAgents: [...enabledAgents],
         availability: { ...activeHarnessAvailabilityState().availability },
+        availabilityErrors: { ...activeHarnessAvailabilityState().errors },
         selections,
         adapter: { ...adapterStatus },
       };
