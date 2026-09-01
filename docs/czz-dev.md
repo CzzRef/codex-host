@@ -16,7 +16,7 @@
 | Node | `/Users/gdkmjd/.nvm/versions/node/v24.14.0/bin/node` |
 | 编译产物 | `target/debug/` 与各 `packages/*/dist/` |
 
-完整 Git 历史已下载。当前改动保留在本地 `czz-dev` 工作区，未提交、未推送；GitHub 的默认分支仍为 `main`，未替用户改动远端。后续提交、推送和远端默认分支切换应分开处理。
+完整 Git 历史已下载。Cursor、Host、Renderer、外部线程、OMP、源码启动保护、构建配置、首轮文档、预览格式和外部会话交互已在本地 `czz-dev` 分为十一批提交，本文所在提交完成最终文档收口；远端尚未推送，GitHub 默认分支仍为 `main`。后续远端推送和远端默认分支切换仍是分开的动作。
 
 没有覆盖 `/Applications/ChatGPT.app`，没有改写现有 Codex 配置，也没有将其他 CLI 的密钥、OAuth 凭据或会话数据库复制给 Pi。Pi 订阅续作仅通过它自己的 OAuth 保存独立凭据。
 
@@ -31,7 +31,7 @@
 | Pi | 本机现有 `pi` | 0.84.3；Codex/Grok 独立订阅 OAuth 均已接入，gpt-5.6-sol 与 grok-4.6 原生 CLI 实测通过；默认仍为 `openai-codex/gpt-5.6-sol`，doctor 为 ready、11 个模型。Claude 额外付费未启用。 |
 | OMP | `~/.local/bin/omp` | 官方 18.0.11 arm64；Codex Sol 最小调用通过；当前 43 模型目录含 Codex Sol、Grok 4.6、Claude Fable。角色路由为 Codex 顶层编排/核验、Claude 规划、Grok 执行；`anthropic/claude-fable-5` 与 `xai-oauth/grok-4.6` 已各通过一次隔离最小真实调用（`--no-session --no-tools`，低思考档）。 |
 
-“CLI 可执行、inspection 就绪、真实回答、原生历史恢复、Desktop 界面验收”是不同层次。这里的真实调用发生在独立临时目录和本次创建的原生 Session 中；没有运行现有 Codex 任务。Desktop 的 Agent 选择器、审批弹窗与实际跨 Agent 委派仍需激活后验收。
+“CLI 可执行、inspection 就绪、真实回答、原生历史恢复、Desktop 界面验收”是不同层次。这里的真实调用发生在独立临时目录和本次创建的原生 Session 中；没有运行现有 Codex 任务。Desktop 已由源码激活，但 Agent 选择器、审批弹窗与实际跨 Agent 委派仍需独立验收。
 
 ## Pi 订阅续作
 
@@ -70,6 +70,14 @@ Codex Desktop 的 side chat 在协议层是「`thread/fork`（带 `ephemeral`、
 2026-09-01 修复：`thread/inject_items` 进入显式集合，外部线程校验 `items` 为数组后以空结果确认。外部 Fork 派生的原生 Session 本就携带完整父上下文，注入的 Codex 边界条目没有原生表示，因此不投影进外部历史、不转发官方 app-server、不发给 Harness；契约见 [external-thread-fork-routing](../openspec/specs/external-thread-fork-routing/spec.md)。该修复需要在下一次正常退出后经 `codexhost launch` 重启 Desktop 才生效。
 
 已知边界：Cursor 会话仍无法打开 side chat——其历史为 `live-only` 且 `fork: false`，fork 会先被 `-32076` 拒绝，这是 Cursor 缺稳定 checkpoint API 的既有能力限制，不是本次回归。若外部会话最后一轮缺 `nativeCheckpointRef`（如 mapping-store 写入失败），fork 仍会以 `-32080` 显式失败。
+
+## 外部会话的 Pin、标题同步与排队消息（2026-09-01）
+
+三个修复都在 Host/Adapter 层，需要下一次正常退出后经 `codexhost launch` 重启 Desktop 生效：
+
+- **Pin**：此前外部会话的 `thread/metadata/update`（isPinned）一律回 `-32078`，且外部行被排除在「已固定」列表之外。现在 pin 状态持久化到 mapping-store（`pinned` 字段），投影与 `thread/list` 的 `isPinned` 过滤按持久化状态生效；gitInfo 等其余元数据仍显式关闭。契约：[external-thread-list-archive-routing](../openspec/specs/external-thread-list-archive-routing/spec.md)。
+- **标题同步**：外部线程的名字此前只在创建时由 Desktop 兜底写入（首条消息截断），原生会话改名后不同步。现在 Adapter 把原生标题放进 `session.state.changed`（`HarnessSessionState.nativeTitle`），Host 持久化（`titleSource: native`）并发 `thread/name/updated`。来源：Claude Code 用 SDK sessionInfo 的 `customTitle ?? summary`（每轮结束轮询）；Grok 读 `summary.json` 的 `session_summary` + `title_is_manual`（每轮结束）；OMP 取会话文件最后一条 `type:"title"` 记录（轮次落盘识别时）；DSH 处理 `session/title` 事件（实时推送）。Pi 与 Cursor 无原生标题，不参与。归属规则：原生 user 改名总是覆盖；generated 标题只覆盖空名、原生已接管的名字或首条消息兜底名，不覆盖用户在 Desktop 里改出的自定义名。契约：[versioned-renderer-agent-routing](../openspec/specs/versioned-renderer-agent-routing/spec.md)。
+- **排队消息**：Desktop 会把 `turn/start` 的任何拒绝标成永久 paused 的红色芯片；运行中点 Retry/Steer 实际发 `turn/steer`，而旧闸门只拦 `thread/*` 前缀，`turn/steer` 带外部线程 ID 会静默漏给官方 app-server。现在活动轮次内的 `turn/start` 由 Host 入队（上限 8 条，延迟应答，轮次完成后按序真正启动；中断轮次后按原生语义丢弃并显式报错，会话故障/删除同样显式清空），`turn/steer` 等其余 `turn/*` 方法对外部线程显式回 `-32076` 不再漏发。真正的轮内 steering（Claude SDK 的 PushableInput 可行）留作后续能力。契约：[registered-harness-routing](../openspec/specs/registered-harness-routing/spec.md)。
 
 ## 安全入口与常用命令
 
@@ -150,7 +158,7 @@ git fetch upstream
 git log --oneline --left-right czz-dev...upstream/main
 ```
 
-本次未 commit/push，因此不要执行 `reset --hard` 或直接切回 main 丢掉新增 Adapter。先审查并保存本地改动，再决定 merge/rebase；远端默认分支另行处理。
+本次已完成本地分批提交，但未 push；本文所在收口提交完成后，GitFork 工作区应无未提交改动。不要执行 `reset --hard` 或直接切回 main。先审查本地提交，再决定 merge/rebase 或推送；远端默认分支另行处理。
 
 回退到普通 Codex 时，正常退出将来由 codexhost 管理的那次 Desktop，然后从原有 `/Applications/ChatGPT.app` 启动。若要卸载，先核对 `~/.local/bin/codexhost` 是本任务生成的入口，再移除该入口即可；源码、Agent 登录、原生历史和原应用都不需要删除。
 

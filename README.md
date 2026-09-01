@@ -1,4 +1,4 @@
-> **CzzRef / czz-dev 本地源码版**：新增 Cursor ACP 受限接入和不停止现有 Codex 的安全启动入口，委派保留原生默认权限。安装、真实验证、Cursor 历史限制与后续开发见 [本机说明](docs/czz-dev.md)。以下发行版介绍保留上游背景，不代表当前 Desktop 已激活。
+> **CzzRef / czz-dev 本地源码版**：新增 Cursor ACP 受限接入和不停止现有 Codex 的安全启动入口，委派保留原生默认权限。安装、真实验证、Cursor 历史限制与后续开发见 [本机说明](docs/czz-dev.md)。当前 Desktop 已由本地源码正常激活；以下发行版介绍仍只保留上游背景。
 
 <div align="center">
 

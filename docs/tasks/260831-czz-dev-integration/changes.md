@@ -72,3 +72,10 @@ executionPolicy: "default",
 - 第二次正常激活后 Launcher PID 29444、Desktop PID 29446、descriptor 0600 与源码身份通过。回执保留自动校验的早期瞬态失败和后续 live refresh/doctor 通过证据；没有强制终止、descriptor 清理或自动重试。
 - A-5 全工作区构建早期被并行 Renderer Models 页面类型改动阻断，本任务不修改该写集；并行 owner 完成后最终全量构建通过。路由变更前配置有 `0600` 备份，未提交或推送。
 
+## 本地分批提交
+
+- 用户于 2026-09-01 授权将当前代码变更分批提交；本轮只创建本地提交，没有 push 或修改远端默认分支。
+- 前六批源码提交依次覆盖 Cursor Adapter（`293bcb8`）、Host/协议（`8970eed`）、Renderer（`8e7605b`）、外部线程（`70662f8`）、OMP 权限（`c8edadc`）和 Launcher（`f4d11a3`）；每批均核对暂存路径、空白检查与提交统计。
+- 并行 Claude Code 在配置与文档写集完成后提交 Cursor 包/工作区接线（`440da5a`）、源码启动配置（`0b7dce6`）、首轮文档（`3123d61`）和预览格式（`0b67c08`）；Root 保留这些提交并重新盘点。
+- 后续原生会话标题同步、外部线程后续回合排队与 Steer 显式拒绝在 `773290c` 提交；8 个受影响 Vitest 文件、345 项测试和完整 TypeScript/Renderer/Rust 构建通过。
+- 本文所在提交只做最终文档收口。GitFork 预期不再保留未提交改动，所有批次仍未 push。

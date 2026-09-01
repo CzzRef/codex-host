@@ -9,7 +9,7 @@
 - Cursor 仅当前 Host 保留实时投影；跨进程恢复、快照、Fork、rollback 明确不支持。
 - DSH 仅 inspection。Pi 已接入 Codex、Grok 两个独立订阅 OAuth；gpt-5.6-sol 与 grok-4.6 原生 CLI 均通过，默认仍为 openai-codex/gpt-5.6-sol，doctor 识别 11 个模型。OMP 18.0.11 已安装，Codex Sol 最小调用通过；当前 43 模型目录和 Codex 编排/核验、Claude 规划、Grok 执行路由已读回。OMP 内 Grok/Claude 调用及角色触发未逐项验收。
 - 用户已经完成 Grok 二次验证；重新授权与 Pi 实际调用完成，无须再等待该授权，浏览器任务空间已关闭。Claude 的 Pi 额外计费未启用，原生 Claude Code Max 保留。
-- 当前 fork 改动未提交、未推送；origin=CzzRef，upstream=BytePioneer-AI；GitHub 默认分支未改。
+- 当前 fork 的已验收代码、配置、首轮文档与格式已分十一批本地提交，本文所在提交完成最终收口；未推送。origin=CzzRef，upstream=BytePioneer-AI，GitHub 默认分支未改。
 
 ## A-3 Desktop 正常重启结果
 
@@ -29,7 +29,7 @@ OMP 的 `xai-oauth` 在官方授权完成后仍卡在 18.0.11 的设备令牌轮
 
 ## 恢复工作时
 
-先读 [Spec](spec.md)、[核验](verify.md) 与 [执行记录](tasks.md)，检查分支和工作区，再处理未通过的门禁。不要重复克隆、覆盖 dirty work、升级 Agent 或更换用户账号。源码修改与生效需要分别确认；后续本地提交、远端推送、远端默认分支变更是分开的动作。
+先读 [Spec](spec.md)、[核验](verify.md) 与 [执行记录](tasks.md)，检查分支和工作区，再处理未通过的门禁。不要重复克隆、覆盖 dirty work、升级 Agent 或更换用户账号。外部会话原生标题、后续回合排队与 Steer 拒绝已在 `773290c` 提交并完成聚焦测试和全量构建。源码修改与生效需要分别确认；后续远端推送、远端默认分支变更是分开的动作。
 
 最终安全回归结果已记入 verify.md；剩余工作是按需验收具体 Agent 选择、审批与真实委派，不再执行安装或重启。
 
@@ -40,4 +40,3 @@ OMP 的 `xai-oauth` 在官方授权完成后仍卡在 18.0.11 的设备令牌轮
 `czz-dev` 已把 OMP 普通 create/resume/fork 默认权限收紧到 `write`，并把 macOS runtime descriptor 新建文件收紧到 `0600`。OMP Adapter 26 项测试和 Rust 聚焦权限测试通过；A-5 早期全工作区构建被并行 Renderer Models 页面类型改动阻断，待并行 owner 完成后最终 `npm run build` 已全量通过。构建不会热替换当前 Desktop。
 
 当前源码 Launcher PID 29444、Desktop PID 29446，descriptor 为 schema-valid 普通文件、`0600`。最新回执 `/Users/gdkmjd/.local/state/codexhost/restarts/01a055a0-cc69-7d41-8896-ae5fd7522fed-omp-v2/receipt.json` 为 `source_launch_verified_after_live_recheck`；自动 OMP 校验的早期瞬态失败保留在嵌套记录，随后 live refresh 与 doctor 确认 OMP ready、43 模型、Sol xhigh、permission write。
-

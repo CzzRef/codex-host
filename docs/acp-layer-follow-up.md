@@ -1,6 +1,6 @@
 # ACP 层后续开发说明
 
-> czz-dev 状态：Grok 的生产 ACP Transport 保持不变；新增 Cursor 独立实验 ACP Transport，真实调用已通过，Desktop 尚未激活，历史仅支持 live-only。尚不把它计作完整的第二个生产 ACP Harness，暂不抽取公共 Transport。详见 [本机说明](czz-dev.md)。
+> czz-dev 状态：Grok 的生产 ACP Transport 保持不变；新增 Cursor 独立实验 ACP Transport，真实调用与源码 Desktop 激活已通过，历史仅支持 live-only。Desktop 内真实委派仍是独立门禁。尚不把它计作完整的第二个生产 ACP Harness，暂不抽取公共 Transport。详见 [本机说明](czz-dev.md)。
 
 ## 背景
 

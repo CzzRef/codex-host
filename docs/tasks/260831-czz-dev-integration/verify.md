@@ -7,12 +7,30 @@
 | 项目 | 证据 | 边界 |
 |---|---|---|
 | Fork 源码 | GitFork/codex-host 完整克隆，基线 dea7498527b47eac4e12e977569588230d065a97 | origin=CzzRef；upstream=BytePioneer-AI |
-| 开发分支 | 当前 czz-dev | 本地改动未 stage/commit/push；远端默认仍 main |
+| 开发分支 | 当前 czz-dev；十一批代码、配置、文档与格式提交完成 | 未 push；远端默认仍 main；最终收口由本文所在提交完成 |
 | 依赖 | npm ci；新增 Cursor workspace link | 没有升级全局 Agent 或现有依赖版本 |
 | 源码入口 | ~/.local/bin/codexhost 受管可执行 wrapper | 指向本地 Node 和本 fork，不是 npm 上游发行版 |
 | 入口核验 | 已安装入口的 help、inspect、delegate help、doctor 结果就绪 | 指向当前 `czz-dev`，不是 npm 上游包 |
 | 当前 Codex | `/Applications/ChatGPT.app` 26.825.51511 / build 7377，由源码 Launcher PID 29444 启动；Desktop PID 29446 | 没有覆盖或升级应用包；后续版本切换仍须正常退出和单实例门禁 |
 | A-3 正常重启 | 用户已授权；重启前仅本任务 active；完整重建通过；一次性回执为 `source_launch_verified`；Launcher、Host runtime、controller、descriptor 与源码匹配 | 用户确认已经接入；Agent 选择、审批 UI 与真实委派仍为独立验收项 |
+
+## 本地提交回执
+
+| 提交 | 范围 |
+|---|---|
+| `293bcb8606d5c9c84d87abcc77e48ad01f8b0742` | Cursor ACP Adapter 与交互测试 |
+| `8970eedf266abcfd9050a91f32b7378e930b7209` | Cursor Host 路由、传输合同与 live-only 投影 |
+| `8e7605bcf0243f3a9f97edd15902f4f481771377` | Renderer Cursor 入口、模型设置与可见性偏好 |
+| `70662f8d3a287b9dc2d816fc28af9daf1c991772` | 外部线程 Pin、sidechat 注入与权限边界 |
+| `c8edadc77197d17ce8c472998cbc377b65f1becb` | OMP 普通会话默认 `write` 权限 |
+| `f4d11a381c9afd1429f3411d0422cdcea890da37` | 安全源码入口、更新拒绝与 macOS `0600` |
+| `440da5a` | Cursor 包清单、工作区引用、发布审计与控制器测试 |
+| `0b7dce6` | `npm start`、源码安装与 doctor 配置 |
+| `3123d61` | Cursor 接入、OpenSpec 与任务首轮文档 |
+| `0b67c08` | Windows update 预览页格式收口 |
+| `773290cf6d519dd5d1b0e07053d7567a29d4a2cf` | 原生标题同步、后续回合排队与 Steer 边界 |
+
+Root 创建的七个代码批次均在提交前核对暂存路径、`diff --check`、统计和提交后回读。并行 Claude Code 在自身写集稳定后创建四个配置、文档与格式提交；Root 重新盘点并复核其提交内容，没有修改历史。所有提交均未 push。
 
 ## Agent 分层核验
 
@@ -52,6 +70,8 @@ Claude 初次 plan 模式虽到达原生 terminal，但没有返回预期校验�
 | 双层拒绝保护 | 真实只读 PID 检查、合成 guard、Rust 状态回归通过 | 不通过运行 launch 验证；底层竞态和锁分支另经只读审查 |
 | 第二次源码启动回执 | `source_launch_verified_after_live_recheck`；Launcher PID 29444、Desktop PID 29446、Host runtime/controller/Renderer 匹配，descriptor `0600` | 自动 OMP 校验曾瞬态失败并被保留；现场 refresh 与 doctor 复核通过，仍不证明真实委派 |
 | OMP 安装、角色与 Adapter | Release digest、arm64 文件、Codex 最小调用、43 模型目录、最终角色读回、默认 `write` 与 26 项 Adapter 测试通过 | OMP 内 Grok/Claude 实际调用、角色触发、历史/Fork/rollback 未逐项运行 |
+| 分批提交前回归 | 16 个 Vitest 文件、220 项通过；源码启动 Vitest 4 项通过；两个 Rust 目标用例实际执行并通过；随后完整 TypeScript、Renderer、Rust 构建通过 | 结论覆盖前六批源码；后续外部会话交互批次由下一行单独覆盖 |
+| 外部会话交互回归 | 8 个 Vitest 文件、345 项通过；随后完整 TypeScript、Renderer 与 Rust 构建通过 | 覆盖原生标题、后续回合排队、Steer 拒绝及受影响 Adapter；构建不热替换当前 Desktop |
 
 全仓测试、完整 Rust 测试集、Windows/Linux、远程 SSH Harness、Desktop Agent 选择器逐项检查、审批 UI、当前 Codex 内真实委派和热恢复未运行。核验范围按 [Verification Impact Trace](plan.md) 选择。
 
