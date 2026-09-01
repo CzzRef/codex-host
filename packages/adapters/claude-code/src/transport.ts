@@ -193,6 +193,7 @@ export interface ClaudeTurnTransport {
     userMessageId: string,
     onEvent: (event: ClaudeTurnEvent) => void,
   ): Promise<ClaudeTransportTurnResult>;
+  steer(text: string, userMessageId: string): void;
   respondToInteraction(response: ClaudeInteractionResponse): Promise<void>;
   abort(): Promise<void>;
   close(): Promise<void>;

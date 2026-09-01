@@ -70,6 +70,7 @@ class FakeClaudeTransport implements ClaudeTurnTransport {
   readonly initCalls: string[] = [];
   readonly recapCalls: string[] = [];
   readonly turns: Array<{ text: string; userMessageId: string }> = [];
+  readonly steers: Array<{ text: string; userMessageId: string }> = [];
   #assistantMessageId: string | null = null;
   #active:
     | {
@@ -144,6 +145,11 @@ class FakeClaudeTransport implements ClaudeTurnTransport {
     return new Promise((resolve, reject) => {
       this.#active = { onEvent, resolve, reject };
     });
+  }
+
+  steer(text: string, userMessageId: string): void {
+    if (!this.#active) throw new Error("No active fake Claude Turn");
+    this.steers.push({ text, userMessageId });
   }
 
   event(event: ClaudeTurnEvent): void {
@@ -512,6 +518,7 @@ describe("Claude Code HarnessAdapter", () => {
         },
         history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
         subagents: { observe: true, readTranscript: true },
+        turns: { steer: true },
       },
     });
     await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toEqual(first);
@@ -532,6 +539,7 @@ describe("Claude Code HarnessAdapter", () => {
       },
       history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
       subagents: { observe: true, readTranscript: true },
+      turns: { steer: true },
     });
     const iterator = session.outputs[Symbol.asyncIterator]();
     await expect(
@@ -1130,6 +1138,39 @@ describe("Claude Code HarnessAdapter", () => {
         },
       },
     });
+    await session.close();
+  });
+
+  it("injects steer into the active Query without starting a second Turn", async () => {
+    const { adapter, transports } = fixture();
+    const session = await openSession(adapter);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+    const turnId = hostTurnIdSchema.parse("turn-steer");
+
+    await expect(
+      session.execute({
+        type: "turn.start",
+        turnId,
+        input: [{ type: "text", text: "first" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { turnId } });
+    expect((await nextEvent(iterator)).type).toBe("session.state.changed");
+    expect((await nextEvent(iterator)).type).toBe("turn.started");
+    expect((await nextEvent(iterator)).type).toBe("item.started");
+    await expect(
+      session.execute({
+        type: "turn.steer",
+        turnId,
+        input: [{ type: "text", text: "now also do this" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+    expect(transports[0]?.steers).toEqual([
+      { text: "now also do this", userMessageId: expect.any(String) },
+    ]);
+    expect(transports[0]?.turns).toHaveLength(1);
+    transports[0]?.finish({ status: "succeeded" });
+    expect((await nextEvent(iterator)).type).toBe("item.completed");
+    expect((await nextEvent(iterator)).type).toBe("turn.completed");
     await session.close();
   });
 
@@ -4376,6 +4417,7 @@ describe("Claude Code HarnessAdapter", () => {
         init: async () => ({ status: "succeeded" }),
         recap: async () => ({ status: "succeeded" }),
         runTurn: async () => ({ status: "succeeded" }),
+        steer: () => undefined,
         respondToInteraction: async () => undefined,
         abort: async () => undefined,
         close: async () => undefined,

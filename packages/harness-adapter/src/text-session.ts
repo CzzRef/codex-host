@@ -129,6 +129,12 @@ export interface TurnStartCommand {
   input: HostTextInput[];
 }
 
+export interface TurnSteerCommand {
+  type: "turn.steer";
+  turnId: HostTurnId;
+  input: HostTextInput[];
+}
+
 export interface TurnCancelCommand {
   type: "turn.cancel";
   turnId: HostTurnId;
@@ -243,6 +249,7 @@ export interface HarnessCommandCapability {
 
 export type HostCommand =
   | TurnStartCommand
+  | TurnSteerCommand
   | TurnCancelCommand
   | InteractionRespondCommand
   | ModelSelectCommand
@@ -251,6 +258,10 @@ export type HostCommand =
 
 export interface TurnStartAccepted {
   turnId: HostTurnId;
+}
+
+export interface TurnSteerAccepted {
+  accepted: true;
 }
 
 export interface TurnCancelAccepted {
@@ -502,6 +513,7 @@ export interface HarnessSession {
   refreshUsage?(): Promise<void>;
   readSnapshot(): Promise<HarnessResult<HostThreadSnapshot>>;
   execute(command: TurnStartCommand): Promise<HarnessResult<TurnStartAccepted>>;
+  execute(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>>;
   execute(command: TurnCancelCommand): Promise<HarnessResult<TurnCancelAccepted>>;
   execute(command: InteractionRespondCommand): Promise<HarnessResult<InteractionRespondAccepted>>;
   execute(command: ModelSelectCommand): Promise<HarnessResult<ModelSelectCompleted>>;

@@ -3,12 +3,13 @@ import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const SKILL_VERSION = 4;
+const SKILL_VERSION = 5;
 const SKILL_RELATIVE_PATH = path.join("skills", "codexhost-delegation", "SKILL.md");
 const PREVIOUS_MANAGED_DIGESTS: readonly string[] = [
   "ba509f57e5448e796b3dfdd5031dcb08672eded50b61c0a54de84cfa02c49dd3",
   "d3ddf6db9bc5c5df825479c885bbbf0ca08da66f7057a12e02e1fdf57525149e",
   "15eb63519ff867e1536c97188a0c43738d7a49d38d4d6adeb7a1036726e7246d",
+  "fa7944cd1e72ffbaf932fca2074bdb78aad4670d8990b6711220dd83c39509a0",
 ];
 
 export const CODEXHOST_DELEGATION_SKILL = `---
@@ -35,7 +36,7 @@ Treat its output as the sole authoritative source for:
 - command parameters;
 - available target Harness IDs;
 - Thread identifier formats;
-- waiting and reading behavior;
+- waiting, reading, listing, and renaming behavior;
 - response fields;
 - errors and recovery guidance.
 
@@ -54,6 +55,8 @@ user’s request and the task:
 - cancel its current Turn;
 - read its current state immediately;
 - wait for a bounded period;
+- list extra processes;
+- rename the Thread;
 - check it again later;
 - leave it running in the background.
 

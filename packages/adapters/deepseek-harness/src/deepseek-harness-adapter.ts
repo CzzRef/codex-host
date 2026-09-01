@@ -662,6 +662,16 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
     if (this.#closed)
       return { ok: false, error: invalidState("DeepSeek Harness Session is closed") };
     if (command.type === "turn.cancel") return this.#cancel(command);
+    if (command.type === "turn.steer") {
+      return {
+        ok: false,
+        error: {
+          code: "unsupported",
+          message: "DeepSeek Harness does not support mid-Turn steer",
+          retryable: false,
+        },
+      };
+    }
     if (command.type === "interaction.respond") return this.#respond(command);
     if (command.type === "model.select") return this.#selectModel(command);
     if (command.type === "thinking.select") return this.#selectThinking(command);

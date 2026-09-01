@@ -67,6 +67,8 @@ export interface ExternalThread {
   ignoredInteractionIds: Set<HostInteractionId>;
   /** turn/start requests accepted while a Turn is active; answered on dispatch. */
   queuedTurnStarts: JsonRpcRequest[];
+  /** Steer-initiated cancel keeps the follow-up queue; user Stop still flushes it. */
+  retainQueuedTurnsAfterInterrupt: boolean;
 }
 
 export type ExternalThreadLocation =
@@ -281,6 +283,7 @@ export class ExternalThreadRuntime {
       persistenceError: null,
       ignoredInteractionIds: new Set(),
       queuedTurnStarts: [],
+      retainQueuedTurnsAfterInterrupt: false,
     };
     externalThread.outputTask = this.#consumeOutputs(externalThread);
     this.#threads.set(externalThread.id, externalThread);

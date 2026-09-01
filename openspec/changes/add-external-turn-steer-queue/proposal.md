@@ -1,12 +1,15 @@
 ## Why
 
-Codex Desktop 在 Turn 运行期间输入后续消息时发送 `turn/steer`。外部 Harness 会话此前对所有非 start/interrupt 的 `turn/*` 显式返回 `-32076`，Desktop 因此弹出 "External Thread does not support turn/steer"，用户对 Grok/Claude Code 等外部会话的正常追加被整体拒绝——而这些 Harness 本身支持后续 Turn，只是没有官方 Codex 的「中途注入」面。
+Codex Desktop 在 Turn 运行期间输入后续消息时发送 `turn/steer`（强制追加 / 立即追加）。外部 Harness 会话此前对所有非 start/interrupt 的 `turn/*` 显式返回 `-32076`，Desktop 因此弹出 "External Thread does not support turn/steer"。用户要求强制追加调用对应 Harness 的原生 steer，而不是等上一轮对话自然结束后再开新 Turn。
 
 ## What Changes
 
-- 外部 Thread 的 `turn/steer` 不再拒绝：消息进入既有的 follow-up 队列（活跃 Turn 完成后作为下一个 Turn 启动并以该 Turn 应答请求）；空闲 Thread 立即启动新 Turn。
+- 外部 Thread 的 `turn/steer` 立即空结果应答（composer 保持可追加）。
+- Session 声明 `turns.steer` 时，Host 把消息注入**当前活动 Turn**（Claude：PushableInput；Grok：同一 Host Turn 内立即续跑下一条原生 Prompt）。连续多条 steer 按到达顺序注入同一 Turn，不得另开 Host Turn。
+- 不支持原生 steer 的 Harness 才回退 follow-up 队列；立即追加时取消当前 Turn，使队列按序立刻启动。
+- 外部 Thread 在活跃 Turn 期间持有的多条 `turn/start` follow-up，在当前 Turn **成功结束** 后合并为**一条**后续 Turn（文本按到达顺序用空行拼接），并给每条被持有的 RPC 返回同一个 Turn，避免 Desktop 把拒绝标成永久 paused。
+- 用户 Stop（`turn/interrupt`）仍丢弃队列，与原生 Codex 一致。Steer 触发的取消保留队列。
 - 其他非 start/interrupt/steer 的 `turn/*` 保持显式拒绝，不泄漏给官方 app-server。
-- 语义边界：steer 在外部会话上是「排队的追加」，不是官方 Codex 的中途注入；正在运行的 Turn 内容不受影响。
 
 ## Capabilities
 
@@ -14,9 +17,9 @@ Codex Desktop 在 Turn 运行期间输入后续消息时发送 `turn/steer`。�
 
 ### Modified Capabilities
 
-- `registered-harness-routing`: 外部 Thread 的 `turn/steer` 由拒绝改为 follow-up 队列语义。
+- `registered-harness-routing`: 外部 Thread 的 `turn/steer` 优先走原生 `turn.steer`；不支持时才取消后按序追加。`turn/start` follow-up 队列改为一次合并。
 
 ## Impact
 
-- Host Runtime AppServerHost（steer 路由到既有 `#startExternalTurn` 队列）。
-- 聚焦测试：steer 排队/空闲即启双场景（原拒绝断言删除）。
+- Host Runtime AppServerHost、HarnessSession `turn.steer`、Claude/Grok Adapter。
+- 聚焦测试：原生 steer 注入同一 Turn、不支持时的 follow-up 回退、follow-up 合并、用户 Stop 丢弃队列。

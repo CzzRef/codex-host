@@ -134,6 +134,9 @@ class CursorSession implements HarnessSession {
         failure("invalidState", "Cursor has no active interaction")
       );
     }
+    if (command.type === "turn.steer") {
+      return failure("unsupported", "Cursor does not support mid-Turn steer");
+    }
     if (command.type === "turn.cancel") {
       if (!this.#active || this.#active.turnId !== command.turnId)
         return failure("invalidState", "Cursor turn is not active");

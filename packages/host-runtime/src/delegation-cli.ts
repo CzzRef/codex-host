@@ -75,7 +75,7 @@ export const DELEGATION_HELP = `usage:
   codexhost thread cancel <thread>
   codexhost thread read <thread> [--view result|messages] [--cursor <cursor>] [--limit <n>]
   codexhost thread wait <thread> [--timeout-ms <n>] [--view result|messages] [--cursor <cursor>] [--limit <n>]
-  codexhost thread list [--cwd <path>] [--parent <thread>] [--limit <n>] [--cursor <cursor>] [--sort created-asc|created-desc|updated-asc|updated-desc|recency-asc|recency-desc]
+  codexhost thread list [--cwd <path>] [--all true|false] [--parent <thread>] [--limit <n>] [--cursor <cursor>] [--sort created-asc|created-desc|updated-asc|updated-desc|recency-asc|recency-desc]
   codexhost thread rename [<thread>] --name <title>
 
 Thread identifiers accept a bare ID or codex://threads/<id>. Output is JSON by default.
@@ -87,7 +87,7 @@ thread cancel requests cancellation of the current Turn while preserving the Thr
 thread read is non-blocking. Its default result view returns threadId, harnessId, status, latest turn, visible progress, result.availability/result.text, and nextCursor.
 thread read --view messages additionally returns paginated user/Agent-visible messages. The default page is 25 and --limit is capped at 100; --cursor and --limit require the messages view. Tool calls, tool output, file activity, reasoning summaries, hidden reasoning, and private Harness transcripts are never returned.
 thread wait defaults to 30000 ms and waits only until the Thread reaches a terminal state or the bounded timeout expires. A timeout is a successful running checkpoint with timedOut=true; the child keeps running.
-thread list defaults to the caller cwd, limit 25, created-desc; limit is capped at 100. --parent uses Delegation lineage, not Codex Subagent relationships.
+thread list defaults to the caller cwd, limit 25, created-desc; limit is capped at 100. --all true lists every extra process regardless of cwd. --parent uses Delegation lineage, not Codex Subagent relationships.
 thread rename persists the Host Thread title and emits the same thread/name/updated notification Desktop uses, so Codex sidebar updates without a restart. Omit <thread> to use CODEXHOST_THREAD_ID. A Desktop hand-set title is not overwritten.
 read and wait are non-consuming: they do not start a Turn, send input, wake an Agent, mark messages read, or inject a result into the parent Session.
 Native Codex as caller requires a session sandbox that permits local Runtime connections; otherwise RUNTIME_UNREACHABLE is returned. Native Codex as a target uses brokered official requests and is unaffected.
@@ -381,7 +381,7 @@ export async function runDelegationCli(input: {
     }
     if (group === "thread" && command === "list") {
       const parsed = options(rest);
-      rejectUnknown(parsed, ["--cwd", "--parent", "--limit", "--cursor", "--sort"]);
+      rejectUnknown(parsed, ["--cwd", "--all", "--parent", "--limit", "--cursor", "--sort"]);
       if (parsed.positionals.length > 0)
         throw new DelegationControlError(
           "INVALID_ARGUMENT",
@@ -400,13 +400,23 @@ export async function runDelegationCli(input: {
       )
         throw new DelegationControlError("INVALID_ARGUMENT", "--sort is invalid");
       const parentThread = value(parsed, "--parent");
+      const all = value(parsed, "--all");
+      if (all !== undefined && all !== "true" && all !== "false") {
+        throw new DelegationControlError("INVALID_ARGUMENT", "--all must be true or false");
+      }
+      if (all === "true" && value(parsed, "--cwd")) {
+        throw new DelegationControlError(
+          "INVALID_ARGUMENT",
+          "--all true cannot be combined with --cwd",
+        );
+      }
       writeJson(
         output,
         await requestRuntime({
           environment,
           path: "/v1/thread/list",
           body: {
-            cwd: value(parsed, "--cwd") ?? process.cwd(),
+            ...(all === "true" ? {} : { cwd: value(parsed, "--cwd") ?? process.cwd() }),
             ...(parentThread ? { parentThreadId: normalizeThreadId(parentThread) } : {}),
             limit: value(parsed, "--limit")
               ? positiveInteger(value(parsed, "--limit"), "--limit", MAX_LIMIT)

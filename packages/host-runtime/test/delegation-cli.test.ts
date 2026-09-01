@@ -206,6 +206,8 @@ describe("delegation CLI", () => {
     ["cancel option", ["thread", "cancel", "thread-1", "--message", "no"]],
     ["invalid list limit", ["thread", "list", "--limit", "101"]],
     ["invalid sort", ["thread", "list", "--sort", "newest"]],
+    ["invalid all flag", ["thread", "list", "--all", "yes"]],
+    ["all true with cwd", ["thread", "list", "--all", "true", "--cwd", "/synthetic"]],
   ])("rejects %s before contacting Runtime", async (_name, arguments_) => {
     const diagnosticOutput = new PassThrough();
     const fetchImpl = successfulFetch({ ok: true });
@@ -216,6 +218,52 @@ describe("delegation CLI", () => {
       error: { code: "INVALID_ARGUMENT" },
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("lists every extra process when --all true omits cwd", async () => {
+    const fetchImpl = successfulFetch({ threads: [], nextCursor: null });
+    const output = new PassThrough();
+    await expect(
+      runDelegationCli({
+        arguments: ["thread", "list", "--all", "true", "--limit", "50", "--sort", "recency-desc"],
+        environment: {
+          [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+          [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+        },
+        output,
+        fetchImpl,
+      }),
+    ).resolves.toBe(0);
+    const firstCall = vi.mocked(fetchImpl).mock.calls[0];
+    if (!firstCall) throw new Error("Runtime fetch was not called");
+    expect(String(firstCall[0])).toContain("/v1/thread/list");
+    expect(JSON.parse(String(firstCall[1]?.body))).toEqual({
+      limit: 50,
+      sort: "recency-desc",
+    });
+  });
+
+  it("keeps the caller cwd when --all is false", async () => {
+    const fetchImpl = successfulFetch({ threads: [], nextCursor: null });
+    const output = new PassThrough();
+    await expect(
+      runDelegationCli({
+        arguments: ["thread", "list", "--all", "false"],
+        environment: {
+          [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+          [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+        },
+        output,
+        fetchImpl,
+      }),
+    ).resolves.toBe(0);
+    const firstCall = vi.mocked(fetchImpl).mock.calls[0];
+    if (!firstCall) throw new Error("Runtime fetch was not called");
+    expect(JSON.parse(String(firstCall[1]?.body))).toEqual({
+      cwd: process.cwd(),
+      limit: 25,
+      sort: "created-desc",
+    });
   });
 
   it("renames the current extra process through the Runtime", async () => {

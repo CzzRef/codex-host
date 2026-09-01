@@ -82,6 +82,7 @@ interface ActiveTurn {
   accumulator: ClaudeNativeTurnAccumulator;
   controlRequestIds: Set<string>;
   interactions: Map<string, PendingInteraction>;
+  pendingSteers: number;
   onEvent(event: ClaudeTurnEvent): void;
   resolve(result: ClaudeTransportTurnResult): void;
   reject(error: unknown): void;
@@ -504,11 +505,27 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
         ),
         controlRequestIds: new Set(),
         interactions: new Map(),
+        pendingSteers: 0,
         onEvent,
         resolve,
         reject,
       };
     });
+    this.#pushUser(text, userMessageId);
+    return promise;
+  }
+
+  steer(text: string, userMessageId: string): void {
+    const active = this.#active;
+    if (!this.#started || !this.#query || !active) {
+      throw new Error("Claude SDK transport has no active Turn");
+    }
+    if (text.length === 0) throw new Error("Claude SDK steer text must not be empty");
+    active.pendingSteers += 1;
+    this.#pushUser(text, userMessageId);
+  }
+
+  #pushUser(text: string, userMessageId: string): void {
     this.#input.push({
       type: "user",
       message: { role: "user", content: text },
@@ -517,7 +534,6 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
       uuid: userMessageId as `${string}-${string}-${string}-${string}-${string}`,
       origin: { kind: "human" },
     });
-    return promise;
   }
 
   respondToInteraction(response: ClaudeInteractionResponse): Promise<void> {
@@ -739,6 +755,15 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
           for (const event of interpreted.events) active.onEvent(event);
           if (interpreted.terminal) {
             this.#closeInteractions(active, "superseded");
+            const continueSteer =
+              interpreted.terminal.status === "succeeded" && active.pendingSteers > 0;
+            if (continueSteer) {
+              active.pendingSteers -= 1;
+              active.accumulator = new ClaudeNativeTurnAccumulator(
+                this.#provider ? { provider: this.#provider } : {},
+              );
+              continue;
+            }
             this.#active = null;
             active.resolve(interpreted.terminal);
           }

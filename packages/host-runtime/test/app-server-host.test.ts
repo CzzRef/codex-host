@@ -150,7 +150,11 @@ function threadStatus(message: JsonObject, threadId: string, type: string): bool
 function turnEventId(message: JsonObject): string {
   const params = messageParams(message);
   const turn = params.turn as JsonObject | undefined;
-  return typeof turn?.id === "string" ? turn.id : typeof params.turnId === "string" ? params.turnId : "";
+  return typeof turn?.id === "string"
+    ? turn.id
+    : typeof params.turnId === "string"
+      ? params.turnId
+      : "";
 }
 
 function turnEvent(message: JsonObject, eventMethod: string, turnId: string): boolean {
@@ -2409,6 +2413,70 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("renames a Desktop first-message fallback that has no preview evidence", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    const threadId = await startPiThread(fixture);
+    writeRequest(fixture.desktopInput, {
+      id: 41,
+      method: "thread/name/set",
+      params: { threadId, name: "首条消息兜底" },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 41));
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    await expect(delegationApi.rename({ threadId, name: "260901-扫描委托变更" })).resolves.toEqual({
+      threadId,
+      title: "260901-扫描委托变更",
+    });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "260901-扫描委托变更", titleSource: "native" });
+    await stopFixture(fixture);
+  });
+
+  it("does not overwrite a distinct Desktop hand-set title through rename", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    const threadId = await startPiThread(fixture);
+    await completePiTurn(fixture, threadId, 2);
+    writeRequest(fixture.desktopInput, {
+      id: 43,
+      method: "thread/read",
+      params: { threadId, includeTurns: true },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 43));
+    writeRequest(fixture.desktopInput, {
+      id: 42,
+      method: "thread/name/set",
+      params: { threadId, name: "用户自定义标题" },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 42));
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    await expect(
+      delegationApi.rename({ threadId, name: "260901-扫描委托变更" }),
+    ).rejects.toMatchObject({
+      name: "DelegationControlError",
+      code: "INVALID_ARGUMENT",
+      message: "Thread title was set by hand in Desktop and will not be overwritten",
+    });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "用户自定义标题", titleSource: "desktop" });
+    await stopFixture(fixture);
+  });
+
   it("keeps a Desktop rename against generated titles until a native user rename", async () => {
     const fixture = createFixture();
     const threadId = await startPiThread(fixture);
@@ -2423,9 +2491,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await fixture.collector.waitFor((message) => requestId(message, 40));
     session.publishNativeTitle({ text: "生成标题不该覆盖", source: "generated" });
     session.publishUsage(null);
-    await fixture.collector.waitFor((message) =>
-      method(message, "codexhost/thread/usage/updated"),
-    );
+    await fixture.collector.waitFor((message) => method(message, "codexhost/thread/usage/updated"));
     expect(
       fixture.collector.messages.some(
         (message) => messageParams(message).threadName === "生成标题不该覆盖",
@@ -2443,7 +2509,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("queues turn/start and turn/steer during an active Turn as follow-up Turns", async () => {
+  it("batches queued turn/start follow-ups into one Turn", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
     fixture.official.stdin.on("data", officialWrite);
@@ -2455,11 +2521,45 @@ describe("AppServerHost HarnessAdapter projection", () => {
     writeRequest(fixture.desktopInput, {
       id: 3,
       method: "turn/start",
-      params: { threadId, input: [{ type: "text", text: "queued follow-up" }] },
+      params: { threadId, input: [{ type: "text", text: "first follow-up" }] },
     });
-    // The Desktop sends turn/steer for a follow-up typed while a Turn runs
-    // and expects an immediate acknowledgement (the composer stays live and
-    // may steer repeatedly). The message itself joins the follow-up queue.
+    writeRequest(fixture.desktopInput, {
+      id: 4,
+      method: "turn/start",
+      params: { threadId, input: [{ type: "text", text: "second follow-up" }] },
+    });
+    expect(fixture.collector.messages.some((message) => requestId(message, 3))).toBe(false);
+    expect(fixture.collector.messages.some((message) => requestId(message, 4))).toBe(false);
+    session.appendText("first answer");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    const firstQueued = await fixture.collector.waitFor((message) => requestId(message, 3));
+    const secondQueued = await fixture.collector.waitFor((message) => requestId(message, 4));
+    const firstTurn = (firstQueued.result as JsonObject).turn as JsonObject;
+    const secondTurn = (secondQueued.result as JsonObject).turn as JsonObject;
+    expect(firstTurn.id).toBe(secondTurn.id);
+    if (typeof firstTurn.id !== "string") throw new Error("Batched turn response has no ID");
+    session.appendText("batched answer");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/completed", firstTurn.id as string),
+    );
+    const batched = session.persistedSnapshot().turns.at(-1);
+    expect(batched?.input).toEqual([{ type: "text", text: "first follow-up\n\nsecond follow-up" }]);
+    expect(officialWrite).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
+  it("interrupts the active Turn for steer then starts steered messages in order", async () => {
+    const fixture = createFixture();
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    const threadId = await startPiThread(fixture);
+    const turnId = await startPiTurn(fixture, threadId, 2);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    session.completeCancellationOnRequest();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
     writeRequest(fixture.desktopInput, {
       id: 4,
       method: "turn/steer",
@@ -2474,25 +2574,12 @@ describe("AppServerHost HarnessAdapter projection", () => {
     });
     const secondSteerAck = await fixture.collector.waitFor((message) => requestId(message, 5));
     expect(secondSteerAck).toMatchObject({ result: {} });
-    // The held turn/start still answers only when its Turn actually starts.
-    expect(fixture.collector.messages.some((message) => requestId(message, 3))).toBe(false);
-    session.appendText("first answer");
-    session.succeedTurn();
-    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
-    const queuedResponse = await fixture.collector.waitFor((message) => requestId(message, 3));
-    const queuedTurn = (queuedResponse.result as JsonObject).turn as JsonObject;
-    if (typeof queuedTurn.id !== "string") throw new Error("Queued turn response has no ID");
-    await fixture.collector.waitFor((message) =>
-      turnEvent(message, "turn/started", queuedTurn.id as string),
+    await fixture.collector.waitFor(
+      (message) =>
+        turnEvent(message, "turn/completed", turnId) &&
+        (messageParams(message).turn as JsonObject | undefined)?.status === "interrupted",
     );
-    session.appendText("second answer");
-    session.succeedTurn();
-    await fixture.collector.waitFor((message) =>
-      turnEvent(message, "turn/completed", queuedTurn.id as string),
-    );
-    // Both steered messages become follow-up Turns in order, with no further
-    // responses owed to the Desktop.
-    for (const answer of ["third answer", "fourth answer"]) {
+    for (const answer of ["steer-one answer", "steer-two answer"]) {
       const started = await fixture.collector.waitFor(
         (message) =>
           method(message, "turn/started") &&
@@ -2508,7 +2595,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
         turnEvent(message, "turn/completed", startedTurnId),
       );
     }
-    // An idle Thread acknowledges and starts a steered message immediately.
     writeRequest(fixture.desktopInput, {
       id: 6,
       method: "turn/steer",
@@ -2524,12 +2610,87 @@ describe("AppServerHost HarnessAdapter projection", () => {
             candidate !== message && turnEvent(candidate, "turn/completed", turnEventId(message)),
         ),
     );
-    session.appendText("fifth answer");
+    session.appendText("idle answer");
     session.succeedTurn();
     await fixture.collector.waitFor((message) =>
       turnEvent(message, "turn/completed", turnEventId(idleStarted)),
     );
     expect(officialWrite).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
+  it("injects turn.steer into the active Turn when the Session supports it", async () => {
+    const fixture = createFixture();
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    const threadId = await startPiThread(fixture);
+    const turnId = await startPiTurn(fixture, threadId, 2);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    session.enableSteer();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
+    writeRequest(fixture.desktopInput, {
+      id: 4,
+      method: "turn/steer",
+      params: { threadId, input: [{ type: "text", text: "steer one" }] },
+    });
+    expect(await fixture.collector.waitFor((message) => requestId(message, 4))).toMatchObject({
+      result: {},
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 5,
+      method: "turn/steer",
+      params: { threadId, input: [{ type: "text", text: "steer two" }] },
+    });
+    expect(await fixture.collector.waitFor((message) => requestId(message, 5))).toMatchObject({
+      result: {},
+    });
+    await vi.waitFor(() =>
+      expect(session.steeredInputs).toEqual(["steer one", "steer two"]),
+    );
+    expect(
+      fixture.collector.messages.filter((message) => method(message, "turn/started")),
+    ).toHaveLength(1);
+    session.appendText("still the same Turn");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    expect(
+      fixture.collector.messages.filter((message) => method(message, "turn/started")),
+    ).toHaveLength(1);
+    expect(officialWrite).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
+  it("discards queued turn/start follow-ups after a user interrupt", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    const turnId = await startPiTurn(fixture, threadId, 2);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    session.completeCancellationOnRequest();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
+    writeRequest(fixture.desktopInput, {
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: [{ type: "text", text: "should be discarded" }] },
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 4,
+      method: "turn/interrupt",
+      params: { threadId, turnId },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 4))).resolves.toEqual({
+      id: 4,
+      result: {},
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 3)),
+    ).resolves.toMatchObject({
+      error: {
+        code: -32072,
+        message: "External queued Turn was discarded after interrupt",
+      },
+    });
     await stopFixture(fixture);
   });
 

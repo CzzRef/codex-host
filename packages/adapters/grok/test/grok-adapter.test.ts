@@ -57,6 +57,7 @@ class FakeGrokTransport implements GrokAcpTransportLike {
   sessionId = "grok-session";
   readonly openCalls: GrokOpenInput[] = [];
   readonly compactCalls: Array<string | undefined> = [];
+  readonly promptTexts: string[] = [];
   readonly cancel = vi.fn(async () => undefined);
   readonly close = vi.fn(async () => undefined);
   readonly setModel = vi.fn(async () => undefined);
@@ -158,6 +159,7 @@ class FakeGrokTransport implements GrokAcpTransportLike {
     onEvent: (event: GrokTransportEvent) => void,
     onPermission: (request: GrokPermissionRequest) => Promise<RequestPermissionResponse>,
   ): Promise<PromptResponse> {
+    this.promptTexts.push(text);
     this.#activePromptText = text;
     this.#activePromptEvents = [];
     this.#onEvent = onEvent;
@@ -440,6 +442,44 @@ describe("Grok Adapter ACP projection", () => {
     }
     expect(snapshot.value.turns[0].nativeTurnRef).toEqual(completed.nativeTurnRef);
     await resumed.adapter.close();
+  });
+
+  it("keeps steer on the same Host Turn and starts the next native Prompt immediately", async () => {
+    const transport = new FakeGrokTransport();
+    const opened = await openedSession(transport);
+    const iterator = opened.session.outputs[Symbol.asyncIterator]();
+    const turnId = hostTurnIdSchema.parse("turn-steer");
+
+    await opened.session.execute({
+      type: "turn.start",
+      turnId,
+      input: [{ type: "text", text: "first" }],
+    });
+    expect((await nextEvent(iterator)).type).toBe("turn.started");
+    await expect(
+      opened.session.execute({
+        type: "turn.steer",
+        turnId,
+        input: [{ type: "text", text: "second" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+    expect(transport.promptTexts).toEqual(["first"]);
+    transport.event({ type: "agent.text", text: "first-answer", messageId: "agent-1" });
+    expect((await nextEvent(iterator)).type).toBe("item.started");
+    expect((await nextEvent(iterator)).type).toBe("item.updated");
+    transport.finish();
+    expect((await nextEvent(iterator)).type).toBe("item.completed");
+    await vi.waitFor(() => expect(transport.promptTexts).toEqual(["first", "second"]));
+    transport.event({ type: "agent.text", text: "second-answer", messageId: "agent-2" });
+    expect((await nextEvent(iterator)).type).toBe("item.started");
+    expect((await nextEvent(iterator)).type).toBe("item.updated");
+    transport.finish();
+    expect((await nextEvent(iterator)).type).toBe("item.completed");
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+    });
+    await opened.adapter.close();
   });
 
   it("omits background-task control records without shifting persisted Turn identities", async () => {

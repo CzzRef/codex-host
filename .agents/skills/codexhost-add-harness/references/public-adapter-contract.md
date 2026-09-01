@@ -108,6 +108,7 @@ History 的详细要求见 [thread-lifecycle-and-history.md](thread-lifecycle-an
 Session 必须显式控制并发，而不是依赖原生调用偶然串行：
 
 - 第二个 `turn.start`、Model/Thinking 配置写入和 History 操作默认与活动操作互斥；冲突返回 `sessionBusy`，并标记 `retryable: true`；
+- `turn.steer` 仅在 `capabilities.turns.steer=true` 时接受，且必须引用当前活动 Turn；它把追加用户输入注入该 Turn，不得再发出 `turn.started` / `turn.completed`；不支持时返回 `unsupported`；
 - `interaction.respond` 必须能在所属 Turn 活动时执行；
 - Permission Mode 是否可在活动 Turn 中改变取决于原生语义，允许时仍须与同类配置写入串行，不允许时返回 `sessionBusy`；
 - 空文本 Turn 返回 `invalidRequest`；

@@ -92,6 +92,8 @@ export type {
   TurnOutcome,
   TurnStartAccepted,
   TurnStartCommand,
+  TurnSteerAccepted,
+  TurnSteerCommand,
   TurnStartedEvent,
 } from "./text-session.js";
 

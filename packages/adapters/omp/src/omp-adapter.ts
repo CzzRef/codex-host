@@ -689,6 +689,16 @@ class OmpHarnessSession implements HarnessSession {
       return { ok: false, error: invalidState("Omp Session is not open") };
     }
     if (command.type === "turn.cancel") return this.#cancel(command);
+    if (command.type === "turn.steer") {
+      return {
+        ok: false,
+        error: {
+          code: "unsupported",
+          message: "Omp does not support mid-Turn steer",
+          retryable: false,
+        },
+      };
+    }
     if (command.type === "interaction.respond") {
       return {
         ok: false,

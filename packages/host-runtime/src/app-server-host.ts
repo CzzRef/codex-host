@@ -387,6 +387,10 @@ function requestText(params: JsonObject): string {
   return text;
 }
 
+function isDetachedSteerClone(request: JsonRpcRequest): boolean {
+  return request.id === null;
+}
+
 function sandboxResult(params: JsonObject): JsonObject {
   const sandbox = params.sandbox;
   if (sandbox === "read-only") return { type: "readOnly", networkAccess: false };
@@ -906,27 +910,7 @@ export class AppServerHost {
             : ({ kind: "official" } as const);
         if (await this.#writeResolutionError(request, resolution)) continue;
         if (resolution.kind === "external") {
-          // Codex steering injects into the RUNNING native Turn and answers
-          // immediately — the composer stays live and the user may steer
-          // repeatedly. External Harnesses expose no mid-Turn injection, so
-          // the message joins the follow-up queue as a detached (null-id)
-          // turn/start clone and the steer request is acknowledged NOW.
-          // Holding the response instead froze the Desktop composer after
-          // the first follow-up.
-          if (resolution.thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
-            await this.#writer.json(
-              rpcError(request, -32072, "External Thread follow-up queue is full"),
-            );
-            continue;
-          }
-          resolution.thread.queuedTurnStarts.push({
-            jsonrpc: "2.0",
-            id: null,
-            method: "turn/start",
-            params: { threadId: params.threadId, input: params.input },
-          } as unknown as JsonRpcRequest);
-          await this.#writer.json(rpcEnvelope(request, { result: {} }));
-          this.#dispatchQueuedExternalTurn(resolution.thread);
+          await this.#steerExternalTurn(request, resolution.thread, params);
           continue;
         }
       }
@@ -2416,7 +2400,9 @@ export class AppServerHost {
         ...(requestedThinkingOptionId ? { thinkingOptionId: requestedThinkingOptionId } : {}),
         ...(requestedPermissionModeId ? { permissionModeId: requestedPermissionModeId } : {}),
       });
-    let sessionResult = await openSession(followDesktopBypass ? "unattended-full-access" : "default");
+    let sessionResult = await openSession(
+      followDesktopBypass ? "unattended-full-access" : "default",
+    );
     if (!sessionResult.ok && followDesktopBypass && sessionResult.error.code === "unsupported") {
       sessionResult = await openSession("default");
     }
@@ -2715,7 +2701,10 @@ export class AppServerHost {
   async #renameDelegationThread(input: ThreadRenameInput): Promise<ThreadRenameResult> {
     const name = input.name.trim();
     if (!name) {
-      throw new DelegationControlError("INVALID_ARGUMENT", "Thread name must be a non-empty string");
+      throw new DelegationControlError(
+        "INVALID_ARGUMENT",
+        "Thread name must be a non-empty string",
+      );
     }
     const title = name.slice(0, 120);
     const location = await this.#locateExternalThread(input.threadId);
@@ -2725,11 +2714,17 @@ export class AppServerHost {
         "Thread is not a Host-managed extra process",
       );
     }
-    if (
-      location.thread &&
+    // A Desktop first-message fallback is titleSource=desktop with no usable
+    // preview after reload; that is not a hand-set title. Only a distinct
+    // Desktop name backed by preview evidence is protected.
+    const loaded = location.thread;
+    const preview = loaded ? this.#threadPreviewEvidence(loaded) : "";
+    const desktopHandSet =
+      loaded != null &&
       location.record.titleSource === "desktop" &&
-      !this.#nativeTitleMayReplace(location.thread)
-    ) {
+      preview.trim().length > 0 &&
+      !this.#nativeTitleMayReplace(loaded);
+    if (desktopHandSet) {
       throw new DelegationControlError(
         "INVALID_ARGUMENT",
         "Thread title was set by hand in Desktop and will not be overwritten",
@@ -2770,6 +2765,23 @@ export class AppServerHost {
   }
 
   /**
+   * First-message preview used to tell a Desktop fallback title from a
+   * hand-set name. The live JSON projection often keeps preview empty until
+   * a list/read refresh, so Turn items are the fallback evidence.
+   */
+  #threadPreviewEvidence(thread: ExternalThread): string {
+    const projected = thread.thread.preview;
+    if (typeof projected === "string" && projected.trim().length > 0) return projected;
+    const rebuilt = externalThreadValue({
+      record: thread.record,
+      turns: thread.turns,
+      sessionId: thread.sessionId,
+      running: thread.running,
+    });
+    return typeof rebuilt.preview === "string" ? rebuilt.preview : "";
+  }
+
+  /**
    * A generated native title may replace the stored name unless a person
    * chose that name in Codex Desktop. Desktop-side names are fallback titles
    * derived from the first user message (codexhost disables Codex title
@@ -2780,8 +2792,8 @@ export class AppServerHost {
     const title = thread.record.title;
     if (title.length === 0) return true;
     if (thread.record.titleSource === "native") return true;
-    const preview = thread.thread.preview;
-    if (typeof preview !== "string" || preview.length === 0) return false;
+    const preview = this.#threadPreviewEvidence(thread);
+    if (preview.length === 0) return false;
     const normalizedTitle = title
       .replace(/[.…]+$/u, "")
       .replace(/\s+/gu, " ")
@@ -3060,22 +3072,32 @@ export class AppServerHost {
     }
   }
 
-  async #startExternalTurn(request: JsonRpcRequest, thread: ExternalThread): Promise<void> {
+  async #startExternalTurn(
+    request: JsonRpcRequest,
+    thread: ExternalThread,
+    alsoAnswer: readonly JsonRpcRequest[] = [],
+  ): Promise<void> {
     // A steered follow-up was already acknowledged at enqueue time; its clone
     // carries a null id and every response for it must be suppressed instead
     // of reaching the Desktop as an unmatched frame.
     const writer = request.id === null ? { json: async () => undefined } : this.#writer;
+    const replyError = async (code: number, message: string): Promise<void> => {
+      await writer.json(rpcError(request, code, message));
+      for (const peer of alsoAnswer) {
+        if (peer.id === null) continue;
+        await this.#writer.json(rpcError(peer, code, message));
+      }
+    };
     if (thread.running) {
       if (thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
-        await writer.json(
-          rpcError(request, -32072, "External Thread already has an active Turn"),
-        );
+        await replyError(-32072, "External Thread already has an active Turn");
         return;
       }
       // Codex Desktop queues follow-up messages and marks any turn/start
       // rejection as permanently paused. Hold the request instead and answer
       // it when the active Turn completes and this one actually starts.
       thread.queuedTurnStarts.push(request);
+      if (alsoAnswer.length > 0) thread.queuedTurnStarts.push(...alsoAnswer);
       return;
     }
     const params = requestObject(request);
@@ -3084,13 +3106,11 @@ export class AppServerHost {
       try {
         route = decodeCreateRoute({ id: request.id, method: "thread/start", params });
       } catch (error) {
-        await writer.json(rpcError(request, -32602, errorMessage(error)));
+        await replyError(-32602, errorMessage(error));
         return;
       }
       if (route?.harnessId !== "codex" && route?.harnessId !== thread.harnessId) {
-        await writer.json(
-          rpcError(request, -32602, "Turn Model carrier does not belong to the Thread Harness"),
-        );
+        await replyError(-32602, "Turn Model carrier does not belong to the Thread Harness");
         return;
       }
     }
@@ -3098,13 +3118,13 @@ export class AppServerHost {
     try {
       text = requestText(params);
     } catch (error) {
-      await writer.json(rpcError(request, -32602, errorMessage(error)));
+      await replyError(-32602, errorMessage(error));
       return;
     }
-    if (thread.session.commands) {
+    if (alsoAnswer.length === 0 && thread.session.commands) {
       const catalog = await thread.session.commands.list();
       if (!catalog.ok) {
-        await writer.json(rpcError(request, -32073, catalog.error.message));
+        await replyError(-32073, catalog.error.message);
         return;
       }
       const matched = catalog.value.commands
@@ -3126,9 +3146,7 @@ export class AppServerHost {
           );
         } catch (error) {
           this.#diagnose(error);
-          await writer.json(
-            rpcError(request, -32073, `External Harness command failed: ${errorMessage(error)}`),
-          );
+          await replyError(-32073, `External Harness command failed: ${errorMessage(error)}`);
         }
         return;
       }
@@ -3160,13 +3178,17 @@ export class AppServerHost {
       thread.projectedTurns.delete(turnId);
       thread.responseGates.delete(turnId);
       gate.resolve();
-      await writer.json(rpcError(request, -32073, result.error.message));
+      await replyError(-32073, result.error.message);
+      this.#dispatchQueuedExternalTurn(thread);
       return;
     }
     try {
-      await writer.json(
-        rpcEnvelope(request, { result: { turn: projection.projector.pendingTurn() } }),
-      );
+      const pending = projection.projector.pendingTurn();
+      await writer.json(rpcEnvelope(request, { result: { turn: pending } }));
+      for (const peer of alsoAnswer) {
+        if (peer.id === null) continue;
+        await this.#writer.json(rpcEnvelope(peer, { result: { turn: pending } }));
+      }
     } finally {
       gate.resolve();
     }
@@ -3444,22 +3466,137 @@ export class AppServerHost {
           : { type: "idle" },
       );
       if (result.completedTurn?.status === "interrupted") {
-        // Native Codex does not drain queued follow-ups after an interrupt.
-        await this.#flushQueuedExternalTurns(
-          thread,
-          "External queued Turn was discarded after interrupt",
-        );
+        if (thread.retainQueuedTurnsAfterInterrupt) {
+          thread.retainQueuedTurnsAfterInterrupt = false;
+          this.#dispatchQueuedExternalTurn(thread);
+        } else {
+          // User Stop matches native Codex: discard queued follow-ups.
+          await this.#flushQueuedExternalTurns(
+            thread,
+            "External queued Turn was discarded after interrupt",
+          );
+        }
       } else {
         this.#dispatchQueuedExternalTurn(thread);
       }
     }
   }
 
+  async #steerExternalTurn(
+    request: JsonRpcRequest,
+    thread: ExternalThread,
+    params: JsonObject,
+  ): Promise<void> {
+    const nativeSteer =
+      thread.running &&
+      thread.activeTurnId !== null &&
+      thread.session.capabilities.turns?.steer === true;
+    if (nativeSteer && thread.activeTurnId) {
+      await this.#writer.json(rpcEnvelope(request, { result: {} }));
+      let text: string;
+      try {
+        text = requestText(params);
+      } catch (error) {
+        this.#diagnose(error);
+        await this.#enqueueExternalSteerFollowUp(thread, params);
+        return;
+      }
+      const result = await thread.session.execute({
+        type: "turn.steer",
+        turnId: thread.activeTurnId,
+        input: [{ type: "text", text }],
+      });
+      if (!result.ok) {
+        this.#diagnose(
+          `External native steer failed: ${result.error.message}; falling back to follow-up queue`,
+        );
+        await this.#enqueueExternalSteerFollowUp(thread, params);
+      }
+      return;
+    }
+    if (thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
+      await this.#writer.json(
+        rpcError(request, -32072, "External Thread follow-up queue is full"),
+      );
+      return;
+    }
+    await this.#writer.json(rpcEnvelope(request, { result: {} }));
+    await this.#enqueueExternalSteerFollowUp(thread, params);
+  }
+
+  async #enqueueExternalSteerFollowUp(thread: ExternalThread, params: JsonObject): Promise<void> {
+    if (thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
+      this.#diagnose("External Thread follow-up queue is full");
+      return;
+    }
+    thread.queuedTurnStarts.push({
+      jsonrpc: "2.0",
+      id: null,
+      method: "turn/start",
+      params: { threadId: thread.id, input: params.input },
+    } as unknown as JsonRpcRequest);
+    if (thread.running) {
+      await this.#cancelActiveExternalTurnForSteer(thread);
+      return;
+    }
+    this.#dispatchQueuedExternalTurn(thread);
+  }
+
+  async #cancelActiveExternalTurnForSteer(thread: ExternalThread): Promise<void> {
+    if (!thread.running || !thread.activeTurnId) {
+      this.#dispatchQueuedExternalTurn(thread);
+      return;
+    }
+    if (thread.retainQueuedTurnsAfterInterrupt) return;
+    thread.retainQueuedTurnsAfterInterrupt = true;
+    const result = await thread.session.execute({
+      type: "turn.cancel",
+      turnId: thread.activeTurnId,
+    });
+    if (result.ok) return;
+    thread.retainQueuedTurnsAfterInterrupt = false;
+    this.#diagnose(`External steer could not cancel the active Turn: ${result.error.message}`);
+  }
+
   #dispatchQueuedExternalTurn(thread: ExternalThread): void {
     if (thread.running) return;
-    const next = thread.queuedTurnStarts.shift();
-    if (!next) return;
-    void this.#startExternalTurn(next, thread).catch((error) => {
+    const head = thread.queuedTurnStarts[0];
+    if (!head) return;
+    if (isDetachedSteerClone(head)) {
+      const next = thread.queuedTurnStarts.shift();
+      if (!next) return;
+      void this.#startExternalTurn(next, thread).catch((error) => {
+        this.#diagnose(error);
+      });
+      return;
+    }
+    const batch: JsonRpcRequest[] = [];
+    while (thread.queuedTurnStarts[0] && !isDetachedSteerClone(thread.queuedTurnStarts[0])) {
+      const item = thread.queuedTurnStarts.shift();
+      if (item) batch.push(item);
+    }
+    const [first, ...rest] = batch;
+    if (!first) return;
+    if (rest.length === 0) {
+      void this.#startExternalTurn(first, thread).catch((error) => {
+        this.#diagnose(error);
+      });
+      return;
+    }
+    let combinedText: string;
+    try {
+      combinedText = batch.map((queued) => requestText(requestObject(queued))).join("\n\n");
+    } catch (error) {
+      void Promise.all(
+        batch.map((queued) => this.#writer.json(rpcError(queued, -32602, errorMessage(error)))),
+      ).then(() => this.#dispatchQueuedExternalTurn(thread));
+      return;
+    }
+    const combined: JsonRpcRequest = {
+      ...first,
+      params: { ...requestObject(first), input: [{ type: "text", text: combinedText }] },
+    };
+    void this.#startExternalTurn(combined, thread, rest).catch((error) => {
       this.#diagnose(error);
     });
   }

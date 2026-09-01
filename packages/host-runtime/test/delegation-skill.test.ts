@@ -72,13 +72,17 @@ describe("delegation Skill installation", () => {
   });
 
   it("routes natural agent requests and points execution to the authoritative help", () => {
-    expect(CODEXHOST_DELEGATION_SKILL).toContain("version: 4");
+    expect(CODEXHOST_DELEGATION_SKILL).toContain("version: 5");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("Claude Code, Pi, Codex/OpenAI, OMP, Grok");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("codexhost delegate --help");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("sole authoritative source");
+    expect(CODEXHOST_DELEGATION_SKILL).toContain("waiting, reading, listing, and renaming");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("send a follow-up message");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("cancel its current Turn");
+    expect(CODEXHOST_DELEGATION_SKILL).toContain("list extra processes");
+    expect(CODEXHOST_DELEGATION_SKILL).toContain("rename the Thread");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("target keeps its default");
     expect(CODEXHOST_DELEGATION_SKILL).not.toContain("--timeout-ms");
+    expect(CODEXHOST_DELEGATION_SKILL).not.toContain("--all");
   });
 });

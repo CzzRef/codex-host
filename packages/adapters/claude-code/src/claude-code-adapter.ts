@@ -50,6 +50,8 @@ import {
   type TurnOutcome,
   type TurnStartAccepted,
   type TurnStartCommand,
+  type TurnSteerAccepted,
+  type TurnSteerCommand,
 } from "@codexhost/harness-adapter";
 import {
   harnessCommandCatalogSchema,
@@ -462,6 +464,7 @@ class ClaudeHarnessSession implements HarnessSession {
     },
     history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
     subagents: { observe: true, readTranscript: true },
+    turns: { steer: true },
   };
   readonly commands: HarnessCommandCapability;
   readonly initialState: HarnessSessionState;
@@ -619,6 +622,7 @@ class ClaudeHarnessSession implements HarnessSession {
   }
 
   execute(command: TurnStartCommand): Promise<HarnessResult<TurnStartAccepted>>;
+  execute(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>>;
   execute(command: TurnCancelCommand): Promise<HarnessResult<TurnCancelAccepted>>;
   execute(command: InteractionRespondCommand): Promise<HarnessResult<InteractionRespondAccepted>>;
   execute(command: ModelSelectCommand): Promise<HarnessResult<ModelSelectCompleted>>;
@@ -631,6 +635,7 @@ class ClaudeHarnessSession implements HarnessSession {
   ): Promise<
     HarnessResult<
       | TurnStartAccepted
+      | TurnSteerAccepted
       | TurnCancelAccepted
       | InteractionRespondAccepted
       | ModelSelectCompleted
@@ -642,6 +647,7 @@ class ClaudeHarnessSession implements HarnessSession {
       return { ok: false, error: invalidState("Claude Code Session is not open") };
     }
     if (command.type === "turn.cancel") return this.#cancel(command);
+    if (command.type === "turn.steer") return this.#steer(command);
     if (command.type === "interaction.respond") return this.#respond(command);
     if (command.type === "model.select") return this.#selectModel(command);
     if (command.type === "permissionMode.select") return this.#selectPermissionMode(command);
@@ -1150,6 +1156,41 @@ class ClaudeHarnessSession implements HarnessSession {
         error: {
           code: "nativeFailure",
           message: "Claude Code Interaction response failed",
+          retryable: false,
+        },
+      };
+    }
+  }
+
+  #steer(command: TurnSteerCommand): HarnessResult<TurnSteerAccepted> {
+    const active = this.#active;
+    const transport = this.#transport;
+    if (!active || active.command.turnId !== command.turnId || !transport) {
+      return {
+        ok: false,
+        error: invalidState("Claude Code Turn steer must reference the active Turn"),
+      };
+    }
+    const text = command.input.map((input) => input.text).join("\n");
+    if (text.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: "invalidRequest",
+          message: "Claude Code steer input must not be empty",
+          retryable: false,
+        },
+      };
+    }
+    try {
+      transport.steer(text, this.#randomUUID());
+      return { ok: true, value: { accepted: true } };
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: "nativeFailure",
+          message: error instanceof Error ? error.message : "Claude Code steer failed",
           retryable: false,
         },
       };
@@ -2315,6 +2356,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
             },
             history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
             subagents: { observe: true, readTranscript: true },
+            turns: { steer: true },
           },
         };
       }
@@ -2331,6 +2373,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
           },
           history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
           subagents: { observe: true, readTranscript: true },
+          turns: { steer: true },
         },
       };
     } catch (error) {

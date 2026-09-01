@@ -48,6 +48,8 @@ import {
   type TurnOutcome,
   type TurnStartAccepted,
   type TurnStartCommand,
+  type TurnSteerAccepted,
+  type TurnSteerCommand,
 } from "@codexhost/harness-adapter";
 import {
   harnessCommandCatalogSchema,
@@ -173,6 +175,7 @@ interface ActiveTurn {
   completedItems: HostItemSnapshot[];
   approvals: Map<HostInteractionId, ActiveApproval>;
   cancellationRequested: boolean;
+  pendingSteers: string[];
   beforeNativeTurnKeys: Set<string>;
   completion: Promise<void>;
   resolveCompletion(): void;
@@ -200,6 +203,7 @@ function capabilitiesForModels(modelState: GrokModelState): HarnessSessionCapabi
       selectPermissionMode: true,
     },
     history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
+    turns: { steer: true },
   };
 }
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
@@ -398,6 +402,7 @@ class GrokHarnessSession implements HarnessSession {
 
   execute(command: HarnessCommandInvocation): Promise<HarnessResult<HarnessCommandAccepted>>;
   execute(command: TurnStartCommand): Promise<HarnessResult<TurnStartAccepted>>;
+  execute(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>>;
   execute(command: TurnCancelCommand): Promise<HarnessResult<TurnCancelAccepted>>;
   execute(command: InteractionRespondCommand): Promise<HarnessResult<InteractionRespondAccepted>>;
   execute(command: ModelSelectCommand): Promise<HarnessResult<ModelSelectCompleted>>;
@@ -410,6 +415,7 @@ class GrokHarnessSession implements HarnessSession {
   ): Promise<
     HarnessResult<
       | TurnStartAccepted
+      | TurnSteerAccepted
       | TurnCancelAccepted
       | InteractionRespondAccepted
       | ModelSelectCompleted
@@ -422,6 +428,7 @@ class GrokHarnessSession implements HarnessSession {
       return { ok: false, error: invalidState("Grok Session is not open") };
     if ("commandId" in command) return this.#executeHarnessCommand(command);
     if (command.type === "turn.cancel") return this.#cancel(command);
+    if (command.type === "turn.steer") return this.#steer(command);
     if (command.type === "interaction.respond") return this.#respond(command);
     if (command.type === "model.select") return this.#selectModel(command);
     if (command.type === "thinking.select") return this.#selectThinking(command);
@@ -469,6 +476,7 @@ class GrokHarnessSession implements HarnessSession {
       completedItems: [],
       approvals: new Map(),
       cancellationRequested: false,
+      pendingSteers: [],
       beforeNativeTurnKeys: new Set(
         this.#snapshot.turns.map((turn) => turn.nativeTurnRef.nativeTurnKey),
       ),
@@ -562,6 +570,7 @@ class GrokHarnessSession implements HarnessSession {
       completedItems: [],
       approvals: new Map(),
       cancellationRequested: false,
+      pendingSteers: [],
       beforeNativeTurnKeys: new Set(),
       completion,
       resolveCompletion,
@@ -769,6 +778,26 @@ class GrokHarnessSession implements HarnessSession {
     } finally {
       this.#configuring = false;
     }
+  }
+
+  #steer(command: TurnSteerCommand): HarnessResult<TurnSteerAccepted> {
+    const active = this.#active;
+    if (!active || active.command.turnId !== command.turnId) {
+      return { ok: false, error: invalidState("Grok Turn steer must reference the active Turn") };
+    }
+    const text = command.input.map((input) => input.text).join("\n");
+    if (text.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: "invalidRequest",
+          message: "Grok steer input must not be empty",
+          retryable: false,
+        },
+      };
+    }
+    active.pendingSteers.push(text);
+    return { ok: true, value: { accepted: true } };
   }
 
   async #cancel(command: TurnCancelCommand): Promise<HarnessResult<TurnCancelAccepted>> {
@@ -1113,9 +1142,10 @@ class GrokHarnessSession implements HarnessSession {
     let history: GrokTransportEvent[] = [];
     let nativeTurnRef: NativeTurnRef | undefined;
     let checkpoint: NativeCheckpointRef | undefined;
+    let created: HostThreadSnapshot["turns"] = [];
     try {
       history = await this.#refreshSnapshot();
-      const created = this.#snapshot.turns.filter(
+      created = this.#snapshot.turns.filter(
         (turn) => !active.beforeNativeTurnKeys.has(turn.nativeTurnRef.nativeTurnKey),
       );
       if (created.length !== 1) {
@@ -1132,6 +1162,47 @@ class GrokHarnessSession implements HarnessSession {
     }
     await this.#refreshCredits().catch(() => undefined);
     await this.#refreshNativeTitle().catch(() => undefined);
+    if (
+      this.#active === active &&
+      !active.cancellationRequested &&
+      outcome.status === "succeeded" &&
+      active.pendingSteers.length > 0
+    ) {
+      this.#completeOpenItems(active, outcome);
+      for (const turn of created) {
+        active.beforeNativeTurnKeys.add(turn.nativeTurnRef.nativeTurnKey);
+      }
+      const next = active.pendingSteers.shift();
+      if (!next) {
+        this.#finish(
+          active,
+          checkpoint ? { ...outcome, checkpoint } : outcome,
+          sessionUsageFromHistory(history) ?? (response ? usageFromPrompt(response) : null),
+          nativeTurnRef,
+        );
+        return;
+      }
+      void this.#transport
+        .runTurn(
+          next,
+          (event) => this.#handleEvent(active, event),
+          (request) => this.#requestPermission(active, request),
+        )
+        .then(
+          (nextResponse) =>
+            this.#settleFromHistory(
+              active,
+              terminalOutcome(nextResponse, active.cancellationRequested),
+              nextResponse,
+            ),
+          (error) =>
+            this.#settleFromHistory(active, {
+              status: "failed",
+              error: normalizeError(error, "nativeFailure"),
+            }),
+        );
+      return;
+    }
     this.#finish(
       active,
       checkpoint ? { ...outcome, checkpoint } : outcome,
@@ -1155,13 +1226,7 @@ class GrokHarnessSession implements HarnessSession {
     this.#event({ type: "session.state.changed", state: this.#state });
   }
 
-  #finish(
-    active: ActiveTurn,
-    outcome: TurnOutcome,
-    usage: HostUsage | null = null,
-    nativeTurnRef?: NativeTurnRef,
-  ): void {
-    if (this.#active !== active) return;
+  #completeOpenItems(active: ActiveTurn, outcome: TurnOutcome): void {
     const itemOutcome: HostItemOutcome = outcome;
     this.#completeReasoning(active, itemOutcome);
     this.#completeAgent(active, itemOutcome);
@@ -1181,6 +1246,16 @@ class GrokHarnessSession implements HarnessSession {
         reason: "cancelled",
       });
     }
+  }
+
+  #finish(
+    active: ActiveTurn,
+    outcome: TurnOutcome,
+    usage: HostUsage | null = null,
+    nativeTurnRef?: NativeTurnRef,
+  ): void {
+    if (this.#active !== active) return;
+    this.#completeOpenItems(active, outcome);
     this.#active = null;
     if (usage) this.#publishUsage(usage, active.command.turnId);
     this.#event({
