@@ -7,7 +7,7 @@
 - 独立 Cursor ACP Adapter、公共 carrier/能力、Host 与 Renderer 接线、源码构建和受管入口安装。
 - Claude Code、Grok、Cursor 的独立真实回答通过；Claude/Grok 原生历史与恢复通过。
 - Cursor 仅当前 Host 保留实时投影；跨进程恢复、快照、Fork、rollback 明确不支持。
-- DSH 仅 inspection。Pi 已接入 Codex、Grok 两个独立订阅 OAuth；gpt-5.6-sol 与 grok-4.6 原生 CLI 均通过，默认仍为 openai-codex/gpt-5.6-sol，doctor 识别 11 个模型。OMP 18.0.11 已安装，Codex Sol 最小调用通过；当前 43 模型目录和 Codex 编排/核验、Claude 规划、Grok 执行路由已读回。OMP 内 Grok/Claude 调用及角色触发未逐项验收。
+- DSH 仅 inspection。Pi 已接入 Codex、Grok 两个独立订阅 OAuth；gpt-5.6-sol 与 grok-4.6 原生 CLI 均通过，默认仍为 openai-codex/gpt-5.6-sol，doctor 识别 11 个模型。Oh My Pi 已按用户要求卸载，doctor 为 `notInstalled`；本仓 OMP Adapter 源码保留。
 - 用户已经完成 Grok 二次验证；重新授权与 Pi 实际调用完成，无须再等待该授权，浏览器任务空间已关闭。Claude 的 Pi 额外计费未启用，原生 Claude Code Max 保留。
 - 当前 fork 的已验收代码、配置、首轮文档与格式已分十一批本地提交，本文所在提交完成最终收口；未推送。origin=CzzRef，upstream=BytePioneer-AI，GitHub 默认分支未改。
 
@@ -17,7 +17,7 @@
 
 一次性恢复任务已正常完成，结构化回执位于 `/Users/gdkmjd/.local/state/codexhost/restarts/01a055a0-cc69-7d41-8896-ae5fd7522fed/receipt.json`，状态为 `source_launch_verified`。源码 Launcher PID 53779、Desktop PID 53781、Host runtime、controller 与 descriptor 匹配；过程没有启动第二实例、注入旧应用、使用上游 dev-desktop 脚本、kill、清理 descriptor 或循环重试。
 
-当前源码启动和 Host runtime 为 `source-launch-verified`，用户确认已经接入。Agent 选择器各入口、审批 UI、真实跨 Agent 委派和 OMP 历史/Fork/rollback 仍需分别验收；回执与 doctor 不能替代这些行为证据。
+当前源码启动和 Host runtime 为 `source-launch-verified`，用户确认已经接入。Agent 选择器各入口、审批 UI 与真实跨 Agent 委派仍需分别验收；回执与 doctor 不能替代这些行为证据。OMP 产品已卸载，不再作为本机可运行 Harness。
 
 用户要求在 Pi 配置之后提醒继续安装 codexhost；实际源码版已经安装并启动，因此不重复克隆、覆盖本地 czz-dev 或再次重启。本次是用户明确授权后的单次 Desktop 切换，不创建定时、循环或登录自启任务。
 
@@ -39,4 +39,8 @@ OMP 的 `xai-oauth` 在官方授权完成后仍卡在 18.0.11 的设备令牌轮
 
 `czz-dev` 已把 OMP 普通 create/resume/fork 默认权限收紧到 `write`，并把 macOS runtime descriptor 新建文件收紧到 `0600`。OMP Adapter 26 项测试和 Rust 聚焦权限测试通过；A-5 早期全工作区构建被并行 Renderer Models 页面类型改动阻断，待并行 owner 完成后最终 `npm run build` 已全量通过。构建不会热替换当前 Desktop。
 
-当前源码 Launcher PID 29444、Desktop PID 29446，descriptor 为 schema-valid 普通文件、`0600`。最新回执 `/Users/gdkmjd/.local/state/codexhost/restarts/01a055a0-cc69-7d41-8896-ae5fd7522fed-omp-v2/receipt.json` 为 `source_launch_verified_after_live_recheck`；自动 OMP 校验的早期瞬态失败保留在嵌套记录，随后 live refresh 与 doctor 确认 OMP ready、43 模型、Sol xhigh、permission write。
+A-5 当时源码 Launcher PID 29444、Desktop PID 29446，descriptor 为 schema-valid 普通文件、`0600`。最新回执 `/Users/gdkmjd/.local/state/codexhost/restarts/01a055a0-cc69-7d41-8896-ae5fd7522fed-omp-v2/receipt.json` 为 `source_launch_verified_after_live_recheck`；自动 OMP 校验的早期瞬态失败保留在嵌套记录，随后 live refresh 与 doctor 确认 OMP ready、43 模型、Sol xhigh、permission write。
+
+## A-7 卸载 Oh My Pi
+
+用户于 2026-09-01 要求卸载 Oh My Pi、中断进行中任务、保留源码。OMP RPC 进程组已结束；`~/.local/bin/omp` 与 `~/.omp` 已删除。doctor 回读 `notInstalled`。Pi 与 Adapter 源码保留；Desktop 未因卸载重启；未提交或推送。

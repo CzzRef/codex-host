@@ -29,7 +29,7 @@
 | Cursor | `~/.local/bin/cursor-agent` | 新增 ACP Adapter；ask 模式、GPT-5.4 Mini 真实返回校验文本；仅当前 Host 进程保留可读历史。 |
 | DeepSeek Harness | 本机现有 `dsh` / Host | 检出 10 个模型；本次只验证发现与 inspection，未发送模型任务。 |
 | Pi | 本机现有 `pi` | 0.84.3；Codex/Grok 独立订阅 OAuth 均已接入，gpt-5.6-sol 与 grok-4.6 原生 CLI 实测通过；默认仍为 `openai-codex/gpt-5.6-sol`，doctor 为 ready、11 个模型。Claude 额外付费未启用。 |
-| OMP | `~/.local/bin/omp` | 官方 18.0.11 arm64；Codex Sol 最小调用通过；当前 43 模型目录含 Codex Sol、Grok 4.6、Claude Fable。角色路由为 Codex 顶层编排/核验、Claude 规划、Grok 执行；`anthropic/claude-fable-5` 与 `xai-oauth/grok-4.6` 已各通过一次隔离最小真实调用（`--no-session --no-tools`，低思考档）。 |
+| OMP | 已卸载 | 2026-09-01 用户要求卸载：`~/.local/bin/omp` 与 `~/.omp` 已删除；doctor `notInstalled` / `spawn omp ENOENT`。GitFork OMP Adapter 源码保留。历史 18.0.11 安装与角色路由见下文，不再表示本机仍可启动 `omp`。 |
 
 “CLI 可执行、inspection 就绪、真实回答、原生历史恢复、Desktop 界面验收”是不同层次。这里的真实调用发生在独立临时目录和本次创建的原生 Session 中；没有运行现有 Codex 任务。Desktop 已由源码激活，但 Agent 选择器、审批弹窗与实际跨 Agent 委派仍需独立验收。
 
@@ -43,9 +43,11 @@ Codex/Grok 原生登录文件内容前后相同，Claude Max 保持登录。A-2 
 
 ## OMP 续作
 
-OMP 18.0.11 通过官方 macOS arm64 Release 安装到 `~/.local/bin/omp`；本地 SHA-256 `88b4a3e68e19904b8fcc1ba4b319ef68795f4fe06a6d101d564fc482cb0cc252` 与 Release digest 相同。本机 Bun 1.3.11 低于 OMP 包声明的要求，因此没有升级或使用 Bun 安装路径。
+2026-09-01 用户要求卸载 Oh My Pi、中断进行中任务并保留源码。OMP RPC 进程组已 SIGTERM；`~/.local/bin/omp` 与 `~/.omp` 已删除。`codexhost doctor` 回读 `notInstalled`。Pi 与本仓 OMP Adapter 源码未删。Desktop / Host runtime 未因卸载重启。
 
-当前 OMP 角色路由：
+此前 OMP 18.0.11 曾通过官方 macOS arm64 Release 安装到 `~/.local/bin/omp`；本地 SHA-256 `88b4a3e68e19904b8fcc1ba4b319ef68795f4fe06a6d101d564fc482cb0cc252` 与 Release digest 相同。本机 Bun 1.3.11 低于 OMP 包声明的要求，因此没有升级或使用 Bun 安装路径。
+
+A-5 当时的 OMP 角色路由（卸载后配置目录已不存在）：
 
 ```yaml
 modelRoles:
@@ -59,7 +61,7 @@ modelRoles:
 
 `advisor.enabled=false`，所以顶层编排/核验使用 Codex、规划使用 Claude、执行型 task/smol 使用 Grok，但不会自动产生逐轮 Advisor 调用。`tools.approvalMode=write`；本分支 OMP Adapter 对普通 create、resume、fork 也默认传 `write`，显式 unattended full access 才映射 `yolo`。
 
-Host refresh 与 doctor 读回 OMP `ready`、43 个模型、默认 `openai-codex/gpt-5.6-sol:xhigh`、权限 `write`。OMP 内 Codex Sol、`anthropic/claude-fable-5`、`xai-oauth/grok-4.6` 各通过一次隔离最小真实调用（后两者在临时目录、`--no-session --no-tools --no-extensions --no-skills --no-rules`、低思考档下返回校验文本）；其余模型仍只是目录读回。初始 OAuth 前备份位于 `~/.omp/backups/20260901-080843-codexhost-subscriptions/`，角色调整前备份位于 `~/.omp/backups/20260901-0849-role-routing/`，敏感目录/文件保持 `0700/0600`。
+A-5 当时 Host refresh 与 doctor 读回 OMP `ready`、43 个模型、默认 `openai-codex/gpt-5.6-sol:xhigh`、权限 `write`。OMP 内 Codex Sol、`anthropic/claude-fable-5`、`xai-oauth/grok-4.6` 各通过一次隔离最小真实调用（后两者在临时目录、`--no-session --no-tools --no-extensions --no-skills --no-rules`、低思考档下返回校验文本）；其余模型仍只是目录读回。初始 OAuth 前备份曾位于 `~/.omp/backups/20260901-080843-codexhost-subscriptions/`，角色调整前备份曾位于 `~/.omp/backups/20260901-0849-role-routing/`；A-7 卸载时连同 `~/.omp` 一并删除。
 
 Codex 的模型隐藏设置只维护 Renderer 的可见 deny-list，不会禁止 OMP 按 `modelRoles` 使用隐藏模型；但若隐藏 OMP 默认模型，新建 UI 任务会把第一个仍可见模型作为该任务的显式主模型。要禁止模型实际被调用，应修改 OMP 角色或禁用 Provider。
 

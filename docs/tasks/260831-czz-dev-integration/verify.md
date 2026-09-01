@@ -41,7 +41,7 @@ Root 创建的七个代码批次均在提交前核对暂存路径、`diff --chec
 | Cursor | 专用 cursor-agent；已有登录；ACP v1；冷 inspection 不创建 Session、不伪造模型列表 | 独立临时目录，GPT-5.4 Mini/ask，预期校验文本通过，未请求工具审批；无需 authenticate | 公开 load 未回放历史，无稳定 NativeTurnRef；Adapter 显式 live-only，readSnapshot/resume/Fork/rollback unsupported |
 | DSH | 就绪，10 个模型 | 未发送任务 | 未实测 |
 | Pi | CLI 0.84.3；doctor 为 ready、11 个模型（Codex 7、Grok 4） | openai-codex/gpt-5.6-sol 模型层及默认设置的原生 CLI 请求通过；xai/grok-4.6 原生 CLI 请求通过且排除 API key；均无工具、无上下文文件、无保存会话 | 历史、Fork、rollback 与其余模型未实测；默认仍是 Codex；Claude 额外计费未启用 |
-| OMP | 18.0.11；doctor 为 ready、43 个模型；Codex/Grok/Claude 所需模型均可发现 | 默认 Codex Sol 的无工具、无上下文、无会话最小调用返回精确标记，约 4.5 秒；Grok/Claude 本轮只做目录和路由读回 | Host 报告 native history、跨目录 Fork、rollback；实际角色触发、Grok/Claude 调用和这些历史能力未实测 |
+| OMP | 已卸载；doctor `notInstalled` / `spawn omp ENOENT` | A-4/A-5 曾验收 18.0.11 安装、Codex Sol 最小调用与 43 模型目录 | 产品二进制与 `~/.omp` 已删除；Adapter 源码保留 |
 
 Claude 初次 plan 模式虽到达原生 terminal，但没有返回预期校验文本，因此不计作内容验收；后续 default 模式的独立校验通过。原生状态、内容正确性与历史恢复分开记录。
 
@@ -69,7 +69,7 @@ Claude 初次 plan 模式虽到达原生 terminal，但没有返回预期校验�
 | Host 发布 bundle 审计 | 通过 | 本地 bundle 构建，无发布或推送 |
 | 双层拒绝保护 | 真实只读 PID 检查、合成 guard、Rust 状态回归通过 | 不通过运行 launch 验证；底层竞态和锁分支另经只读审查 |
 | 第二次源码启动回执 | `source_launch_verified_after_live_recheck`；Launcher PID 29444、Desktop PID 29446、Host runtime/controller/Renderer 匹配，descriptor `0600` | 自动 OMP 校验曾瞬态失败并被保留；现场 refresh 与 doctor 复核通过，仍不证明真实委派 |
-| OMP 安装、角色与 Adapter | Release digest、arm64 文件、Codex 最小调用、43 模型目录、最终角色读回、默认 `write` 与 26 项 Adapter 测试通过 | OMP 内 Grok/Claude 实际调用、角色触发、历史/Fork/rollback 未逐项运行 |
+| OMP 安装、角色与 Adapter | A-4/A-5 曾通过 Release digest、arm64 文件、Codex 最小调用、43 模型目录、最终角色读回、默认 `write` 与 26 项 Adapter 测试 | A-7 已卸载产品；Adapter 源码仍在仓内 |
 | 分批提交前回归 | 16 个 Vitest 文件、220 项通过；源码启动 Vitest 4 项通过；两个 Rust 目标用例实际执行并通过；随后完整 TypeScript、Renderer、Rust 构建通过 | 结论覆盖前六批源码；后续外部会话交互批次由下一行单独覆盖 |
 | 外部会话交互回归 | 8 个 Vitest 文件、345 项通过；随后完整 TypeScript、Renderer 与 Rust 构建通过 | 覆盖原生标题、后续回合排队、Steer 拒绝及受影响 Adapter；构建不热替换当前 Desktop |
 
@@ -77,14 +77,22 @@ Claude 初次 plan 模式虽到达原生 terminal，但没有返回预期校验�
 
 ## OMP 续作核验
 
-- 官方 `v18.0.11` macOS arm64 发布件安装到 `~/.local/bin/omp`；本地 SHA-256 与 Release digest 一致，本机 Bun 1.3.11 未升级。
-- 当前 43 模型目录含 `openai-codex/gpt-5.6-sol`、`xai-oauth/grok-4.6`、`anthropic/claude-fable-5`。用户要求的角色读回为：default=Codex Sol xhigh，plan=Claude Fable xhigh，slow=Codex Sol max，advisor=Codex Sol xhigh，task/smol=Grok 4.6 xhigh；Advisor 保持 disabled。
+以下为 A-4/A-5 当时核验，已被 A-7 卸载取代。
+
+- 官方 `v18.0.11` macOS arm64 发布件当时安装到 `~/.local/bin/omp`；本地 SHA-256 与 Release digest 一致，本机 Bun 1.3.11 未升级。
+- A-5 当时 43 模型目录含 `openai-codex/gpt-5.6-sol`、`xai-oauth/grok-4.6`、`anthropic/claude-fable-5`。当时角色读回为：default=Codex Sol xhigh，plan=Claude Fable xhigh，slow=Codex Sol max，advisor=Codex Sol xhigh，task/smol=Grok 4.6 xhigh；Advisor 保持 disabled。
 - OMP Adapter 普通 create、resume、fork 的默认权限已从 `yolo` 改为 `write`，显式 unattended full access 仍保留；独立构建、26 项测试、lint 和格式检查通过。
 - macOS runtime descriptor 的新建临时文件使用 `0600`，新建 launcher guard 也使用私有模式；聚焦 Rust 测试和 Launcher 构建通过。当前 descriptor 实测为普通文件、schema valid、`0600`。
 - 第二次正常激活后的源码 Launcher PID 29444、Desktop PID 29446。一次性脚本的 OMP 早期目录判断曾超时，原始失败码保留；随后相同 live Host 的 refresh 与 doctor 读回 OMP ready、43 模型、Sol xhigh、permission write，整体回执更新为 live-recheck verified。
 - 全工作区构建在 A-5 早期被并行的 Renderer Models 页面类型改动阻断，本任务没有修改该写集；并行 owner 完成后再次执行 `npm run build`，TypeScript、Renderer 四个 bundle 与全部 Rust 包通过。构建不等于当前进程热替换，运行态证据仍来自第二次激活。
-- `~/.omp` 敏感目录/文件保持 `0700/0600`。初始 OAuth 前备份在 `~/.omp/backups/20260901-080843-codexhost-subscriptions/`，角色变更前配置备份在 `~/.omp/backups/20260901-0849-role-routing/`；没有打开日志或数据库正文。
+- A-5 当时 `~/.omp` 敏感目录/文件保持 `0700/0600`。初始 OAuth 前备份在 `~/.omp/backups/20260901-080843-codexhost-subscriptions/`，角色变更前配置备份在 `~/.omp/backups/20260901-0849-role-routing/`；没有打开日志或数据库正文。A-7 卸载时这些路径已删除。
+
+## A-7 卸载核验
+
+- 用户要求卸载 Oh My Pi、中断进行中任务、保留源码。OMP RPC 进程组 31083 已 SIGTERM；`~/.local/bin/omp` 与 `~/.omp` 不存在；`command -v omp` 为空。
+- `codexhost doctor`：OMP `status=notInstalled`，`errorCode=notInstalled`，`message=spawn omp ENOENT`。Pi 仍 `ready`、11 个模型；Desktop `running=true`。未重启 Host。
+- GitFork `packages/adapters/omp` 与 CodeNote 研究档案保留。本机未发现独立 `can1357/oh-my-pi` git clone。
 
 ## 剩余运行态验收项
 
-第二次源码启动、进程身份、descriptor 0600 与 OMP 角色目录已经通过。后续按需检查 Agent 选择、显式审批、真实跨 Agent 委派、OMP 是否实际以 Claude 规划/Codex 核验/Grok 执行，以及 Cursor live-only 与重启后明确失败的行为。模型隐藏不是禁用；真正禁止调用需调整 OMP 角色或禁用 Provider。
+第二次源码启动、进程身份与 descriptor 0600 已经通过。OMP 产品已卸载，不再作为本机可运行 Harness。后续按需检查其余 Agent 选择、显式审批、真实跨 Agent 委派，以及 Cursor live-only 与重启后明确失败的行为。

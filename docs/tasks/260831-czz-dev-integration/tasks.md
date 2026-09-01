@@ -13,6 +13,7 @@
 | U7 | 用户授权续作：OMP 安装与订阅配置 | OMP 18.0.11 ready；Codex OAuth 与默认模型调用通过；初始 xAI 设备令牌轮询未闭环 |
 | U8 | 用户授权续作：OMP 多订阅路由、默认权限与第二次激活 | 43 模型目录；Codex/Claude/Grok 角色读回；write/0600/live runtime 通过；真实角色委派待验收 |
 | U9 | 用户授权续作：当前代码分批提交 | 十一批代码、配置、文档与格式提交完成；最终文档收口待本文提交，未 push |
+| U10 | 用户授权续作：卸载 Oh My Pi 并中断进行中任务 | 产品已卸载；doctor `notInstalled`；Adapter 源码保留；未 push |
 
 ## Material Execution Journal
 
@@ -47,6 +48,7 @@
 - macOS runtime descriptor 新建文件与新建 guard 使用 0600；聚焦 Rust 权限测试和 Launcher 构建通过。A-5 全工作区构建早期被并行 Renderer Models 页面类型改动阻断，Root 保留其写集；并行 owner 完成后最终全量构建通过。
 - 第二次正常激活后 Launcher PID 29444、Desktop PID 29446、descriptor 0600 与源码命令匹配。自动 OMP 校验早期曾瞬态失败，随后 live refresh 与 doctor 复核通过；回执同时保留初始失败和后续核验证据。未强制终止、清理 descriptor、读取数据库/日志正文或保存原始输出。
 - U9 先将已验收源码分为 Cursor Adapter、Host/协议、Renderer、外部线程、OMP 权限和 Launcher 六批本地提交。并行 Claude Code 在其写集完成后另提交 Cursor 包清单、源码启动配置、首轮文档与预览格式四批；Root 复核后再提交外部会话原生标题同步、后续回合排队与 Steer 拒绝一批。最终 8 个文件、345 项聚焦测试和全量构建通过；远端未 push。
+- U10：用户要求卸载 Oh My Pi、中断进行中任务、保留源码。对 OMP RPC 进程组 31083 SIGTERM 后删除 `~/.local/bin/omp` 与 `~/.omp`。doctor 回读 `notInstalled`；Pi 与本仓 Adapter 源码未动；Desktop 未重启；未提交、未推送。
 
 ## 用量
 

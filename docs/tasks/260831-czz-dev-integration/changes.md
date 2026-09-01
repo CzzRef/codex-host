@@ -79,3 +79,8 @@ executionPolicy: "default",
 - 并行 Claude Code 在配置与文档写集完成后提交 Cursor 包/工作区接线（`440da5a`）、源码启动配置（`0b7dce6`）、首轮文档（`3123d61`）和预览格式（`0b67c08`）；Root 保留这些提交并重新盘点。
 - 后续原生会话标题同步、外部线程后续回合排队与 Steer 显式拒绝在 `773290c` 提交；8 个受影响 Vitest 文件、345 项测试和完整 TypeScript/Renderer/Rust 构建通过。
 - 本文所在提交只做最终文档收口。GitFork 预期不再保留未提交改动，所有批次仍未 push。
+
+## A-7：卸载 Oh My Pi
+
+- 用户要求卸载产品、中断进行中任务、保留源码。OMP RPC 进程组 31083 已 SIGTERM；删除 `~/.local/bin/omp` 与 `~/.omp`。doctor 回读 `notInstalled`。
+- 更新本任务文档与 `docs/czz-dev.md` 的当前 Harness 状态；历史 U7/U8 安装记录保留。Adapter 源码未删。未提交、未推送。
