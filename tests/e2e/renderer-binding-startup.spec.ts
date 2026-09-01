@@ -77,6 +77,11 @@ const { outputFiles } = await build({
           inspectThread: unavailable,
           forkThread: unavailable,
           inspectThreadUsage: unavailable,
+          inspectThreadWorkspace: async ({ threadId }) => ({
+            threadId,
+            cwd: null,
+            repositories: [],
+          }),
           subscribeThreadUsage: () => {
             throw new Error("Usage notification transport is not ready");
           },

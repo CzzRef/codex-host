@@ -73,6 +73,9 @@ import {
 } from "./renderer-model-visibility-preference.js";
 import { installRendererSidebarAgentIcons } from "./renderer-sidebar-agent-icons.js";
 import { installRendererSettingsLifecycle } from "./renderer-settings-lifecycle.js";
+import { installRendererBranchWorktreeToggle } from "./renderer-branch-worktree-toggle.js";
+import { installRendererComposerPromptReuse } from "./renderer-composer-prompt-reuse.js";
+import { installRendererWorkspaceBar } from "./renderer-workspace-bar.js";
 import type {
   RendererConnectionDiagnostics,
   RendererConnectionSnapshot,
@@ -563,12 +566,18 @@ export function installRendererBindingProbe(
     getClient: (hostId) => modelClientForHost(hostId),
     getLocalAgent: localAgentForSidebarThread,
   });
+  const workspaceBar = installRendererWorkspaceBar({
+    getClient: () => modelControl,
+  });
+  const branchWorktreeToggle = installRendererBranchWorktreeToggle();
+  const promptReuse = installRendererComposerPromptReuse();
   let connectionDiagnostics: RendererConnectionDiagnostics | null = null;
   const settingsLifecycle = installRendererSettingsLifecycle(window, {
     getUpdateClient: () => modelControl,
     getConnectionDiagnostics: () => connectionDiagnostics,
     getModelCatalogClient: () => modelControl,
     onLocaleChange() {
+      workspaceBar.refresh();
       for (const mounted of mountedByComposer.values()) renderMounted(mounted);
     },
   });
@@ -2368,6 +2377,9 @@ export function installRendererBindingProbe(
       harnessAvailabilityByHost.clear();
       activeAvailabilityHostId = "local";
       sidebarAgentIcons.refresh();
+      workspaceBar.refresh();
+      branchWorktreeToggle.refresh();
+      promptReuse.refresh();
       void refreshHarnessAvailabilityForHost("local");
       reconcileHarnessAvailabilityHost();
       const connected = connectedComposers();
@@ -2400,6 +2412,9 @@ export function installRendererBindingProbe(
       modelControl = null;
       mutationObserver.disconnect();
       sidebarAgentIcons.dispose();
+      workspaceBar.dispose();
+      branchWorktreeToggle.dispose();
+      promptReuse.dispose();
       settingsLifecycle.dispose();
       document.removeEventListener("beforeinput", onBeforeInput, true);
       document.removeEventListener("submit", onSubmit, true);

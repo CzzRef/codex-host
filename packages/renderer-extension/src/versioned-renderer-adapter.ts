@@ -18,6 +18,8 @@ import {
   type ThreadOwnershipListParams,
   type ThreadUsageInspection,
   type ThreadUsageInspectionParams,
+  type ThreadWorkspaceInspectParams,
+  type ThreadWorkspaceSnapshot,
 } from "@codexhost/shared-contracts";
 
 import type { RendererAgent } from "./agent-selection-state.js";
@@ -30,6 +32,7 @@ export {
   isCursorTransportModelId,
 } from "./cursor-renderer-models.js";
 import { installRendererForkControl } from "./renderer-fork-control.js";
+import type { ThreadConversationFileUpdate } from "./renderer-conversation-files.js";
 import {
   createRendererModelClient,
   createThreadUsageSubscriptionRelay,
@@ -879,8 +882,20 @@ export function installCurrentRendererAdapter(): {
       currentModelClient().executeThreadCommand(input),
     inspectThreadUsage: (input: ThreadUsageInspectionParams) =>
       currentModelClient().inspectThreadUsage(input),
+    inspectThreadWorkspace: (input: ThreadWorkspaceInspectParams) =>
+      currentModelClient().inspectThreadWorkspace(input),
     subscribeThreadUsage: (listener: (update: ThreadUsageInspection) => void) =>
       usageSubscription.subscribe(listener),
+    subscribeThreadWorkspace: (listener: (update: ThreadWorkspaceSnapshot) => void) => {
+      const subscribe = currentModelClient().subscribeThreadWorkspace;
+      if (!subscribe) throw new Error("Renderer workspace notification callback is unavailable");
+      return subscribe(listener);
+    },
+    subscribeThreadFileChanges: (listener: (update: ThreadConversationFileUpdate) => void) => {
+      const subscribe = currentModelClient().subscribeThreadFileChanges;
+      if (!subscribe) throw new Error("Renderer file-change notification callback is unavailable");
+      return subscribe(listener);
+    },
     listThreadOwnership: (input: ThreadOwnershipListParams) =>
       currentModelClient().listThreadOwnership(input),
     selectThreadModel: (input: ThreadModelSelectParams) =>
