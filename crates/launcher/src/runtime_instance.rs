@@ -6,6 +6,8 @@ use std::fs::{self, File};
 #[cfg(target_os = "linux")]
 use std::io::Read;
 use std::io::{self, Write};
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "linux")]
@@ -167,12 +169,13 @@ pub fn try_acquire_launcher_guard(path: &Path) -> io::Result<Option<LauncherGuar
     #[cfg(target_os = "linux")]
     let file = open_secure_file(path, SecureFileOpen::ReadWriteCreate)?;
     #[cfg(not(target_os = "linux"))]
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(path)?;
+    let file = {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(target_os = "macos")]
+        options.mode(0o600);
+        options.open(path)?
+    };
     match file.try_lock_exclusive() {
         Ok(()) => Ok(Some(LauncherGuard { file })),
         Err(error)
@@ -248,10 +251,15 @@ pub fn write_descriptor(path: &Path, descriptor: &RuntimeDescriptor) -> io::Resu
         #[cfg(target_os = "linux")]
         let mut file = open_secure_file(&temporary, SecureFileOpen::WriteNew)?;
         #[cfg(not(target_os = "linux"))]
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)?;
+        let mut file = {
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(target_os = "macos")]
+            options.mode(0o600);
+            options.open(&temporary)?
+        };
+        #[cfg(target_os = "macos")]
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
         file.write_all(&bytes)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
@@ -322,6 +330,8 @@ impl Drop for RuntimeDescriptorGuard {
 mod tests {
     use std::env;
     use std::fs;
+    #[cfg(target_os = "macos")]
+    use std::os::unix::fs::PermissionsExt;
     #[cfg(target_os = "linux")]
     use std::os::unix::fs::{PermissionsExt, symlink};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -458,6 +468,38 @@ mod tests {
             & 0o777;
         assert_eq!(directory_mode, 0o700);
         assert_eq!(file_mode, 0o600);
+        fs::remove_dir_all(parent).expect("remove fixture");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_runtime_files_are_private_when_created() {
+        let path = fixture_path("runtime-private");
+        let parent = path.parent().expect("fixture parent");
+        fs::create_dir_all(parent).expect("create fixture parent");
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o777))
+            .expect("make fixture parent permissive");
+
+        write_descriptor(&path, &descriptor(55)).expect("write private descriptor");
+        let descriptor_mode = fs::metadata(&path)
+            .expect("descriptor metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(descriptor_mode, 0o600);
+
+        let guard_path = parent.join("launcher.lock");
+        let guard = try_acquire_launcher_guard(&guard_path)
+            .expect("acquire launcher guard")
+            .expect("launcher guard owner");
+        let guard_mode = fs::metadata(&guard_path)
+            .expect("launcher guard metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(guard_mode, 0o600);
+
+        drop(guard);
         fs::remove_dir_all(parent).expect("remove fixture");
     }
 

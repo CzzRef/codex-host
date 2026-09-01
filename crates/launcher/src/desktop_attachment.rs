@@ -57,6 +57,12 @@ pub(super) fn acquire_launcher_ownership(
     if let Some(guard) = try_acquire_launcher_guard(&guard_path)? {
         return Ok(LauncherOwnership::Acquired(guard));
     }
+    if crate::source_refuses_running_desktop() {
+        return Err(
+            "Another codexhost Launcher owns the lock; source launch will not attach, stop it, or retry"
+                .into(),
+        );
+    }
 
     let descriptor_path = default_descriptor_path()?;
     let started = Instant::now();

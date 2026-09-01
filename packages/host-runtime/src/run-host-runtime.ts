@@ -69,6 +69,7 @@ export function hasLauncherManagedUpdateRuntime(
   environment: NodeJS.ProcessEnv,
   hostRuntimePath?: string,
 ): boolean {
+  if (environment.CODEXHOST_DISABLE_UPDATES === "1") return false;
   if (!environment[UPDATE_RUNTIME_ENV.launcherPid]) return false;
   const npmPackageRoot = environment[UPDATE_RUNTIME_ENV.npmPackageRoot];
   if (!npmPackageRoot || !hostRuntimePath) return true;

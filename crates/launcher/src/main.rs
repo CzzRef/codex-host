@@ -82,6 +82,8 @@ const NPM_UPDATE_RUNTIME_ENV: [&str; 4] = [
 const START_MENU_ARGUMENT: &str = "--start-menu";
 const READY_LINE: &str = "ready";
 const STARTUP_TRACE_ENV: &str = "CODEXHOST_STARTUP_TRACE";
+const DISABLE_UPDATES_ENV: &str = "CODEXHOST_DISABLE_UPDATES";
+const REFUSE_RUNNING_DESKTOP_ENV: &str = "CODEXHOST_REFUSE_RUNNING_DESKTOP";
 const CONTROLLER_STOP_GRACE: Duration = Duration::from_secs(1);
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 const DESKTOP_TREE_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
@@ -573,6 +575,9 @@ fn wait_for_desktop_exit(
 }
 
 fn should_stop_desktop_for_update(helper_started: bool) -> bool {
+    if env::var(DISABLE_UPDATES_ENV).as_deref() == Ok("1") {
+        return false;
+    }
     if helper_started {
         return true;
     }
@@ -583,6 +588,24 @@ fn should_stop_desktop_for_update(helper_started: bool) -> bool {
             false
         }
     }
+}
+
+fn source_refuses_running_desktop() -> bool {
+    env::var(REFUSE_RUNNING_DESKTOP_ENV).as_deref() == Ok("1")
+}
+
+fn validate_source_launch_preconditions(
+    refuse_existing: bool,
+    desktop_running: bool,
+    descriptor_present: bool,
+) -> Result<(), Box<dyn Error>> {
+    if refuse_existing && (desktop_running || descriptor_present) {
+        return Err(
+            "Source launch refuses an existing Codex Desktop or runtime descriptor; nothing was attached, stopped, restarted, or removed"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -858,6 +881,20 @@ fn desktop_environment(
         environment.push((OsString::from(STARTUP_TRACE_ENV), OsString::from("1")));
     }
     environment.extend(npm_update_runtime_environment(env::vars_os()));
+    if let Some(cli_path) = env::var_os(CODEXHOST_CLI_PATH_ENV)
+        && Path::new(&cli_path).is_absolute()
+    {
+        environment.push((OsString::from(CODEXHOST_CLI_PATH_ENV), cli_path));
+    }
+    if env::var(DISABLE_UPDATES_ENV).as_deref() == Ok("1") {
+        environment.push((OsString::from(DISABLE_UPDATES_ENV), OsString::from("1")));
+    }
+    if source_refuses_running_desktop() {
+        environment.push((
+            OsString::from(REFUSE_RUNNING_DESKTOP_ENV),
+            OsString::from("1"),
+        ));
+    }
     environment
 }
 
@@ -935,6 +972,11 @@ fn launch(
     startup_trace("resources resolved");
     let installation = discover_desktop(options.custom_install_root.as_deref())?;
     startup_trace("Codex Desktop installation discovered");
+    validate_source_launch_preconditions(
+        source_refuses_running_desktop(),
+        !desktop_root_process_ids_for_installation(&installation)?.is_empty(),
+        default_descriptor_path()?.try_exists()?,
+    )?;
     startup_trace("acquiring Launcher ownership");
     let _launcher_guard = match acquire_launcher_ownership(&installation, Duration::from_secs(120))?
     {
@@ -952,7 +994,12 @@ fn launch(
         let roots = desktop_root_process_ids_for_installation(&installation)?;
         let descriptor_path = default_descriptor_path()?;
         let descriptor = read_descriptor(&descriptor_path).ok().flatten();
-        let descriptor_present = descriptor_path.exists();
+        let descriptor_present = descriptor_path.try_exists()?;
+        validate_source_launch_preconditions(
+            source_refuses_running_desktop(),
+            !roots.is_empty(),
+            descriptor_present,
+        )?;
         let control_endpoint_ready = descriptor.as_ref().is_some_and(|descriptor| {
             endpoint_ready(descriptor.control_port, Duration::from_millis(300))
         });
@@ -1064,6 +1111,11 @@ fn launch(
     startup_trace("resources resolved");
     let installation = discover_desktop(options.custom_install_root.as_deref())?;
     startup_trace("Codex Desktop installation discovered");
+    validate_source_launch_preconditions(
+        source_refuses_running_desktop(),
+        !desktop_root_process_ids_for_installation(&installation)?.is_empty(),
+        default_descriptor_path()?.try_exists()?,
+    )?;
     startup_trace("acquiring Launcher ownership");
     let _launcher_guard = match acquire_launcher_ownership(&installation, Duration::from_secs(120))?
     {
@@ -1083,7 +1135,12 @@ fn launch(
     }
     let descriptor_path = default_descriptor_path()?;
     let descriptor = read_descriptor(&descriptor_path).ok().flatten();
-    let descriptor_present = descriptor_path.exists();
+    let descriptor_present = descriptor_path.try_exists()?;
+    validate_source_launch_preconditions(
+        source_refuses_running_desktop(),
+        !roots.is_empty(),
+        descriptor_present,
+    )?;
     let control_endpoint_ready = descriptor.as_ref().is_some_and(|descriptor| {
         endpoint_ready(descriptor.control_port, Duration::from_millis(300))
     });
@@ -1234,6 +1291,27 @@ mod tests {
     };
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use super::{DESKTOP_TREE_REFRESH_INTERVAL, desktop_tree_refresh_due};
+
+    #[test]
+    fn source_launch_refuses_existing_desktop_and_stale_or_active_descriptor() {
+        for (desktop, descriptor) in [(true, false), (false, true), (true, true)] {
+            let error = super::validate_source_launch_preconditions(true, desktop, descriptor)
+                .expect_err("source launch must not attach or recover an existing runtime");
+            assert!(error.to_string().contains("nothing was attached, stopped"));
+        }
+    }
+
+    #[test]
+    fn source_launch_accepts_only_clean_observation() {
+        super::validate_source_launch_preconditions(true, false, false)
+            .expect("a clean observation may proceed to guarded ownership acquisition");
+    }
+
+    #[test]
+    fn source_launch_guard_preserves_opt_out_launcher_policy() {
+        super::validate_source_launch_preconditions(false, true, true)
+            .expect("upstream launcher behavior is unchanged without the source flag");
+    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn throttles_full_desktop_tree_refreshes() {

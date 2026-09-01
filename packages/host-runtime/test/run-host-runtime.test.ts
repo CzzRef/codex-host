@@ -9,6 +9,14 @@ import {
 } from "../src/run-host-runtime.js";
 
 describe("Host Runtime composition", () => {
+  it("never starts automatic update preparation for the source launcher", () => {
+    expect(
+      hasLauncherManagedUpdateRuntime({
+        CODEXHOST_LAUNCHER_PID: "4321",
+        CODEXHOST_DISABLE_UPDATES: "1",
+      }),
+    ).toBe(false);
+  });
   it("shares one official listener across every remote Host session", () => {
     expect(
       createRemoteOfficialAppServerPlan(

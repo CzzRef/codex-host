@@ -285,6 +285,9 @@ fn transfer_lock_to_updater(pending: &PendingUpdate, updater_pid: u32) -> io::Re
 
 #[cfg(target_os = "macos")]
 pub(crate) fn start_pending_update(started_request: &mut Option<PathBuf>) -> io::Result<()> {
+    if std::env::var("CODEXHOST_DISABLE_UPDATES").as_deref() == Ok("1") {
+        return Ok(());
+    }
     if started_request.is_some() {
         return Ok(());
     }
