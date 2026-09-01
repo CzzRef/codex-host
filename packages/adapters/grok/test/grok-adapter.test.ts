@@ -23,6 +23,7 @@ import {
   GrokTransportError,
   GROK_SESSION_FORK_METHOD,
   type GrokAcpTransportLike,
+  type GrokInterjectResult,
   type GrokOpenInput,
   type GrokOpenResult,
   type GrokPermissionRequest,
@@ -58,6 +59,8 @@ class FakeGrokTransport implements GrokAcpTransportLike {
   readonly openCalls: GrokOpenInput[] = [];
   readonly compactCalls: Array<string | undefined> = [];
   readonly promptTexts: string[] = [];
+  readonly interjectTexts: string[] = [];
+  interjectImpl?: (text: string) => Promise<GrokInterjectResult>;
   readonly cancel = vi.fn(async () => undefined);
   readonly close = vi.fn(async () => undefined);
   readonly setModel = vi.fn(async () => undefined);
@@ -210,6 +213,12 @@ class FakeGrokTransport implements GrokAcpTransportLike {
       },
       options,
     });
+  }
+
+  async interject(text: string): Promise<GrokInterjectResult> {
+    if (this.interjectImpl) return this.interjectImpl(text);
+    this.interjectTexts.push(text);
+    return {};
   }
 
   finish(response: PromptResponse = { stopReason: "end_turn" }, historyUsage?: unknown): void {
@@ -444,7 +453,7 @@ describe("Grok Adapter ACP projection", () => {
     await resumed.adapter.close();
   });
 
-  it("keeps steer on the same Host Turn and starts the next native Prompt immediately", async () => {
+  it("keeps steer on the same Host Turn and injects via native interject immediately", async () => {
     const transport = new FakeGrokTransport();
     const opened = await openedSession(transport);
     const iterator = opened.session.outputs[Symbol.asyncIterator]();
@@ -464,12 +473,49 @@ describe("Grok Adapter ACP projection", () => {
       }),
     ).resolves.toEqual({ ok: true, value: { accepted: true } });
     expect(transport.promptTexts).toEqual(["first"]);
+    expect(transport.interjectTexts).toEqual(["second"]);
+    expect(transport.cancel).not.toHaveBeenCalled();
     transport.event({ type: "agent.text", text: "first-answer", messageId: "agent-1" });
     expect((await nextEvent(iterator)).type).toBe("item.started");
     expect((await nextEvent(iterator)).type).toBe("item.updated");
     transport.finish();
     expect((await nextEvent(iterator)).type).toBe("item.completed");
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+    });
+    expect(transport.promptTexts).toEqual(["first"]);
+    await opened.adapter.close();
+  });
+
+  it("cancels the in-flight Prompt and continues pending steer when native interject is unavailable", async () => {
+    const transport = new FakeGrokTransport();
+    transport.interjectImpl = async () => {
+      throw Object.assign(new Error("Method not found"), { code: -32601 });
+    };
+    transport.cancel.mockImplementation(async () => {
+      transport.finish({ stopReason: "cancelled" });
+    });
+    const opened = await openedSession(transport);
+    const iterator = opened.session.outputs[Symbol.asyncIterator]();
+    const turnId = hostTurnIdSchema.parse("turn-steer-fallback");
+
+    await opened.session.execute({
+      type: "turn.start",
+      turnId,
+      input: [{ type: "text", text: "first" }],
+    });
+    expect((await nextEvent(iterator)).type).toBe("turn.started");
+    await expect(
+      opened.session.execute({
+        type: "turn.steer",
+        turnId,
+        input: [{ type: "text", text: "second" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
     await vi.waitFor(() => expect(transport.promptTexts).toEqual(["first", "second"]));
+    expect(transport.cancel).toHaveBeenCalledOnce();
+    expect(transport.interjectTexts).toEqual([]);
     transport.event({ type: "agent.text", text: "second-answer", messageId: "agent-2" });
     expect((await nextEvent(iterator)).type).toBe("item.started");
     expect((await nextEvent(iterator)).type).toBe("item.updated");

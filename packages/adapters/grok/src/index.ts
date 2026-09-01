@@ -44,6 +44,19 @@ export {
   buildGrokRewindParams,
   parseGrokRewindResponse,
 } from "./grok-rewind.js";
+export {
+  GROK_INTERJECT_METHOD,
+  buildGrokInterjectParams,
+  parseGrokInterjectResult,
+} from "./grok-interject.js";
+export type { GrokInterjectParams, GrokInterjectResult } from "./grok-interject.js";
+export {
+  GROK_CODEXHOST_TITLE_OVERLAY_FILE,
+  parseGrokCodexhostTitleOverlay,
+  parseGrokSummaryTitle,
+  resolveGrokNativeTitle,
+} from "./grok-title-overlay.js";
+export type { GrokNativeTitle } from "./grok-title-overlay.js";
 export type { GrokRewindParams, GrokRewindResponse } from "./grok-rewind.js";
 export { GrokExecutableError, resolveGrokExecutable } from "./command.js";
 

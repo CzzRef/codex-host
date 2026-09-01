@@ -1,3 +1,4 @@
+import { watch, type FSWatcher } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -79,6 +80,8 @@ import {
   type GrokTransportEvent,
 } from "./acp-transport.js";
 import type { GrokCompactResult } from "./grok-manual-compaction.js";
+import type { GrokInterjectResult } from "./grok-interject.js";
+import { GROK_CODEXHOST_TITLE_OVERLAY_FILE } from "./grok-title-overlay.js";
 import { projectGrokFileChanges } from "./grok-file-change.js";
 import { forkGrokSession } from "./grok-fork.js";
 import { mapGrokReplay } from "./grok-history.js";
@@ -135,6 +138,7 @@ export interface GrokAcpTransportLike {
   getHistory(): Promise<GrokTransportEvent[]>;
   readHistory(sessionId: string, cwd?: string): Promise<GrokTransportEvent[]>;
   locateSession(sessionId: string): Promise<GrokNativeSessionLocation | null>;
+  sessionDirectory?(): string | null;
   deleteSession(sessionId: string): Promise<void>;
   runTurn(
     text: string,
@@ -145,6 +149,7 @@ export interface GrokAcpTransportLike {
     userContext: string | undefined,
     onEvent: (event: GrokTransportEvent) => void,
   ): Promise<GrokCompactResult>;
+  interject(text: string): Promise<GrokInterjectResult>;
   setModel(modelId: string, reasoningEffort?: string): Promise<void>;
   setPermissionMode(permissionModeId: HarnessPermissionModeId): Promise<void>;
   cancel(): Promise<void>;
@@ -303,6 +308,7 @@ class GrokHarnessSession implements HarnessSession {
   readonly #transport: GrokAcpTransportLike;
   #active: ActiveTurn | null = null;
   #closePromise: Promise<void> | null = null;
+  #titleWatch: FSWatcher | null = null;
   #configuring = false;
   #phase: SessionPhase = "open";
   #state: HarnessSessionState;
@@ -360,6 +366,8 @@ class GrokHarnessSession implements HarnessSession {
       state: this.#state,
     };
     this.outputs = this.#channel.outputs;
+    this.#watchNativeTitle();
+    void this.#refreshNativeTitle().catch(() => undefined);
   }
 
   currentConfiguration(): {
@@ -780,7 +788,7 @@ class GrokHarnessSession implements HarnessSession {
     }
   }
 
-  #steer(command: TurnSteerCommand): HarnessResult<TurnSteerAccepted> {
+  async #steer(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>> {
     const active = this.#active;
     if (!active || active.command.turnId !== command.turnId) {
       return { ok: false, error: invalidState("Grok Turn steer must reference the active Turn") };
@@ -797,7 +805,20 @@ class GrokHarnessSession implements HarnessSession {
       };
     }
     active.pendingSteers.push(text);
+    await this.#injectSteer(active, text);
     return { ok: true, value: { accepted: true } };
+  }
+
+  async #injectSteer(active: ActiveTurn, text: string): Promise<void> {
+    try {
+      await this.#transport.interject(text);
+      if (this.#active !== active || active.cancellationRequested) return;
+      const index = active.pendingSteers.indexOf(text);
+      if (index >= 0) active.pendingSteers.splice(index, 1);
+    } catch {
+      if (this.#active !== active || active.cancellationRequested) return;
+      await this.#transport.cancel().catch(() => undefined);
+    }
   }
 
   async #cancel(command: TurnCancelCommand): Promise<HarnessResult<TurnCancelAccepted>> {
@@ -1165,8 +1186,8 @@ class GrokHarnessSession implements HarnessSession {
     if (
       this.#active === active &&
       !active.cancellationRequested &&
-      outcome.status === "succeeded" &&
-      active.pendingSteers.length > 0
+      active.pendingSteers.length > 0 &&
+      (outcome.status === "succeeded" || outcome.status === "cancelled")
     ) {
       this.#completeOpenItems(active, outcome);
       for (const turn of created) {
@@ -1212,6 +1233,7 @@ class GrokHarnessSession implements HarnessSession {
   }
 
   async #refreshNativeTitle(): Promise<void> {
+    if (this.#phase !== "open") return;
     const sessionId = this.#transport.sessionId;
     if (!sessionId) return;
     const title = (await this.#transport.locateSession(sessionId))?.title;
@@ -1224,6 +1246,26 @@ class GrokHarnessSession implements HarnessSession {
     }
     this.#state = { ...this.#state, nativeTitle: title };
     this.#event({ type: "session.state.changed", state: this.#state });
+  }
+
+  #watchNativeTitle(): void {
+    const directory = this.#transport.sessionDirectory?.();
+    if (!directory) return;
+    try {
+      this.#titleWatch = watch(directory, { persistent: false }, (_event, filename) => {
+        const name = filename == null ? undefined : String(filename);
+        if (
+          name !== undefined &&
+          name !== GROK_CODEXHOST_TITLE_OVERLAY_FILE &&
+          name !== "summary.json"
+        ) {
+          return;
+        }
+        void this.#refreshNativeTitle().catch(() => undefined);
+      });
+    } catch {
+      this.#titleWatch = null;
+    }
   }
 
   #completeOpenItems(active: ActiveTurn, outcome: TurnOutcome): void {
@@ -1281,6 +1323,8 @@ class GrokHarnessSession implements HarnessSession {
   async #close(): Promise<void> {
     if (this.#phase === "closed") return;
     this.#phase = "closing";
+    this.#titleWatch?.close();
+    this.#titleWatch = null;
     const active = this.#active;
     if (active) {
       active.cancellationRequested = true;
