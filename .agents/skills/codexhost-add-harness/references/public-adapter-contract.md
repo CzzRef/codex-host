@@ -82,6 +82,7 @@ History 的详细要求见 [thread-lifecycle-and-history.md](thread-lifecycle-an
 - `subagents.observe`：输出标准 Subagent 生命周期。
 - `subagents.readTranscript`：Adapter 提供 `subagents.readSnapshot()`。
 - `autonomousTurns.observe`：能够输出不是由当前 Host `turn.start` 发起的原生 Turn。
+- `turns.steer`：允许对当前活动 Turn 执行 `turn.steer`，把追加用户输入注入该 Turn。
 
 能力为 false 时，相应命令或打开模式应返回 `unsupported`，不得执行部分操作。能力为 true 时，不能依赖 Harness 专用 Host 分支补齐语义。
 

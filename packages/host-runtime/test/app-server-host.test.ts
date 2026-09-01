@@ -1236,6 +1236,120 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("surfaces a pending Desktop question as delegation list input attention", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    await vi.waitFor(async () => expect(await fixture.mappingStore.listThreads()).toEqual([]));
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    const threadId = await startPiThread(fixture);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    session.askQuestionOnNextTurn(
+      {
+        id: "decision",
+        type: "choice",
+        prompt: "Choose",
+        options: [
+          { value: "continue-value", label: "Continue" },
+          { value: "stop-value", label: "Stop" },
+        ],
+        multiple: false,
+        allowOther: false,
+        optional: false,
+      },
+      { title: "Decision" },
+    );
+    const turnId = await startPiTurn(fixture, threadId);
+    const questionRequest = await fixture.collector.waitFor((message) =>
+      method(message, "item/tool/requestUserInput"),
+    );
+
+    const listExternal = async () => {
+      if (!delegationApi) throw new Error("Delegation API was not registered");
+      const pending = delegationApi.list({ cwd: "/synthetic", limit: 25, sort: "created-desc" });
+      const request = await readJsonLine(fixture.official.stdin);
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: request.id, result: { data: [], nextCursor: null } })}\n`,
+      );
+      const result = await pending;
+      return result.threads.find((thread) => thread.threadId === threadId);
+    };
+
+    await expect(listExternal()).resolves.toMatchObject({
+      status: "running",
+      attention: "input",
+    });
+
+    const requestIdValue = questionRequest.id;
+    if (typeof requestIdValue !== "number") throw new Error("Question request has no numeric ID");
+    writeRequest(fixture.desktopInput, {
+      id: requestIdValue,
+      result: { answers: { decision: { answers: ["Continue"] } } },
+    });
+    await vi.waitFor(() => expect(session.interactionResponses).toHaveLength(1));
+    const cleared = await listExternal();
+    expect(cleared).not.toHaveProperty("attention");
+
+    session.appendText("done");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    await stopFixture(fixture);
+  });
+
+  it("lists interrupted and failed extra-process status instead of collapsing to completed", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    const listExternal = async (threadId: string) => {
+      if (!delegationApi) throw new Error("Delegation API was not registered");
+      const pending = delegationApi.list({ cwd: "/synthetic", limit: 25, sort: "created-desc" });
+      const request = await readJsonLine(fixture.official.stdin);
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: request.id, result: { data: [], nextCursor: null } })}\n`,
+      );
+      const result = await pending;
+      return result.threads.find((thread) => thread.threadId === threadId);
+    };
+
+    const interruptedId = await startExternalThread(fixture, "codexhost/pi-native", 20);
+    const interruptedSession = fixture.adapter.sessions.at(-1);
+    if (!interruptedSession) throw new Error("Fake Pi Session was not opened");
+    const interruptedTurn = await startPiTurn(fixture, interruptedId, 21);
+    interruptedSession.completeCancellationOnRequest();
+    writeRequest(fixture.desktopInput, {
+      id: 22,
+      method: "turn/interrupt",
+      params: { threadId: interruptedId, turnId: interruptedTurn },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 22));
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/completed", interruptedTurn),
+    );
+    await expect(listExternal(interruptedId)).resolves.toMatchObject({ status: "interrupted" });
+
+    const failedId = await startExternalThread(fixture, "codexhost/pi-native", 24);
+    const failedSession = fixture.adapter.sessions.at(-1);
+    if (!failedSession) throw new Error("Fake Pi Session was not opened");
+    const failedTurn = await startPiTurn(fixture, failedId, 25);
+    failedSession.failTurn({ code: "nativeFailure", message: "probe", retryable: false });
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", failedTurn));
+    await expect(listExternal(failedId)).resolves.toMatchObject({ status: "failed" });
+
+    await stopFixture(fixture);
+  });
+
   it("sends and cancels follow-up Turns on an external delegated Thread", async () => {
     let delegationApi: DelegationControlApi | undefined;
     const fixture = createFixture({
@@ -2291,9 +2405,11 @@ describe("AppServerHost HarnessAdapter projection", () => {
       method: "thread/metadata/update",
       params: { threadId, isPinned: true },
     });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 53))).resolves.toEqual({
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 53)),
+    ).resolves.toMatchObject({
       id: 53,
-      result: {},
+      result: { thread: { id: threadId, isPinned: true } },
     });
     await expect(
       fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
@@ -2303,9 +2419,11 @@ describe("AppServerHost HarnessAdapter projection", () => {
       method: "thread/metadata/update",
       params: { threadId, isPinned: false },
     });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 59))).resolves.toEqual({
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 59)),
+    ).resolves.toMatchObject({
       id: 59,
-      result: {},
+      result: { thread: { id: threadId, isPinned: false } },
     });
     writeRequest(fixture.desktopInput, {
       id: 54,
@@ -2645,9 +2763,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     expect(await fixture.collector.waitFor((message) => requestId(message, 5))).toMatchObject({
       result: {},
     });
-    await vi.waitFor(() =>
-      expect(session.steeredInputs).toEqual(["steer one", "steer two"]),
-    );
+    await vi.waitFor(() => expect(session.steeredInputs).toEqual(["steer one", "steer two"]));
     expect(
       fixture.collector.messages.filter((message) => method(message, "turn/started")),
     ).toHaveLength(1);

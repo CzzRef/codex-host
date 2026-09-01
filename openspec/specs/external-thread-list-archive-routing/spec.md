@@ -136,8 +136,10 @@ Host SHALL handle `thread/metadata/update` with only `isPinned` for an External 
 
 #### Scenario: External Pin update is requested
 - **WHEN** `thread/metadata/update` references an External Thread and requests only `isPinned`
-- **THEN** Host SHALL persist the pin state in Mapping Store and answer with success
+- **THEN** Host SHALL persist the pin state in Mapping Store
+- **AND** it SHALL answer with `{ thread }` carrying that `isPinned` value, matching official Codex metadata-update results
 - **AND** the Native Session and loaded runtime SHALL remain intact
+- **AND** Host MUST NOT change persisted recency solely because of a pin update
 
 #### Scenario: Pin persistence fails
 - **WHEN** Mapping Store cannot commit the requested pin state

@@ -86,6 +86,7 @@ import type {
   DelegationStartResult,
   DelegationThreadListResult,
   DelegationThreadSnapshot,
+  DelegationThreadStatus,
   HarnessInspectInput,
   HarnessInspectResult,
   ThreadCancelInput,
@@ -1535,17 +1536,16 @@ export class AppServerHost {
           await this.#officialRequestBroker.request("thread/list", params),
         ),
     });
-    const pendingApprovalThreadIds = new Set<string>(
-      [...this.#pendingDesktopApprovals.values()].map(
-        (pending) => pending.thread.record.hostThreadId,
-      ),
-    );
     return {
       threads: result.data.flatMap((entry) => {
         if (typeof entry.id !== "string") return [];
         const record = records.find((candidate) => candidate.hostThreadId === entry.id);
-        const status =
-          isRecord(entry.status) && entry.status.type === "active" ? "running" : "completed";
+        const status = record
+          ? this.#delegationListStatus(entry.id, entry.status)
+          : isRecord(entry.status) && entry.status.type === "active"
+            ? "running"
+            : "completed";
+        const attention = record ? this.#delegationListAttention(entry.id) : undefined;
         return [
           {
             threadId: entry.id,
@@ -1555,11 +1555,11 @@ export class AppServerHost {
             // Only external Threads carry Host-owned unread; official rows
             // keep the Desktop's own unread authority and omit the field.
             ...(record ? { hasUnreadTurn: this.#externalUnreadThreadIds.has(entry.id) } : {}),
-            // A Turn blocked on a Desktop approval is caller-visible
-            // attention; consumers surface it instead of a plain "running".
-            ...(record && pendingApprovalThreadIds.has(entry.id)
-              ? { attention: "approval" as const }
-              : {}),
+            // A Turn blocked on a Desktop question or approval is
+            // caller-visible attention; consumers surface it instead of a
+            // plain "running". Questions map to input; approvals stay
+            // approval. A pending question wins when both exist.
+            ...(attention ? { attention } : {}),
             ...(typeof entry.cwd === "string" ? { cwd: entry.cwd } : {}),
             ...(typeof entry.name === "string"
               ? { title: entry.name }
@@ -2815,6 +2815,15 @@ export class AppServerHost {
       return;
     }
     const pinned = decoded.isPinned === true;
+    const sessionId =
+      location.thread?.sessionId ??
+      (await this.#repository.sessionTreeId(location.record).catch(() => null));
+    if (!sessionId) {
+      await this.#writer.json(
+        rpcError(request, -32081, "External Thread metadata could not be projected"),
+      );
+      return;
+    }
     let record: StoredThreadRecordV1;
     try {
       record = await this.#repository.setPinned(location.record.hostThreadId, pinned);
@@ -2824,12 +2833,22 @@ export class AppServerHost {
       );
       return;
     }
+    const projected = externalThreadValue({
+      record,
+      turns: location.thread?.turns ?? [],
+      sessionId,
+      ...(location.thread ? { running: location.thread.running } : { loaded: false }),
+    });
     if (location.thread) {
       location.thread.record = record;
-      location.thread.thread.isPinned = pinned;
-      location.thread.thread.updatedAt = unixSeconds();
+      location.thread.thread = {
+        ...location.thread.thread,
+        isPinned: pinned,
+      };
     }
-    await this.#writer.json(rpcEnvelope(request, { result: {} }));
+    // Official Codex returns { thread } so Desktop can keep the optimistic
+    // pinned-section move. An empty result makes the sidebar snap back.
+    await this.#writer.json(rpcEnvelope(request, { result: { thread: projected } }));
   }
 
   async #deleteExternalThread(
@@ -3515,9 +3534,7 @@ export class AppServerHost {
       return;
     }
     if (thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
-      await this.#writer.json(
-        rpcError(request, -32072, "External Thread follow-up queue is full"),
-      );
+      await this.#writer.json(rpcError(request, -32072, "External Thread follow-up queue is full"));
       return;
     }
     await this.#writer.json(rpcEnvelope(request, { result: {} }));
@@ -3793,6 +3810,30 @@ export class AppServerHost {
         status: status === "active" ? { type: "active", activeFlags: [] } : { type: "idle" },
       },
     });
+  }
+
+  #delegationListStatus(threadId: string, entryStatus: unknown): DelegationThreadStatus {
+    const thread = this.#externalRuntime.get(threadId);
+    if (thread) {
+      if (thread.running) return "running";
+      const last = thread.turns.at(-1);
+      const lastStatus = isRecord(last) ? last.status : undefined;
+      if (lastStatus === "failed") return "failed";
+      if (lastStatus === "interrupted" || lastStatus === "cancelled") return "interrupted";
+      if (last) return "completed";
+      return "creating";
+    }
+    return isRecord(entryStatus) && entryStatus.type === "active" ? "running" : "completed";
+  }
+
+  #delegationListAttention(threadId: string): "input" | "approval" | undefined {
+    for (const pending of this.#pendingDesktopQuestions.values()) {
+      if (pending.thread.record.hostThreadId === threadId) return "input";
+    }
+    for (const pending of this.#pendingDesktopApprovals.values()) {
+      if (pending.thread.record.hostThreadId === threadId) return "approval";
+    }
+    return undefined;
   }
 
   async #projectApproval(

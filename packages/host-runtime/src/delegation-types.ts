@@ -154,8 +154,9 @@ export interface DelegationThreadListItem {
    * Codex rows, whose unread authority stays with the Desktop. */
   hasUnreadTurn?: boolean;
   /** External Threads only: present while the current Turn is blocked on a
-   * pending Desktop approval. */
-  attention?: "approval";
+   * pending Desktop question (`input`) or approval (`approval`). A pending
+   * question wins when both exist. */
+  attention?: "approval" | "input";
   cwd?: string;
   title?: string;
   createdAt?: string;
