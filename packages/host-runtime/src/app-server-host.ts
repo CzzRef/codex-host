@@ -37,6 +37,8 @@ import {
   threadModelSelectParamsSchema,
   threadUsageInspectionParamsSchema,
   threadUsageInspectionSchema,
+  threadWorkspaceInspectParamsSchema,
+  threadWorkspaceSnapshotSchema,
   threadPermissionModeSelectParamsSchema,
   threadThinkingSelectParamsSchema,
   threadOwnershipListParamsSchema,
@@ -105,9 +107,11 @@ import {
   type OfficialAppServerConnection,
 } from "./official-app-server-connection.js";
 import type { HostUpdateCoordinator } from "./update-coordinator.js";
+import { createThreadWorkspaceWatch, inspectGitWorkspace } from "./thread-workspace.js";
 
 const SUBAGENT_TERMINAL_REFRESH_DELAYS_MS = [0, 50, 100, 150] as const;
 const THREAD_USAGE_UPDATED_METHOD = "codexhost/thread/usage/updated";
+const THREAD_WORKSPACE_UPDATED_METHOD = "codexhost/thread/workspace/updated";
 // Native Codex account quota is still pulled through its official API; keep
 // that reading briefly cached so concurrent Composer inspections coalesce.
 const OFFICIAL_RATE_LIMIT_TTL_MS = 15_000;
@@ -472,6 +476,12 @@ export class AppServerHost {
    * CLI's non-consuming reads. In-memory: a Host restart starts read. */
   #externalUnreadThreadIds = new Set<string>();
   #closeRequested = false;
+  #workspaceWatch = createThreadWorkspaceWatch((threadId) => {
+    void this.#writer.json({
+      method: THREAD_WORKSPACE_UPDATED_METHOD,
+      params: { threadId },
+    });
+  });
 
   constructor(options: AppServerHostOptions) {
     this.#options = {
@@ -541,6 +551,7 @@ export class AppServerHost {
   close(): void {
     if (this.#closeRequested) return;
     this.#closeRequested = true;
+    this.#workspaceWatch.dispose();
     this.#options.desktopInput.destroy();
     this.#terminateOfficial();
   }
@@ -659,6 +670,10 @@ export class AppServerHost {
       }
       if (request.method === "codexhost/thread/usage/inspect") {
         await this.#inspectThreadUsage(request);
+        continue;
+      }
+      if (request.method === "codexhost/thread/workspace/inspect") {
+        await this.#inspectThreadWorkspace(request);
         continue;
       }
       if (request.method === "codexhost/thread/ownership/list") {
@@ -1843,6 +1858,50 @@ export class AppServerHost {
       threadId: params.data.threadId,
       usage: resolution.thread.latestUsage,
       ...(credits ? { accountCredits: credits } : {}),
+    });
+    await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
+  }
+
+  async #inspectThreadWorkspace(request: JsonRpcRequest): Promise<void> {
+    const params = threadWorkspaceInspectParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      await this.#writer.json(
+        rpcError(request, -32602, "Invalid Thread workspace inspection params"),
+      );
+      return;
+    }
+    const location = await this.#externalRuntime.locate(params.data.threadId);
+    if (location.kind === "error") {
+      await this.#writer.json(rpcError(request, location.error.code, location.error.message));
+      return;
+    }
+    let cwd: string | null = null;
+    if (location.kind === "external") {
+      cwd = location.record.cwd;
+    } else {
+      try {
+        const response = await this.#officialRequestBroker.request("thread/read", {
+          threadId: params.data.threadId,
+          includeTurns: false,
+        });
+        if (!isRecord(response.error) && isRecord(response.result)) {
+          const thread = isRecord(response.result.thread) ? response.result.thread : null;
+          if (thread && typeof thread.cwd === "string" && thread.cwd.trim().length > 0) {
+            cwd = thread.cwd;
+          }
+        }
+      } catch {
+        cwd = null;
+      }
+    }
+    const inspection = cwd
+      ? await inspectGitWorkspace(cwd)
+      : { cwd: "", repositories: [], watchPaths: [] };
+    if (cwd) this.#workspaceWatch.track(params.data.threadId, inspection);
+    const result = threadWorkspaceSnapshotSchema.parse({
+      threadId: params.data.threadId,
+      cwd,
+      repositories: inspection.repositories,
     });
     await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
   }

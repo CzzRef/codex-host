@@ -188,6 +188,7 @@ describe("AppServerHost hermetic Claude projection", () => {
           steer: () => undefined,
           respondToInteraction: async () => undefined,
           abort: async () => undefined,
+          steer: () => undefined,
           close: async () => undefined,
         };
       },

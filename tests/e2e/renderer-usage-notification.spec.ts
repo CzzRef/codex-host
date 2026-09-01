@@ -95,6 +95,11 @@ const { outputFiles } = await build({
           inspectThread,
           forkThread: unavailable,
           inspectThreadUsage: unavailable,
+          inspectThreadWorkspace: async ({ threadId }) => ({
+            threadId,
+            cwd: null,
+            repositories: [],
+          }),
           subscribeThreadUsage: (listener) => {
             usageListener = listener;
             return () => {

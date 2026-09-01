@@ -97,6 +97,23 @@ export type {
   ThreadUsageSnapshot,
 } from "./thread-usage.js";
 export {
+  THREAD_WORKSPACE_BRANCH_MAX_LENGTH,
+  THREAD_WORKSPACE_NAME_MAX_LENGTH,
+  THREAD_WORKSPACE_PATH_MAX_LENGTH,
+  THREAD_WORKSPACE_REPOSITORY_MAX_LENGTH,
+  THREAD_WORKSPACE_SHA_MAX_LENGTH,
+  threadWorkspaceInspectParamsSchema,
+  threadWorkspaceRepositoryKindSchema,
+  threadWorkspaceRepositorySchema,
+  threadWorkspaceSnapshotSchema,
+} from "./thread-workspace.js";
+export type {
+  ThreadWorkspaceInspectParams,
+  ThreadWorkspaceRepository,
+  ThreadWorkspaceRepositoryKind,
+  ThreadWorkspaceSnapshot,
+} from "./thread-workspace.js";
+export {
   harnessIdSchema,
   hostInteractionIdSchema,
   hostItemIdSchema,

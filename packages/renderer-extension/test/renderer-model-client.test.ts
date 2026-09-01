@@ -142,13 +142,16 @@ describe("Renderer fixed Model request client", () => {
       "inspectThread",
       "inspectThreadCommands",
       "inspectThreadUsage",
+      "inspectThreadWorkspace",
       "listThreadOwnership",
       "readUpdateStatus",
       "selectThreadModel",
       "selectThreadPermissionMode",
       "selectThreadThinking",
       "startUpdate",
+      "subscribeThreadFileChanges",
       "subscribeThreadUsage",
+      "subscribeThreadWorkspace",
     ]);
 
     await expect(client.inspectHarness({ harnessId: piHarnessId, refresh: true })).resolves.toEqual(
