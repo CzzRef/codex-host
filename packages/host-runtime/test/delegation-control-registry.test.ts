@@ -66,6 +66,7 @@ function registration(threadId: string): DelegationControlRegistration {
       timedOut: true,
     })),
     list: vi.fn(async () => ({ threads: [], nextCursor: null })),
+    rename: vi.fn(async ({ threadId, name }) => ({ threadId, title: name })),
   };
 }
 

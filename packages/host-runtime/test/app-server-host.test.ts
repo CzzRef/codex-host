@@ -147,6 +147,12 @@ function threadStatus(message: JsonObject, threadId: string, type: string): bool
   );
 }
 
+function turnEventId(message: JsonObject): string {
+  const params = messageParams(message);
+  const turn = params.turn as JsonObject | undefined;
+  return typeof turn?.id === "string" ? turn.id : typeof params.turnId === "string" ? params.turnId : "";
+}
+
 function turnEvent(message: JsonObject, eventMethod: string, turnId: string): boolean {
   const params = messageParams(message);
   return (
@@ -1059,6 +1065,170 @@ describe("AppServerHost HarnessAdapter projection", () => {
         expect.objectContaining({ threadId: "native-thread", harnessId: "codex" }),
       ]),
     });
+    await stopFixture(fixture);
+  });
+
+  it("marks external unread on Turn completion and clears it on a Desktop view", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    await vi.waitFor(async () => expect(await fixture.mappingStore.listThreads()).toEqual([]));
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    const externalThreadId = await startPiThread(fixture);
+    await completePiTurn(fixture, externalThreadId, 41);
+
+    const listExternal = async () => {
+      if (!delegationApi) throw new Error("Delegation API was not registered");
+      const pending = delegationApi.list({ cwd: "/synthetic", limit: 25, sort: "created-desc" });
+      const request = await readJsonLine(fixture.official.stdin);
+      fixture.official.stdout.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: {
+            data: [
+              {
+                id: "native-thread",
+                cwd: "/synthetic",
+                name: "Native",
+                createdAt: 2_000,
+                updatedAt: 2_000,
+                status: { type: "idle" },
+              },
+            ],
+            nextCursor: null,
+          },
+        })}\n`,
+      );
+      const result = await pending;
+      return {
+        external: result.threads.find((thread) => thread.threadId === externalThreadId),
+        native: result.threads.find((thread) => thread.threadId === "native-thread"),
+      };
+    };
+
+    const unreadListing = await listExternal();
+    expect(unreadListing.external).toMatchObject({ hasUnreadTurn: true });
+    // Native rows keep the Desktop's own unread authority and omit the field.
+    expect(unreadListing.native).not.toHaveProperty("hasUnreadTurn");
+
+    writeRequest(fixture.desktopInput, {
+      id: 42,
+      method: "thread/read",
+      params: { threadId: externalThreadId, includeTurns: true },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 42));
+
+    const viewedListing = await listExternal();
+    expect(viewedListing.external).toMatchObject({ hasUnreadTurn: false });
+    await stopFixture(fixture);
+  });
+
+  it("follows a Desktop bypass into unattended full access with adapter fallback", async () => {
+    class RecordingAdapter extends FakeHarnessAdapter {
+      openedInputs: Parameters<FakeHarnessAdapter["open"]>[0][] = [];
+      rejectUnattended = false;
+
+      override async open(input: Parameters<FakeHarnessAdapter["open"]>[0]) {
+        this.openedInputs.push(input);
+        if (
+          this.rejectUnattended &&
+          input.kind === "create" &&
+          input.executionPolicy === "unattended-full-access"
+        ) {
+          return {
+            ok: false as const,
+            error: {
+              code: "unsupported" as const,
+              message: "unattended-full-access is not supported",
+              retryable: false,
+            },
+          };
+        }
+        return super.open(input);
+      }
+    }
+    const adapter = new RecordingAdapter(harnessIdSchema.parse("pi"));
+    const fixture = createFixture({ externalAdapters: new Map([["pi", adapter]]) });
+
+    await startExternalThread(fixture, "codexhost/pi-native", 1, {
+      approvalPolicy: "never",
+      sandbox: "danger-full-access",
+    });
+    expect(adapter.openedInputs[0]).toMatchObject({
+      executionPolicy: "unattended-full-access",
+    });
+
+    // A non-bypass Sandbox keeps the Adapter's native default behavior.
+    await startExternalThread(fixture, "codexhost/pi-native", 2, {
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+    });
+    expect(adapter.openedInputs[1]).toMatchObject({ executionPolicy: "default" });
+
+    // An Adapter that rejects the policy falls back instead of failing.
+    adapter.rejectUnattended = true;
+    await startExternalThread(fixture, "codexhost/pi-native", 3, {
+      approvalPolicy: "never",
+      sandbox: "danger-full-access",
+    });
+    const fallback = adapter.openedInputs.slice(-2);
+    expect(fallback[0]).toMatchObject({ executionPolicy: "unattended-full-access" });
+    expect(fallback[1]).toMatchObject({ executionPolicy: "default" });
+    await stopFixture(fixture);
+  });
+
+  it("surfaces a pending Desktop approval as delegation list attention", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    await vi.waitFor(async () => expect(await fixture.mappingStore.listThreads()).toEqual([]));
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    const threadId = await startPiThread(fixture);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    session.requestApprovalOnNextTurn("Allow native action?", "Attention probe");
+    const turnId = await startPiTurn(fixture, threadId);
+    const approvalRequest = await fixture.collector.waitFor((message) =>
+      method(message, "mcpServer/elicitation/request"),
+    );
+
+    const listExternal = async () => {
+      if (!delegationApi) throw new Error("Delegation API was not registered");
+      const pending = delegationApi.list({ cwd: "/synthetic", limit: 25, sort: "created-desc" });
+      const request = await readJsonLine(fixture.official.stdin);
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: request.id, result: { data: [], nextCursor: null } })}\n`,
+      );
+      const result = await pending;
+      return result.threads.find((thread) => thread.threadId === threadId);
+    };
+
+    await expect(listExternal()).resolves.toMatchObject({
+      status: "running",
+      attention: "approval",
+    });
+
+    writeRequest(fixture.desktopInput, {
+      id: approvalRequest.id as number,
+      result: { action: "accept", content: {}, _meta: null },
+    });
+    await vi.waitFor(() => expect(session.interactionResponses).toHaveLength(1));
+    const cleared = await listExternal();
+    expect(cleared).not.toHaveProperty("attention");
+
+    session.appendText("done");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
     await stopFixture(fixture);
   });
 
@@ -2211,6 +2381,34 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("renames an extra process through the delegation API and notifies Desktop", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    const threadId = await startPiThread(fixture);
+    await completePiTurn(fixture, threadId, 2);
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    await expect(
+      delegationApi.rename({ threadId, name: "260901-CodexHost完成态" }),
+    ).resolves.toEqual({ threadId, title: "260901-CodexHost完成态" });
+    await expect(
+      fixture.collector.waitFor(
+        (message) =>
+          method(message, "thread/name/updated") &&
+          messageParams(message).threadName === "260901-CodexHost完成态",
+      ),
+    ).resolves.toMatchObject({ params: { threadId, threadName: "260901-CodexHost完成态" } });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "260901-CodexHost完成态", titleSource: "native" });
+    await stopFixture(fixture);
+  });
+
   it("keeps a Desktop rename against generated titles until a native user rename", async () => {
     const fixture = createFixture();
     const threadId = await startPiThread(fixture);
@@ -2245,7 +2443,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("queues turn/start during an active Turn and rejects turn/steer explicitly", async () => {
+  it("queues turn/start and turn/steer during an active Turn as follow-up Turns", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
     fixture.official.stdin.on("data", officialWrite);
@@ -2259,16 +2457,24 @@ describe("AppServerHost HarnessAdapter projection", () => {
       method: "turn/start",
       params: { threadId, input: [{ type: "text", text: "queued follow-up" }] },
     });
+    // The Desktop sends turn/steer for a follow-up typed while a Turn runs
+    // and expects an immediate acknowledgement (the composer stays live and
+    // may steer repeatedly). The message itself joins the follow-up queue.
     writeRequest(fixture.desktopInput, {
       id: 4,
       method: "turn/steer",
-      params: { threadId, input: [{ type: "text", text: "steer now" }] },
+      params: { threadId, input: [{ type: "text", text: "steer one" }] },
     });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 4))).resolves.toMatchObject(
-      {
-        error: { code: -32076, message: "External Thread does not support turn/steer" },
-      },
-    );
+    const firstSteerAck = await fixture.collector.waitFor((message) => requestId(message, 4));
+    expect(firstSteerAck).toMatchObject({ result: {} });
+    writeRequest(fixture.desktopInput, {
+      id: 5,
+      method: "turn/steer",
+      params: { threadId, input: [{ type: "text", text: "steer two" }] },
+    });
+    const secondSteerAck = await fixture.collector.waitFor((message) => requestId(message, 5));
+    expect(secondSteerAck).toMatchObject({ result: {} });
+    // The held turn/start still answers only when its Turn actually starts.
     expect(fixture.collector.messages.some((message) => requestId(message, 3))).toBe(false);
     session.appendText("first answer");
     session.succeedTurn();
@@ -2283,6 +2489,45 @@ describe("AppServerHost HarnessAdapter projection", () => {
     session.succeedTurn();
     await fixture.collector.waitFor((message) =>
       turnEvent(message, "turn/completed", queuedTurn.id as string),
+    );
+    // Both steered messages become follow-up Turns in order, with no further
+    // responses owed to the Desktop.
+    for (const answer of ["third answer", "fourth answer"]) {
+      const started = await fixture.collector.waitFor(
+        (message) =>
+          method(message, "turn/started") &&
+          !fixture.collector.messages.some(
+            (candidate) =>
+              candidate !== message && turnEvent(candidate, "turn/completed", turnEventId(message)),
+          ),
+      );
+      const startedTurnId = turnEventId(started);
+      session.appendText(answer);
+      session.succeedTurn();
+      await fixture.collector.waitFor((message) =>
+        turnEvent(message, "turn/completed", startedTurnId),
+      );
+    }
+    // An idle Thread acknowledges and starts a steered message immediately.
+    writeRequest(fixture.desktopInput, {
+      id: 6,
+      method: "turn/steer",
+      params: { threadId, input: [{ type: "text", text: "steer idle" }] },
+    });
+    const idleAck = await fixture.collector.waitFor((message) => requestId(message, 6));
+    expect(idleAck).toMatchObject({ result: {} });
+    const idleStarted = await fixture.collector.waitFor(
+      (message) =>
+        method(message, "turn/started") &&
+        !fixture.collector.messages.some(
+          (candidate) =>
+            candidate !== message && turnEvent(candidate, "turn/completed", turnEventId(message)),
+        ),
+    );
+    session.appendText("fifth answer");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/completed", turnEventId(idleStarted)),
     );
     expect(officialWrite).not.toHaveBeenCalled();
     await stopFixture(fixture);

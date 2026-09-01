@@ -218,6 +218,34 @@ describe("delegation CLI", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("renames the current extra process through the Runtime", async () => {
+    const fetchImpl = successfulFetch({ threadId: "thread-1", title: "260901-CodexHost完成态" });
+    const output = new PassThrough();
+    await expect(
+      runDelegationCli({
+        arguments: ["thread", "rename", "--name", "260901-CodexHost完成态"],
+        environment: {
+          [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+          [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+          [DELEGATION_THREAD_ID_ENV]: "thread-1",
+        },
+        output,
+        fetchImpl,
+      }),
+    ).resolves.toBe(0);
+    const firstCall = vi.mocked(fetchImpl).mock.calls[0];
+    if (!firstCall) throw new Error("Runtime fetch was not called");
+    expect(String(firstCall[0])).toContain("/v1/thread/rename");
+    expect(JSON.parse(String(firstCall[1]?.body))).toEqual({
+      threadId: "thread-1",
+      name: "260901-CodexHost完成态",
+    });
+    expect(JSON.parse(outputText(output))).toEqual({
+      threadId: "thread-1",
+      title: "260901-CodexHost完成态",
+    });
+  });
+
   it("preserves structured Runtime errors", async () => {
     const diagnosticOutput = new PassThrough();
     const fetchImpl = vi.fn(

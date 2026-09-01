@@ -92,6 +92,8 @@ import type {
   ThreadCancelResult,
   ThreadListInput,
   ThreadReadInput,
+  ThreadRenameInput,
+  ThreadRenameResult,
   ThreadSendInput,
   ThreadSendResult,
 } from "./delegation-types.js";
@@ -454,6 +456,11 @@ export class AppServerHost {
   #writer: OrderedWriter;
   #subagentThreadStatuses = new Map<string, "active" | "idle">();
   #runningSubagentsByParent = new Map<string, Set<string>>();
+  /** External Threads whose latest finished Turn the Desktop has not viewed.
+   * Host-owned because the Desktop's persisted unread atom excludes external
+   * Threads; cleared by Desktop-side read/resume, never by the delegation
+   * CLI's non-consuming reads. In-memory: a Host restart starts read. */
+  #externalUnreadThreadIds = new Set<string>();
   #closeRequested = false;
 
   constructor(options: AppServerHostOptions) {
@@ -513,6 +520,7 @@ export class AppServerHost {
       read: (input) => this.#delegationCoordinator.read(input),
       wait: (input) => this.#delegationCoordinator.wait(input),
       list: (input) => this.#delegationCoordinator.list(input),
+      rename: (input) => this.#renameDelegationThread(input),
       canHandleStart: (input) => this.#canHandleDelegationStart(input),
       ownsThread: (threadId) => this.#ownsDelegationThread(threadId),
     });
@@ -887,6 +895,38 @@ export class AppServerHost {
         if (await this.#writeResolutionError(request, resolution)) continue;
         if (resolution.kind === "external") {
           await this.#interruptExternalTurn(request, resolution.thread, params.turnId);
+          continue;
+        }
+      }
+      if (request.method === "turn/steer") {
+        const params = requestObject(request);
+        const resolution =
+          typeof params.threadId === "string"
+            ? await this.#resolveExternalThread(params.threadId)
+            : ({ kind: "official" } as const);
+        if (await this.#writeResolutionError(request, resolution)) continue;
+        if (resolution.kind === "external") {
+          // Codex steering injects into the RUNNING native Turn and answers
+          // immediately — the composer stays live and the user may steer
+          // repeatedly. External Harnesses expose no mid-Turn injection, so
+          // the message joins the follow-up queue as a detached (null-id)
+          // turn/start clone and the steer request is acknowledged NOW.
+          // Holding the response instead froze the Desktop composer after
+          // the first follow-up.
+          if (resolution.thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
+            await this.#writer.json(
+              rpcError(request, -32072, "External Thread follow-up queue is full"),
+            );
+            continue;
+          }
+          resolution.thread.queuedTurnStarts.push({
+            jsonrpc: "2.0",
+            id: null,
+            method: "turn/start",
+            params: { threadId: params.threadId, input: params.input },
+          } as unknown as JsonRpcRequest);
+          await this.#writer.json(rpcEnvelope(request, { result: {} }));
+          this.#dispatchQueuedExternalTurn(resolution.thread);
           continue;
         }
       }
@@ -1511,6 +1551,11 @@ export class AppServerHost {
           await this.#officialRequestBroker.request("thread/list", params),
         ),
     });
+    const pendingApprovalThreadIds = new Set<string>(
+      [...this.#pendingDesktopApprovals.values()].map(
+        (pending) => pending.thread.record.hostThreadId,
+      ),
+    );
     return {
       threads: result.data.flatMap((entry) => {
         if (typeof entry.id !== "string") return [];
@@ -1523,6 +1568,14 @@ export class AppServerHost {
             harnessId: record ? (record.harnessId as ExternalHarnessId) : "codex",
             deepLink: `codex://threads/${entry.id}`,
             status,
+            // Only external Threads carry Host-owned unread; official rows
+            // keep the Desktop's own unread authority and omit the field.
+            ...(record ? { hasUnreadTurn: this.#externalUnreadThreadIds.has(entry.id) } : {}),
+            // A Turn blocked on a Desktop approval is caller-visible
+            // attention; consumers surface it instead of a plain "running".
+            ...(record && pendingApprovalThreadIds.has(entry.id)
+              ? { attention: "approval" as const }
+              : {}),
             ...(typeof entry.cwd === "string" ? { cwd: entry.cwd } : {}),
             ...(typeof entry.name === "string"
               ? { title: entry.name }
@@ -2340,17 +2393,33 @@ export class AppServerHost {
       return;
     }
 
-    const sessionResult = await adapter.open({
-      kind: "create",
-      cwd,
-      environment: {
-        ...(this.#options.environment ?? process.env),
-        [DELEGATION_THREAD_ID_ENV]: record.hostThreadId,
-      },
-      ...(requestedModel ? { model: requestedModel } : {}),
-      ...(requestedThinkingOptionId ? { thinkingOptionId: requestedThinkingOptionId } : {}),
-      ...(requestedPermissionModeId ? { permissionModeId: requestedPermissionModeId } : {}),
-    });
+    // A Desktop-level bypass (approval policy "never" plus danger-full-access
+    // Sandbox) follows into the created Harness Session as unattended full
+    // access, unless the caller explicitly selected a Permission Mode. The
+    // Adapter stays the authority: one that does not support the policy
+    // rejects it as "unsupported" and creation falls back to its native
+    // default instead of failing the Thread.
+    const followDesktopBypass =
+      !requestedPermissionModeId &&
+      (typeof params.approvalPolicy === "string" ? params.approvalPolicy : "never") === "never" &&
+      params.sandbox === "danger-full-access";
+    const openSession = (executionPolicy: "default" | "unattended-full-access") =>
+      adapter.open({
+        kind: "create",
+        cwd,
+        environment: {
+          ...(this.#options.environment ?? process.env),
+          [DELEGATION_THREAD_ID_ENV]: record.hostThreadId,
+        },
+        executionPolicy,
+        ...(requestedModel ? { model: requestedModel } : {}),
+        ...(requestedThinkingOptionId ? { thinkingOptionId: requestedThinkingOptionId } : {}),
+        ...(requestedPermissionModeId ? { permissionModeId: requestedPermissionModeId } : {}),
+      });
+    let sessionResult = await openSession(followDesktopBypass ? "unattended-full-access" : "default");
+    if (!sessionResult.ok && followDesktopBypass && sessionResult.error.code === "unsupported") {
+      sessionResult = await openSession("default");
+    }
     if (!sessionResult.ok) {
       this.#routeObservationTracker.rejectCreate(request.id);
       await this.#repository.removeProvisional(record.hostThreadId).catch(() => undefined);
@@ -2603,6 +2672,24 @@ export class AppServerHost {
     await this.#writer.json(rpcEnvelope(request, { result: threadRollbackResult(result.thread) }));
   }
 
+  async #persistExternalThreadName(
+    location: Extract<ExternalThreadLocation, { kind: "external" }>,
+    name: string,
+    source: "desktop" | "native",
+  ): Promise<StoredThreadRecordV1> {
+    const record = await this.#repository.setTitle(location.record.hostThreadId, name, source);
+    if (location.thread) {
+      location.thread.record = record;
+      location.thread.thread.name = name;
+      location.thread.thread.updatedAt = unixSeconds();
+    }
+    await this.#writer.json({
+      method: "thread/name/updated",
+      params: { threadId: location.record.hostThreadId, threadName: name },
+    });
+    return record;
+  }
+
   async #setExternalThreadName(
     request: JsonRpcRequest,
     location: Extract<ExternalThreadLocation, { kind: "external" }>,
@@ -2614,25 +2701,49 @@ export class AppServerHost {
       );
       return;
     }
-    let record: StoredThreadRecordV1;
     try {
-      record = await this.#repository.setTitle(location.record.hostThreadId, name);
+      await this.#persistExternalThreadName(location, name, "desktop");
     } catch {
       await this.#writer.json(
         rpcError(request, -32081, "External Thread title could not be persisted"),
       );
       return;
     }
-    if (location.thread) {
-      location.thread.record = record;
-      location.thread.thread.name = name;
-      location.thread.thread.updatedAt = unixSeconds();
-    }
     await this.#writer.json(rpcEnvelope(request, { result: {} }));
-    await this.#writer.json({
-      method: "thread/name/updated",
-      params: { threadId: location.record.hostThreadId, threadName: name },
-    });
+  }
+
+  async #renameDelegationThread(input: ThreadRenameInput): Promise<ThreadRenameResult> {
+    const name = input.name.trim();
+    if (!name) {
+      throw new DelegationControlError("INVALID_ARGUMENT", "Thread name must be a non-empty string");
+    }
+    const title = name.slice(0, 120);
+    const location = await this.#locateExternalThread(input.threadId);
+    if (location.kind !== "external") {
+      throw new DelegationControlError(
+        "THREAD_NOT_FOUND",
+        "Thread is not a Host-managed extra process",
+      );
+    }
+    if (
+      location.thread &&
+      location.record.titleSource === "desktop" &&
+      !this.#nativeTitleMayReplace(location.thread)
+    ) {
+      throw new DelegationControlError(
+        "INVALID_ARGUMENT",
+        "Thread title was set by hand in Desktop and will not be overwritten",
+      );
+    }
+    try {
+      await this.#persistExternalThreadName(location, title, "native");
+    } catch {
+      throw new DelegationControlError(
+        "INTERNAL_ERROR",
+        "External Thread title could not be persisted",
+      );
+    }
+    return { threadId: location.record.hostThreadId, title };
   }
 
   async #syncNativeThreadName(
@@ -2768,6 +2879,8 @@ export class AppServerHost {
     includeTurns: boolean,
     historyFresh: boolean,
   ): Promise<void> {
+    // A Desktop-side content read is the "viewed" signal for external unread.
+    if (includeTurns) this.#externalUnreadThreadIds.delete(thread.record.hostThreadId);
     if (includeTurns && thread.record.historyMode === "paginated") {
       await this.#writer.json(
         rpcError(request, -32602, "Paginated External Threads require thread/turns/list"),
@@ -2837,6 +2950,8 @@ export class AppServerHost {
     params: JsonObject,
     historyFresh: boolean,
   ): Promise<void> {
+    // Resuming is the Desktop opening the Thread; the unread mark is consumed.
+    this.#externalUnreadThreadIds.delete(thread.record.hostThreadId);
     if (!thread.running && !historyFresh) {
       const refreshed = await this.#refreshExternalThread(thread);
       if (refreshed) {
@@ -2946,9 +3061,13 @@ export class AppServerHost {
   }
 
   async #startExternalTurn(request: JsonRpcRequest, thread: ExternalThread): Promise<void> {
+    // A steered follow-up was already acknowledged at enqueue time; its clone
+    // carries a null id and every response for it must be suppressed instead
+    // of reaching the Desktop as an unmatched frame.
+    const writer = request.id === null ? { json: async () => undefined } : this.#writer;
     if (thread.running) {
       if (thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
-        await this.#writer.json(
+        await writer.json(
           rpcError(request, -32072, "External Thread already has an active Turn"),
         );
         return;
@@ -2965,11 +3084,11 @@ export class AppServerHost {
       try {
         route = decodeCreateRoute({ id: request.id, method: "thread/start", params });
       } catch (error) {
-        await this.#writer.json(rpcError(request, -32602, errorMessage(error)));
+        await writer.json(rpcError(request, -32602, errorMessage(error)));
         return;
       }
       if (route?.harnessId !== "codex" && route?.harnessId !== thread.harnessId) {
-        await this.#writer.json(
+        await writer.json(
           rpcError(request, -32602, "Turn Model carrier does not belong to the Thread Harness"),
         );
         return;
@@ -2979,13 +3098,13 @@ export class AppServerHost {
     try {
       text = requestText(params);
     } catch (error) {
-      await this.#writer.json(rpcError(request, -32602, errorMessage(error)));
+      await writer.json(rpcError(request, -32602, errorMessage(error)));
       return;
     }
     if (thread.session.commands) {
       const catalog = await thread.session.commands.list();
       if (!catalog.ok) {
-        await this.#writer.json(rpcError(request, -32073, catalog.error.message));
+        await writer.json(rpcError(request, -32073, catalog.error.message));
         return;
       }
       const matched = catalog.value.commands
@@ -3007,7 +3126,7 @@ export class AppServerHost {
           );
         } catch (error) {
           this.#diagnose(error);
-          await this.#writer.json(
+          await writer.json(
             rpcError(request, -32073, `External Harness command failed: ${errorMessage(error)}`),
           );
         }
@@ -3041,11 +3160,11 @@ export class AppServerHost {
       thread.projectedTurns.delete(turnId);
       thread.responseGates.delete(turnId);
       gate.resolve();
-      await this.#writer.json(rpcError(request, -32073, result.error.message));
+      await writer.json(rpcError(request, -32073, result.error.message));
       return;
     }
     try {
-      await this.#writer.json(
+      await writer.json(
         rpcEnvelope(request, { result: { turn: projection.projector.pendingTurn() } }),
       );
     } finally {
@@ -3295,6 +3414,10 @@ export class AppServerHost {
         thread.turns.push(result.completedTurn);
         thread.thread.updatedAt = completedAt;
         thread.thread.recencyAt = completedAt;
+        // The Desktop persists unread only for native Threads, so the Host is
+        // the sole owner of external unread. A finished non-ephemeral Turn is
+        // unread until the Desktop views the Thread again.
+        this.#externalUnreadThreadIds.add(thread.record.hostThreadId);
       }
       thread.historyHydrated = false;
       thread.running = false;
@@ -3344,6 +3467,9 @@ export class AppServerHost {
   async #flushQueuedExternalTurns(thread: ExternalThread, message: string): Promise<void> {
     const queued = thread.queuedTurnStarts.splice(0);
     for (const request of queued) {
+      // Steered clones were answered at enqueue time; only held turn/start
+      // requests still owe the Desktop an explicit failure.
+      if (request.id === null) continue;
       await this.#writer.json(rpcError(request, -32072, message));
     }
   }

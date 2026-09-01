@@ -10,6 +10,7 @@ import {
   type ThreadListInput,
   type ThreadSendInput,
   type ThreadReadInput,
+  type ThreadRenameInput,
   type ThreadWaitInput,
 } from "./delegation-types.js";
 
@@ -111,6 +112,9 @@ export async function startDelegationControlServer(input: {
           return;
         case "/v1/thread/list":
           writeJson(response, 200, await input.api.list(body as unknown as ThreadListInput));
+          return;
+        case "/v1/thread/rename":
+          writeJson(response, 200, await input.api.rename(body as unknown as ThreadRenameInput));
           return;
         default:
           throw new DelegationControlError("INVALID_ARGUMENT", "Unknown Runtime control route");

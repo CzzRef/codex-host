@@ -33,6 +33,7 @@ describe("delegation control server", () => {
         read: vi.fn(),
         wait: vi.fn(),
         list: vi.fn(),
+        rename: vi.fn(),
       },
     });
     try {
@@ -84,6 +85,7 @@ describe("delegation control server", () => {
         read: vi.fn(),
         wait: vi.fn(),
         list: vi.fn(),
+        rename: vi.fn(),
       },
     });
     try {
@@ -122,6 +124,7 @@ describe("delegation control server", () => {
         read: vi.fn(),
         wait: vi.fn(),
         list: vi.fn(),
+        rename: vi.fn(),
       },
     });
     try {
@@ -132,6 +135,37 @@ describe("delegation control server", () => {
       await fetch(`${server.endpoint}/v1/thread/cancel`, authorized({ threadId: "thread-1" }));
       expect(send).toHaveBeenCalledWith({ threadId: "thread-1", message: "continue" });
       expect(cancel).toHaveBeenCalledWith({ threadId: "thread-1" });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("dispatches thread rename", async () => {
+    const rename = vi.fn(async () => ({ threadId: "thread-1", title: "260901-CodexHost完成态" }));
+    const server = await startDelegationControlServer({
+      token,
+      api: {
+        inspect: vi.fn(),
+        start: vi.fn(),
+        send: vi.fn(),
+        cancel: vi.fn(),
+        read: vi.fn(),
+        wait: vi.fn(),
+        list: vi.fn(),
+        rename,
+      },
+    });
+    try {
+      const response = await fetch(
+        `${server.endpoint}/v1/thread/rename`,
+        authorized({ threadId: "thread-1", name: "260901-CodexHost完成态" }),
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        threadId: "thread-1",
+        title: "260901-CodexHost完成态",
+      });
+      expect(rename).toHaveBeenCalledWith({ threadId: "thread-1", name: "260901-CodexHost完成态" });
     } finally {
       await server.close();
     }
@@ -150,6 +184,7 @@ describe("delegation control server", () => {
         }),
         wait: vi.fn(),
         list: vi.fn(),
+        rename: vi.fn(),
       },
     });
     try {

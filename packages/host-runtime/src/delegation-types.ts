@@ -120,6 +120,16 @@ export interface ThreadWaitInput extends ThreadReadInput {
   timeoutMs: number;
 }
 
+export interface ThreadRenameInput {
+  threadId: string;
+  name: string;
+}
+
+export interface ThreadRenameResult {
+  threadId: string;
+  title: string;
+}
+
 export interface ThreadListInput {
   cwd?: string;
   parentThreadId?: string;
@@ -139,6 +149,13 @@ export interface DelegationThreadListItem {
   harnessId: RoutedHarnessId;
   deepLink: string;
   status: DelegationThreadStatus;
+  /** Host-owned unread for external Threads only: true while the latest
+   * finished Turn has not been viewed in the Desktop. Absent for native
+   * Codex rows, whose unread authority stays with the Desktop. */
+  hasUnreadTurn?: boolean;
+  /** External Threads only: present while the current Turn is blocked on a
+   * pending Desktop approval. */
+  attention?: "approval";
   cwd?: string;
   title?: string;
   createdAt?: string;
@@ -158,6 +175,7 @@ export interface DelegationControlApi {
   read(input: ThreadReadInput): Promise<DelegationThreadSnapshot>;
   wait(input: ThreadWaitInput): Promise<DelegationThreadSnapshot & { timedOut: boolean }>;
   list(input: ThreadListInput): Promise<DelegationThreadListResult>;
+  rename(input: ThreadRenameInput): Promise<ThreadRenameResult>;
 }
 
 export interface DelegationControlRegistration extends DelegationControlApi {

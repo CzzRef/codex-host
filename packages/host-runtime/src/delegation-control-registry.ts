@@ -59,6 +59,10 @@ export class DelegationControlRegistry implements DelegationControlApi {
     return (await this.#registrationForThread(input.threadId)).wait(input);
   }
 
+  async rename(input: Parameters<DelegationControlApi["rename"]>[0]) {
+    return (await this.#registrationForThread(input.threadId)).rename(input);
+  }
+
   async list(input: ThreadListInput) {
     if (input.parentThreadId) {
       return (await this.#registrationForThread(input.parentThreadId)).list(input);

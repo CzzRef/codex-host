@@ -76,6 +76,7 @@ export const DELEGATION_HELP = `usage:
   codexhost thread read <thread> [--view result|messages] [--cursor <cursor>] [--limit <n>]
   codexhost thread wait <thread> [--timeout-ms <n>] [--view result|messages] [--cursor <cursor>] [--limit <n>]
   codexhost thread list [--cwd <path>] [--parent <thread>] [--limit <n>] [--cursor <cursor>] [--sort created-asc|created-desc|updated-asc|updated-desc|recency-asc|recency-desc]
+  codexhost thread rename [<thread>] --name <title>
 
 Thread identifiers accept a bare ID or codex://threads/<id>. Output is JSON by default.
 harness inspect returns the target Model catalog, default Model, Thinking options, and configuration capabilities without creating a Thread. Use opaque IDs exactly as returned.
@@ -87,6 +88,7 @@ thread read is non-blocking. Its default result view returns threadId, harnessId
 thread read --view messages additionally returns paginated user/Agent-visible messages. The default page is 25 and --limit is capped at 100; --cursor and --limit require the messages view. Tool calls, tool output, file activity, reasoning summaries, hidden reasoning, and private Harness transcripts are never returned.
 thread wait defaults to 30000 ms and waits only until the Thread reaches a terminal state or the bounded timeout expires. A timeout is a successful running checkpoint with timedOut=true; the child keeps running.
 thread list defaults to the caller cwd, limit 25, created-desc; limit is capped at 100. --parent uses Delegation lineage, not Codex Subagent relationships.
+thread rename persists the Host Thread title and emits the same thread/name/updated notification Desktop uses, so Codex sidebar updates without a restart. Omit <thread> to use CODEXHOST_THREAD_ID. A Desktop hand-set title is not overwritten.
 read and wait are non-consuming: they do not start a Turn, send input, wake an Agent, mark messages read, or inject a result into the parent Session.
 Native Codex as caller requires a session sandbox that permits local Runtime connections; otherwise RUNTIME_UNREACHABLE is returned. Native Codex as a target uses brokered official requests and is unaffected.
 
@@ -340,6 +342,38 @@ export async function runDelegationCli(input: {
           environment,
           path: command === "read" ? "/v1/thread/read" : "/v1/thread/wait",
           body,
+          ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+        }),
+      );
+      return 0;
+    }
+    if (group === "thread" && command === "rename") {
+      const parsed = options(rest);
+      rejectUnknown(parsed, ["--name"]);
+      const name = value(parsed, "--name");
+      if (!name) {
+        throw new DelegationControlError("INVALID_ARGUMENT", "thread rename requires --name");
+      }
+      const positional = parsed.positionals[0];
+      const threadId = positional || environment[DELEGATION_THREAD_ID_ENV];
+      if (!threadId) {
+        throw new DelegationControlError(
+          "INVALID_ARGUMENT",
+          "thread rename requires a Thread identifier or CODEXHOST_THREAD_ID",
+        );
+      }
+      if (parsed.positionals.length > 1) {
+        throw new DelegationControlError(
+          "INVALID_ARGUMENT",
+          "thread rename accepts at most one Thread identifier",
+        );
+      }
+      writeJson(
+        output,
+        await requestRuntime({
+          environment,
+          path: "/v1/thread/rename",
+          body: { threadId: normalizeThreadId(threadId), name },
           ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
         }),
       );

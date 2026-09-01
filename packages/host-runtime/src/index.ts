@@ -59,6 +59,8 @@ export type {
   DelegationThreadSnapshot,
   ThreadListInput,
   ThreadReadInput,
+  ThreadRenameInput,
+  ThreadRenameResult,
   ThreadWaitInput,
 } from "./delegation-types.js";
 export { hasLauncherManagedUpdateRuntime, runHostRuntime } from "./run-host-runtime.js";
