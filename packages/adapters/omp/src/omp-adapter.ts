@@ -93,6 +93,7 @@ import {
 import {
   decodeOmpPermissionModeId,
   encodeOmpPermissionModeId,
+  OMP_DEFAULT_PERMISSION_MODE,
   OMP_DEFAULT_PERMISSION_MODE_ID,
   OMP_PERMISSION_MODE_CATALOG,
   type OmpPermissionMode,
@@ -1967,6 +1968,7 @@ export class OmpAdapter implements HarnessAdapter {
       }
       transport = this.#createTransport({
         cwd: input.cwd,
+        permissionMode: OMP_DEFAULT_PERMISSION_MODE,
         ...(input.kind === "resume"
           ? { sessionFile: sourceSessionFile }
           : { forkSessionFile: sourceSessionFile }),
@@ -2045,7 +2047,7 @@ export class OmpAdapter implements HarnessAdapter {
         startedThinkingLevels,
         initialUsage,
         supportsThinkingSelection: startedThinkingLevels !== null,
-        permissionMode: "yolo",
+        permissionMode: OMP_DEFAULT_PERMISSION_MODE,
         permissionModeId: OMP_DEFAULT_PERMISSION_MODE_ID,
       });
       return { ok: true, value: session };

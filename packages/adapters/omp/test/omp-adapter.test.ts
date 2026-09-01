@@ -211,7 +211,7 @@ function historyTurn(input: {
 }
 
 describe("OMP Adapter Session environment", () => {
-  it("uses OMP's native yolo default without changing ordinary create semantics", async () => {
+  it("uses the czz-dev write default without changing ordinary create semantics", async () => {
     const transport = new FakeOmpTransport();
     const createTransport = vi.fn(() => transport);
     const adapter = new OmpAdapter({}, { createTransport });
@@ -227,7 +227,7 @@ describe("OMP Adapter Session environment", () => {
       input: [{ type: "text", text: "task" }],
     });
     expect(createTransport).toHaveBeenCalledWith(
-      expect.objectContaining({ permissionMode: "yolo" }),
+      expect.objectContaining({ permissionMode: "write" }),
     );
     await adapter.close();
   });
@@ -280,7 +280,7 @@ describe("OMP Adapter Session environment", () => {
     await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toMatchObject({
       status: "ready",
       permissionModes: {
-        defaultModeId: "yolo",
+        defaultModeId: "write",
         modes: expect.arrayContaining([
           expect.objectContaining({ id: "always-ask" }),
           expect.objectContaining({ id: "write" }),
@@ -474,7 +474,10 @@ describe("OMP Adapter Fork", () => {
     expect(opened.ok).toBe(true);
     if (!opened.ok) return;
     expect(createTransport).toHaveBeenCalledWith(
-      expect.objectContaining({ forkSessionFile: "/synthetic/source-session.jsonl" }),
+      expect.objectContaining({
+        forkSessionFile: "/synthetic/source-session.jsonl",
+        permissionMode: "write",
+      }),
     );
     expect(fork).toHaveBeenCalledTimes(1);
     expect(verifySessionCwd).toHaveBeenCalledWith("/synthetic");
