@@ -136,7 +136,7 @@ export function normalizePiModelCatalog(
     byRef.set(ref.id, {
       model: {
         ref,
-        label: `${native.provider} / ${native.id}`,
+        label: native.id,
       },
       reasoning: native.reasoning,
     });

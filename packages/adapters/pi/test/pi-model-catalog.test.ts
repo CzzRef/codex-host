@@ -31,23 +31,20 @@ describe("Pi Model Catalog normalization", () => {
       harnessThinkingOptionIdSchema.parse("high"),
     );
 
-    expect(catalog.models.map(({ label }) => label)).toEqual([
-      "a-provider / same",
-      "z-provider / same",
-    ]);
+    expect(catalog.models.map(({ label }) => label)).toEqual(["same", "same"]);
     expect(catalog.models[0]?.ref).not.toEqual(catalog.models[1]?.ref);
-    expect(catalog.defaultModel).toEqual(catalog.models[1]?.ref);
+    expect(catalog.defaultModel).toEqual(
+      catalog.models.find((model) => decodePiModelRef(model.ref).provider === "z-provider")?.ref,
+    );
     expect(catalog.defaultThinkingOptionId).toBe("high");
-    expect(catalog.models[1]?.supportedThinkingOptionIds).toEqual([
-      "off",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
-    expect(catalog.models[0]?.supportedThinkingOptionIds).toEqual(["off"]);
+    expect(
+      catalog.models.find((model) => decodePiModelRef(model.ref).provider === "z-provider")
+        ?.supportedThinkingOptionIds,
+    ).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+    expect(
+      catalog.models.find((model) => decodePiModelRef(model.ref).provider === "a-provider")
+        ?.supportedThinkingOptionIds,
+    ).toEqual(["off"]);
   });
 
   it("normalizes only Pi-reported Thinking levels and keeps unknown labels Adapter-owned", () => {

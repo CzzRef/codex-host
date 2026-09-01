@@ -534,8 +534,8 @@ describe("DeepSeekHarnessAdapter local Host", () => {
       status: "ready",
       catalog: {
         models: [
-          { label: "DeepSeek / DeepSeek V4 Flash" },
-          { label: "DeepSeek / DeepSeek V4 Pro" },
+          { label: "DeepSeek V4 Flash" },
+          { label: "DeepSeek V4 Pro" },
         ],
       },
     });

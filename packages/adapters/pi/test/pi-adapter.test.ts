@@ -352,8 +352,8 @@ describe("Pi HarnessAdapter Session", () => {
       status: "ready",
       catalog: {
         models: [
-          { label: "synthetic-provider / alternate-model" },
-          { label: "synthetic-provider / synthetic-model" },
+          { label: "alternate-model" },
+          { label: "synthetic-model" },
         ],
         defaultModel: encodePiModelRef({
           provider: "synthetic-provider",
@@ -448,11 +448,11 @@ describe("Pi HarnessAdapter Session", () => {
     if (inspection.status !== "ready") throw new Error(inspection.error.message);
     expect(inspection.catalog.models).toEqual([
       expect.objectContaining({
-        label: "synthetic-provider / alternate-model",
+        label: "alternate-model",
         supportedThinkingOptionIds: ["off"],
       }),
       expect.objectContaining({
-        label: "synthetic-provider / synthetic-model",
+        label: "synthetic-model",
         supportedThinkingOptionIds: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
       }),
     ]);
