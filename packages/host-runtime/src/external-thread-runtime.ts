@@ -363,6 +363,17 @@ export class ExternalThreadRuntime {
   }
 
   async refresh(thread: ExternalThread): Promise<ExternalThreadRpcError | null> {
+    if (thread.session.capabilities.history.transcript === "live-only") {
+      // This is the existing in-memory Host projection, never a fabricated native snapshot.
+      thread.historyHydrated = true;
+      thread.thread = externalThreadValue({
+        record: thread.record,
+        turns: thread.turns,
+        sessionId: thread.sessionId,
+        running: thread.running,
+      });
+      return null;
+    }
     const snapshot = await thread.session.readSnapshot();
     if (!snapshot.ok) return mapExternalThreadHarnessError(snapshot.error, "read");
     try {
@@ -388,6 +399,7 @@ export class ExternalThreadRuntime {
   ): Promise<Error | null> {
     if (thread.persistenceError) return thread.persistenceError;
     if (!event.nativeTurnRef) {
+      if (thread.session.capabilities.history.transcript === "live-only") return null;
       return event.outcome.status === "succeeded"
         ? new Error("Successful external Turn has no Native Turn identity")
         : null;

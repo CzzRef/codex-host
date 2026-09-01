@@ -104,3 +104,9 @@ export const packageMetadata = {
   contractVersion: WORKSPACE_CONTRACT_VERSION,
   dependencies: [harnessAdapter.name, mappingStore.name],
 } as const;
+export {
+  CURSOR_NATIVE_TRANSPORT_MODEL_ID,
+  CURSOR_NATIVE_TRANSPORT_MODEL_PREFIX,
+  encodeCursorTransportModel,
+  decodeCursorTransportSelection,
+} from "@codexhost/shared-contracts";

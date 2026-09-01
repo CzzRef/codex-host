@@ -1,4 +1,5 @@
 import { ClaudeCodeAdapter } from "@codexhost/adapter-claude-code";
+import { CursorAdapter } from "@codexhost/adapter-cursor";
 import { DeepSeekHarnessAdapter } from "@codexhost/adapter-deepseek-harness";
 import { GrokAdapter } from "@codexhost/adapter-grok";
 import { PiAdapter } from "@codexhost/adapter-pi";
@@ -12,6 +13,7 @@ export const DEEPSEEK_HARNESS_ENDPOINT_ENV = "CODEXHOST_DEEPSEEK_HARNESS_ENDPOIN
 export const PI_COMMAND_ENV = "CODEXHOST_PI_COMMAND";
 export const GROK_COMMAND_ENV = "CODEXHOST_GROK_COMMAND";
 export const OMP_COMMAND_ENV = "CODEXHOST_OMP_COMMAND";
+export const CURSOR_COMMAND_ENV = "CODEXHOST_CURSOR_COMMAND";
 
 type InspectableHarnessAdapter = Pick<HarnessAdapter, "inspect">;
 
@@ -29,6 +31,13 @@ export function createExternalHarnessAdapters(
   environment: NodeJS.ProcessEnv,
 ): ReadonlyMap<ExternalHarnessId, HarnessAdapter> {
   return new Map<ExternalHarnessId, HarnessAdapter>([
+    [
+      "cursor",
+      new CursorAdapter({
+        ...(environment[CURSOR_COMMAND_ENV] ? { command: environment[CURSOR_COMMAND_ENV] } : {}),
+        environment,
+      }),
+    ],
     [
       "pi",
       new PiAdapter({

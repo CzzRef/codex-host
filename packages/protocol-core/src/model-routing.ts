@@ -1,4 +1,7 @@
 import {
+  CURSOR_NATIVE_TRANSPORT_MODEL_ID,
+  decodeCursorTransportSelection,
+  encodeCursorTransportModel,
   harnessModelRefSchema,
   harnessPermissionModeIdSchema,
   harnessThinkingOptionIdSchema,
@@ -24,6 +27,7 @@ export const EXTERNAL_HARNESS_IDS = [
   "deepseek-harness",
   "grok",
   "omp",
+  "cursor",
 ] as const;
 
 export type ExternalHarnessId = (typeof EXTERNAL_HARNESS_IDS)[number];
@@ -35,6 +39,7 @@ const transportModelByHarness = {
   "deepseek-harness": DEEPSEEK_HARNESS_NATIVE_TRANSPORT_MODEL_ID,
   grok: GROK_NATIVE_TRANSPORT_MODEL_ID,
   omp: OMP_NATIVE_TRANSPORT_MODEL_ID,
+  cursor: CURSOR_NATIVE_TRANSPORT_MODEL_ID,
 } as const satisfies Record<ExternalHarnessId, string>;
 
 const harnessByTransportModel = new Map<string, ExternalHarnessId>(
@@ -336,6 +341,9 @@ export function encodeExternalTransportSelection(
   selection: ExternalConfigurationSelection,
 ): string {
   switch (harnessId) {
+    case "cursor":
+      if (selection.thinkingOptionId) throw new Error("Cursor has no independent Thinking option");
+      return encodeCursorTransportModel(selection.model, selection.permissionModeId);
     case "pi":
       return encodePiTransportModel(selection.model, selection.thinkingOptionId);
     case "claude-code":
@@ -362,6 +370,8 @@ export function decodeExternalTransportSelection(
   value: unknown,
 ): ExternalConfigurationSelection | null {
   switch (harnessId) {
+    case "cursor":
+      return decodeCursorTransportSelection(value);
     case "pi":
       return decodePiTransportSelection(value);
     case "claude-code":
@@ -389,6 +399,15 @@ export function decodeCreateRoute(request: JsonRpcRequest): CreateRoute | null {
     throw new Error("thread/start params.model must be text");
   }
 
+  const cursorSelection = decodeCursorTransportSelection(request.params.model);
+  if (cursorSelection !== null) {
+    return {
+      harnessId: "cursor",
+      routeMode: "native",
+      transportModelId: request.params.model,
+      ...cursorSelection,
+    };
+  }
   const piSelection = decodePiTransportSelection(request.params.model);
   if (piSelection !== null) {
     return {

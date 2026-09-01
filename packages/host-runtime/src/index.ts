@@ -1,6 +1,7 @@
 import { packageMetadata as claudeCodeAdapter } from "@codexhost/adapter-claude-code";
 import { packageMetadata as deepSeekHarnessAdapter } from "@codexhost/adapter-deepseek-harness";
 import { packageMetadata as grokAdapter } from "@codexhost/adapter-grok";
+import { packageMetadata as cursorAdapter } from "@codexhost/adapter-cursor";
 import { packageMetadata as piAdapter } from "@codexhost/adapter-pi";
 import { packageMetadata as ompAdapter } from "@codexhost/adapter-omp";
 import { packageMetadata as desktopControl } from "@codexhost/desktop-control";
@@ -15,6 +16,7 @@ export {
   DEEPSEEK_HARNESS_COMMAND_ENV,
   DEEPSEEK_HARNESS_ENDPOINT_ENV,
   GROK_COMMAND_ENV,
+  CURSOR_COMMAND_ENV,
   OMP_COMMAND_ENV,
   PI_COMMAND_ENV,
   createExternalHarnessAdapters,
@@ -116,6 +118,7 @@ export const packageMetadata = {
     desktopControl.name,
     harnessAdapter.name,
     grokAdapter.name,
+    cursorAdapter.name,
     mappingStore.name,
     piAdapter.name,
     ompAdapter.name,

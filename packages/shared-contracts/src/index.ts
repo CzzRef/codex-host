@@ -173,3 +173,10 @@ export const packageMetadata = {
   name: "@codexhost/shared-contracts",
   contractVersion: WORKSPACE_CONTRACT_VERSION,
 } as const;
+export {
+  CURSOR_NATIVE_TRANSPORT_MODEL_ID,
+  CURSOR_NATIVE_TRANSPORT_MODEL_PREFIX,
+  encodeCursorTransportModel,
+  decodeCursorTransportSelection,
+  type CursorTransportSelection,
+} from "./cursor-transport-selection.js";

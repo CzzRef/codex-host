@@ -6,6 +6,7 @@ import {
   harnessPermissionModeIdSchema,
   harnessThinkingOptionIdSchema,
   hostThreadIdSchema,
+  hostTurnIdSchema,
   nativeSessionRefSchema,
 } from "@codexhost/shared-contracts";
 import { encodeGrokTransportModel } from "@codexhost/protocol-core";
@@ -43,6 +44,113 @@ function record(): StoredThreadRecordV1 {
 }
 
 describe("ExternalThreadRuntime register", () => {
+  it("retains live-only projection without reading or persisting fabricated native history", async () => {
+    const adapter = new FakeHarnessAdapter(harnessId);
+    const opened = await adapter.open({ kind: "create", cwd: "/synthetic" });
+    if (!opened.ok) throw new Error(opened.error.message);
+    const session = opened.value;
+    Object.defineProperty(session, "capabilities", {
+      value: {
+        ...session.capabilities,
+        history: {
+          transcript: "live-only",
+          fork: false,
+          forkAcrossCwd: false,
+          rollbackLastTurn: false,
+        },
+      },
+    });
+    const readSnapshot = vi.spyOn(session, "readSnapshot").mockResolvedValue({
+      ok: false,
+      error: { code: "unsupported", message: "No native replay", retryable: false },
+    });
+    const stored = record();
+    const alignSnapshot = vi.fn();
+    const persistTurn = vi.fn();
+    const repository = {
+      find: async () => stored,
+      alignSnapshot,
+      persistTurn,
+    } as unknown as ExternalThreadRepository;
+    const runtime = new ExternalThreadRuntime({
+      adapters: new Map([["pi", adapter]]),
+      repository,
+      consumeOutputs: async () => {},
+      diagnose: () => {},
+    });
+    const turns = [
+      {
+        id: "live-turn",
+        status: "completed",
+        items: [{ id: "answer", type: "agentMessage", text: "Live answer" }],
+      },
+    ];
+    const thread = runtime.register({
+      record: stored,
+      session,
+      sessionId: hostThreadId,
+      thread: { id: hostThreadId },
+      turns,
+    });
+    thread.historyHydrated = false;
+    expect(
+      await runtime.persistTerminalIdentity(thread, {
+        type: "turn.completed",
+        turnId: hostTurnIdSchema.parse("live-turn"),
+        outcome: { status: "succeeded" },
+      }),
+    ).toBeNull();
+    expect(await runtime.refresh(thread)).toBeNull();
+    expect(thread.historyHydrated).toBe(true);
+    expect(thread.turns).toEqual(turns);
+    expect(thread.record.turnMappings).toEqual([]);
+    expect(readSnapshot).not.toHaveBeenCalled();
+    expect(alignSnapshot).not.toHaveBeenCalled();
+    expect(persistTurn).not.toHaveBeenCalled();
+    expect((await runtime.resolve(hostThreadId)).kind).toBe("external");
+    vi.spyOn(adapter, "open").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "unsupported",
+        message: "Live-only task cannot be recovered after Host exit",
+        retryable: false,
+      },
+    });
+    runtime.clear();
+    expect(await runtime.resolve(hostThreadId)).toMatchObject({
+      kind: "error",
+      error: { message: "External Harness does not support resume" },
+    });
+    expect(await repository.find(hostThreadId)).toBe(stored);
+    await adapter.close();
+  });
+
+  it("still rejects successful native-history turns without a NativeTurn identity", async () => {
+    const adapter = new FakeHarnessAdapter(harnessId);
+    const opened = await adapter.open({ kind: "create", cwd: "/synthetic" });
+    if (!opened.ok) throw new Error(opened.error.message);
+    const runtime = new ExternalThreadRuntime({
+      adapters: new Map([["pi", adapter]]),
+      repository: {} as ExternalThreadRepository,
+      consumeOutputs: async () => {},
+      diagnose: () => {},
+    });
+    const thread = runtime.register({
+      record: record(),
+      session: opened.value,
+      sessionId: hostThreadId,
+      thread: { id: hostThreadId },
+      turns: [],
+    });
+    expect(
+      await runtime.persistTerminalIdentity(thread, {
+        type: "turn.completed",
+        turnId: hostTurnIdSchema.parse("bad-turn"),
+        outcome: { status: "succeeded" },
+      }),
+    ).toEqual(new Error("Successful external Turn has no Native Turn identity"));
+    await adapter.close();
+  });
   it("exposes the requested create Model before the Session publishes state", async () => {
     const adapter = new FakeHarnessAdapter(harnessId);
     const model = adapter.catalog.models[1]?.ref;

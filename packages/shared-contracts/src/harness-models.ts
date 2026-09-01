@@ -136,6 +136,8 @@ export type HarnessModelCatalog = z.infer<typeof harnessModelCatalogSchema>;
 
 const harnessHistoryCapabilitiesSchema = z
   .object({
+    /** Omitted means native history. Live-only sessions cannot be recovered after Host exit. */
+    transcript: z.enum(["native", "live-only"]).optional(),
     fork: z.boolean(),
     forkAcrossCwd: z.boolean(),
     rollbackLastTurn: z.boolean(),
@@ -144,7 +146,16 @@ const harnessHistoryCapabilitiesSchema = z
   .refine((history) => history.fork || !history.forkAcrossCwd, {
     path: ["forkAcrossCwd"],
     message: "Cross-cwd Fork requires exact history Fork support",
-  });
+  })
+  .refine(
+    (history) =>
+      history.transcript !== "live-only" ||
+      (!history.fork && !history.forkAcrossCwd && !history.rollbackLastTurn),
+    {
+      path: ["transcript"],
+      message: "Live-only history cannot support native Fork or Rollback",
+    },
+  );
 
 export const harnessSessionCapabilitiesSchema = z
   .object({
