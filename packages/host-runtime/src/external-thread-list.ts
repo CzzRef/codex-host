@@ -1,10 +1,12 @@
 import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
-import type {
-  DecodedThreadListRequest,
-  JsonObject,
-  ThreadListExternalAnchor,
-  ThreadListSortDirection,
-  ThreadListSortKey,
+import {
+  effectiveThreadSectionId,
+  projectedThreadSection,
+  type DecodedThreadListRequest,
+  type JsonObject,
+  type ThreadListExternalAnchor,
+  type ThreadListSortDirection,
+  type ThreadListSortKey,
 } from "@codexhost/protocol-core";
 
 import { externalThreadValue } from "./external-thread-repository.js";
@@ -30,6 +32,12 @@ function unixTimestamp(value: string, field: string): number {
   return Math.floor(parsed / 1_000);
 }
 
+function sectionSortValue(record: StoredThreadRecordV1): number {
+  if (Number.isSafeInteger(record.sectionPosition)) return record.sectionPosition as number;
+  if (record.sectionEnteredAt) return unixTimestamp(record.sectionEnteredAt, "sectionEnteredAt");
+  return unixTimestamp(record.createdAt, "createdAt");
+}
+
 function threadId(thread: JsonObject): string {
   if (typeof thread.id !== "string" || thread.id.length === 0) {
     throw new Error("Thread list row has no stable ID");
@@ -43,7 +51,9 @@ export function threadListTimestamp(thread: JsonObject, sortKey: ThreadListSortK
       ? thread.createdAt
       : sortKey === "updated_at"
         ? thread.updatedAt
-        : (thread.recencyAt ?? thread.updatedAt);
+        : sortKey === "section_position"
+          ? (thread.sectionPosition ?? thread.sectionEnteredAt ?? thread.createdAt)
+          : (thread.recencyAt ?? thread.updatedAt);
   if (!Number.isSafeInteger(field)) {
     throw new Error(`Thread list row has no valid ${sortKey} timestamp`);
   }
@@ -114,7 +124,13 @@ function includesExternalRecord(
     return false;
   }
   if (query.parentThreadId !== null || query.ancestorThreadId !== null) return false;
-  if (query.isPinned !== null && query.isPinned !== (record.pinned ?? false)) return false;
+  const sectionId = effectiveThreadSectionId(record);
+  if (query.isPinned !== null && query.isPinned !== projectedThreadSection(record).isPinned) {
+    return false;
+  }
+  if (query.sectionFilter.kind === "unsectioned" && sectionId !== null) return false;
+  if (query.sectionFilter.kind === "id" && sectionId !== query.sectionFilter.sectionId)
+    return false;
   return true;
 }
 
@@ -183,7 +199,9 @@ export function listExternalThreadMetadata(input: {
         timestamp:
           input.query.sortKey === "created_at"
             ? unixTimestamp(record.createdAt, "createdAt")
-            : unixTimestamp(record.updatedAt, "updatedAt"),
+            : input.query.sortKey === "section_position"
+              ? sectionSortValue(record)
+              : unixTimestamp(record.updatedAt, "updatedAt"),
       };
     })
     .sort((left, right) => compareThreadListEntries(left, right, input.query.sortDirection))

@@ -131,12 +131,15 @@ import {
   decodeCreateRoute,
   decodeExternalTransportSelection,
   encodeExternalTransportSelection,
+  CODEX_PINNED_THREAD_SECTION_ID,
   decodeThreadArchiveRequest,
   decodeThreadForkRequest,
   decodeThreadListRequest,
   decodeThreadMetadataUpdateRequest,
   decodeThreadRevertRequest,
   decodeThreadRollbackRequest,
+  decodeThreadSectionMoveRequest,
+  effectiveThreadSectionId,
   mapExternalThreadHarnessError,
   projectCodexRateLimitsToCredits,
   observeCodexRateLimits,
@@ -158,6 +161,7 @@ import {
   type DecodedThreadListRequest,
   type DecodedThreadRevertRequest,
   type DecodedThreadRollbackRequest,
+  type DecodedThreadSectionMoveRequest,
   type ExternalThreadRpcError,
   type CodexApprovalRequestProjection,
   type CodexQuestionRequestProjection,
@@ -323,6 +327,7 @@ const EXPLICIT_EXTERNAL_THREAD_METHODS = new Set([
   "thread/items/list",
   "thread/metadata/update",
   "thread/name/set",
+  "thread/section/move",
   "thread/read",
   "thread/resume",
   "thread/revert",
@@ -739,6 +744,26 @@ export class AppServerHost {
         }
         if (location.kind === "external") {
           await this.#updateExternalThreadMetadata(request, location, decoded);
+        }
+        continue;
+      }
+      if (request.method === "thread/section/move") {
+        let decoded;
+        try {
+          decoded = decodeThreadSectionMoveRequest(request);
+          if (!decoded) throw new Error("Expected thread/section/move request");
+        } catch (error) {
+          await this.#writer.json(rpcError(request, -32602, errorMessage(error)));
+          continue;
+        }
+        const location = await this.#locateExternalThread(decoded.threadId);
+        if (await this.#writeResolutionError(request, location)) continue;
+        if (location.kind === "official") {
+          await writeFrame(official.stdin, frame);
+          continue;
+        }
+        if (location.kind === "external") {
+          await this.#moveExternalThreadSection(request, location, decoded);
         }
         continue;
       }
@@ -2826,13 +2851,70 @@ export class AppServerHost {
     }
     let record: StoredThreadRecordV1;
     try {
-      record = await this.#repository.setPinned(location.record.hostThreadId, pinned);
+      record = await this.#repository.assignSection(location.record.hostThreadId, {
+        pinned,
+        sectionId: pinned ? CODEX_PINNED_THREAD_SECTION_ID : null,
+      });
     } catch {
       await this.#writer.json(
         rpcError(request, -32081, "External Thread pin state could not be persisted"),
       );
       return;
     }
+    const projected = this.#applyExternalThreadRecord(location, record, sessionId);
+    // Official Codex returns { thread } so Desktop can keep the optimistic
+    // pinned-section move. An empty result makes the sidebar snap back.
+    await this.#writer.json(rpcEnvelope(request, { result: { thread: projected } }));
+  }
+
+  async #moveExternalThreadSection(
+    request: JsonRpcRequest,
+    location: Extract<ExternalThreadLocation, { kind: "external" }>,
+    decoded: DecodedThreadSectionMoveRequest,
+  ): Promise<void> {
+    const pinned = decoded.sectionId === CODEX_PINNED_THREAD_SECTION_ID;
+    const records = await this.#repository.list();
+    let sectionPosition: number | undefined;
+    if (decoded.sectionId != null) {
+      const siblings = records.filter(
+        (record) =>
+          effectiveThreadSectionId(record) === decoded.sectionId &&
+          record.hostThreadId !== location.record.hostThreadId,
+      );
+      if (decoded.beforeThreadId) {
+        const before = siblings.find((record) => record.hostThreadId === decoded.beforeThreadId);
+        sectionPosition = (before?.sectionPosition ?? 0) - 1;
+      } else {
+        sectionPosition =
+          siblings.reduce((max, record) => Math.max(max, record.sectionPosition ?? 0), 0) + 1;
+      }
+    }
+    let record: StoredThreadRecordV1;
+    try {
+      record = await this.#repository.assignSection(location.record.hostThreadId, {
+        pinned,
+        sectionId: decoded.sectionId,
+        ...(sectionPosition !== undefined ? { sectionPosition } : {}),
+      });
+    } catch {
+      await this.#writer.json(
+        rpcError(request, -32081, "External Thread section could not be persisted"),
+      );
+      return;
+    }
+    const sessionId =
+      location.thread?.sessionId ??
+      (await this.#repository.sessionTreeId(record).catch(() => null));
+    if (sessionId) this.#applyExternalThreadRecord(location, record, sessionId);
+    else if (location.thread) location.thread.record = record;
+    await this.#writer.json(rpcEnvelope(request, { result: {} }));
+  }
+
+  #applyExternalThreadRecord(
+    location: Extract<ExternalThreadLocation, { kind: "external" }>,
+    record: StoredThreadRecordV1,
+    sessionId: string,
+  ): JsonObject {
     const projected = externalThreadValue({
       record,
       turns: location.thread?.turns ?? [],
@@ -2843,12 +2925,11 @@ export class AppServerHost {
       location.thread.record = record;
       location.thread.thread = {
         ...location.thread.thread,
-        isPinned: pinned,
+        ...projected,
+        turns: location.thread.thread.turns ?? [],
       };
     }
-    // Official Codex returns { thread } so Desktop can keep the optimistic
-    // pinned-section move. An empty result makes the sidebar snap back.
-    await this.#writer.json(rpcEnvelope(request, { result: { thread: projected } }));
+    return projected;
   }
 
   async #deleteExternalThread(

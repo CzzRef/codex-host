@@ -16,7 +16,11 @@ import {
   type StoredThreadRecordV1,
   type StoredTurnMappingV1,
 } from "@codexhost/mapping-store";
-import { projectHistoricalTurn, type JsonObject } from "@codexhost/protocol-core";
+import {
+  projectedThreadSection,
+  projectHistoricalTurn,
+  type JsonObject,
+} from "@codexhost/protocol-core";
 import {
   hostThreadIdSchema,
   hostTurnIdSchema,
@@ -67,6 +71,15 @@ export interface ExternalThreadStore {
   ): Promise<StoredThreadRecordV1>;
   setArchived(hostThreadId: HostThreadId, archived: boolean): Promise<StoredThreadRecordV1>;
   setPinned(hostThreadId: HostThreadId, pinned: boolean): Promise<StoredThreadRecordV1>;
+  assignSection(
+    hostThreadId: HostThreadId,
+    input: {
+      sectionId: string | null;
+      pinned: boolean;
+      sectionPosition?: number;
+      sectionEnteredAt?: string;
+    },
+  ): Promise<StoredThreadRecordV1>;
   removeProvisional(hostThreadId: HostThreadId): Promise<void>;
   removeThread(hostThreadId: HostThreadId): Promise<void>;
   close(): Promise<void>;
@@ -191,6 +204,18 @@ export class ExternalThreadRepository {
 
   setPinned(hostThreadId: HostThreadId, pinned: boolean): Promise<StoredThreadRecordV1> {
     return this.store.setPinned(hostThreadId, pinned);
+  }
+
+  assignSection(
+    hostThreadId: HostThreadId,
+    input: {
+      sectionId: string | null;
+      pinned: boolean;
+      sectionPosition?: number;
+      sectionEnteredAt?: string;
+    },
+  ): Promise<StoredThreadRecordV1> {
+    return this.store.assignSection(hostThreadId, input);
   }
 
   removeProvisional(hostThreadId: HostThreadId): Promise<void> {
@@ -579,7 +604,7 @@ export function externalThreadValue(input: {
     ephemeral: record.ephemeral,
     canAcceptDirectInput: record.subagent ? false : input.loaded === false ? null : true,
     historyMode: record.historyMode,
-    isPinned: record.pinned ?? false,
+    ...projectedThreadSection(record),
     agentNickname: record.subagent ? record.title || null : null,
     agentRole: record.subagent?.role ?? null,
     extra: null,

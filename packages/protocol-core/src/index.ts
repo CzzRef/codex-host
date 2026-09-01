@@ -39,20 +39,27 @@ export type {
   ExternalThreadRpcError,
 } from "./thread-fork.js";
 export {
+  CODEX_PINNED_THREAD_SECTION_ID,
+  CODEX_PINNED_THREAD_SECTION_NAME,
   decodeHostThreadListCursor,
   decodeOfficialThreadListPage,
   decodeThreadArchiveRequest,
   decodeThreadListRequest,
   decodeThreadMetadataUpdateRequest,
+  decodeThreadSectionMoveRequest,
+  effectiveThreadSectionId,
   encodeHostThreadListCursor,
+  projectedThreadSection,
 } from "./thread-management.js";
 export type {
   DecodedThreadListRequest,
   DecodedThreadManagementRequest,
   DecodedThreadMetadataUpdateRequest,
+  DecodedThreadSectionMoveRequest,
   HostThreadListCursor,
   OfficialThreadListPage,
   ThreadListExternalAnchor,
+  ThreadListSectionFilter,
   ThreadListSortDirection,
   ThreadListSortKey,
 } from "./thread-management.js";
