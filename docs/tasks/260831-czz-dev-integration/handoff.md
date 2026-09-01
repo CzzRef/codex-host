@@ -31,7 +31,7 @@ OMP 的 `xai-oauth` 在官方授权完成后仍卡在 18.0.11 的设备令牌轮
 
 先读 [Spec](spec.md)、[核验](verify.md) 与 [执行记录](tasks.md)，检查分支和工作区，再处理未通过的门禁。不要重复克隆、覆盖 dirty work、升级 Agent 或更换用户账号。外部会话原生标题、后续回合排队与 Steer 拒绝已在 `773290c` 提交并完成聚焦测试和全量构建。源码修改与生效需要分别确认；后续远端推送、远端默认分支变更是分开的动作。
 
-最终安全回归结果已记入 verify.md；剩余工作是按需验收具体 Agent 选择、审批与真实委派，不再执行安装或重启。
+最终安全回归结果已记入 verify.md；外部会话置顶已 Desktop 回测通过。剩余工作是按需验收具体 Agent 选择、审批、真实委派，以及标题同步/steer/未读的独立 UI；不再为置顶重复安装或重启。
 
 ## A-5 OMP 多订阅路由与当前运行态
 
@@ -44,3 +44,7 @@ A-5 当时源码 Launcher PID 29444、Desktop PID 29446，descriptor 为 schema-
 ## A-7 卸载 Oh My Pi
 
 用户于 2026-09-01 要求卸载 Oh My Pi、中断进行中任务、保留源码。OMP RPC 进程组已结束；`~/.local/bin/omp` 与 `~/.omp` 已删除。doctor 回读 `notInstalled`。Pi 与 Adapter 源码保留；Desktop 未因卸载重启；未提交或推送。
+
+## U11 外部会话置顶回测
+
+用户确认当前源码 Desktop 上外部会话置顶不再弹回。实现提交 `f21d2b7`。回测时源码 Launcher PID 82349；mapping-store 两条 Grok 外部会话位于 pinned section `01984de2-8f74-7c91-a3b2-5c5e937cf318`。标题同步、steer、未读仍按独立 UI 验收。未 push。
