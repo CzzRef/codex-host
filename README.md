@@ -1,3 +1,5 @@
+> **CzzRef / czz-dev 本地源码版**：新增 Cursor ACP 受限接入和不停止现有 Codex 的安全启动入口，委派保留原生默认权限。安装、真实验证、Cursor 历史限制与后续开发见 [本机说明](docs/czz-dev.md)。以下发行版介绍保留上游背景，不代表当前 Desktop 已激活。
+
 <div align="center">
 
 # CodexHost
@@ -157,6 +159,8 @@ xattr -dr com.apple.quarantine /Applications/codexhost.app
 
 CodexHost 会为目标 Harness 创建独立的 Native Session。委派会话将出现在 Codex Desktop 的会话列表中，你可以随时打开、查看进度或继续对话。
 
+`czz-dev` 额外支持 `@cursor`，但仅在当前 Host 运行期间继续对话，Host 退出后不支持恢复。委派不再强制提升权限，可能等待用户审批。
+
 <details>
 <summary><h3 id="远程连接-harness">远程连接 Harness</h3></summary>
 
@@ -240,10 +244,12 @@ CodexHost 尽量不走这条路：
 环境要求：官方 Codex Desktop、Node.js 22.19+ 或 24、Rust。
 
 ```bash
-git clone https://github.com/BytePioneer-AI/codex-host
-cd codex-host
+cd /path/to/codex-host
 npm ci
-npm start
+npm run build
+npm run install:source
+# 用户安排正常退出 Codex 后再执行；运行中会拒绝启动
+codexhost launch
 ```
 
 ## 鸣谢

@@ -117,3 +117,19 @@ A successful external Fork SHALL return a new Host Thread ID, source `forkedFrom
 #### Scenario: Persisted native Session is missing
 - **WHEN** the mapped Native Session cannot be opened
 - **THEN** Host SHALL return an explicit session error and SHALL NOT create or query a Codex Thread with the same ID
+
+### Requirement: Side-conversation item injection is acknowledged on external Threads
+Codex Desktop opens a side chat as an ephemeral `thread/fork` followed by `thread/inject_items` planting side-conversation boundary items into the derived Thread. For a mapped external Thread, Host SHALL validate that `items` is an array and acknowledge the injection with an empty result instead of rejecting the method. The derived Native Session already carries the full parent context from the Fork, and injected Codex items have no native representation, so Host SHALL NOT project them into external history, forward them to the official app-server, or send them to the Harness. Official Codex Threads SHALL remain transparent.
+
+#### Scenario: Side chat opens on an external Thread
+- **WHEN** Desktop Forks a mapped external Thread and sends `thread/inject_items` for the derived Thread
+- **THEN** Host SHALL answer the injection with an empty success result
+- **AND** the side conversation SHALL accept later Turns through the derived Native Session
+
+#### Scenario: Injection payload is malformed
+- **WHEN** `thread/inject_items.items` is not an array for a mapped external Thread
+- **THEN** Host SHALL reject the request with an explicit invalid-argument error
+
+#### Scenario: Official Thread injection stays transparent
+- **WHEN** `thread/inject_items.threadId` does not identify a mapped external Thread
+- **THEN** the original request frame SHALL be forwarded unchanged to the official app-server

@@ -174,6 +174,18 @@ The Renderer SHALL keep active unsubmitted draft Model state in the logical Comp
 - **THEN** Host resumes the mapped Native Session and initializes the Thread from the current state returned with its Snapshot
 - **AND** Mapping Store and cached Renderer state do not become a second source of Model or Thinking truth
 
+### Requirement: Renderer model visibility preference filters display only
+The Renderer MAY apply a user-owned per-Harness visibility deny-list to the Model Catalog it displays. The filter SHALL apply after inspection validation, SHALL NOT alter the Adapter Catalog, Host response, transport carrier, or delegation catalog, and SHALL keep an Existing Thread's confirmed Model visible and selectable. When the preference would remove every Model, the Renderer SHALL fail open and display the unfiltered Catalog. When the stored default Model is hidden, the Renderer SHALL present the first remaining Model as the display default.
+
+#### Scenario: Hidden Model on a draft Composer
+- **WHEN** a draft Composer loads a Catalog whose stored preference hides a Model
+- **THEN** the model picker omits that Model and cannot submit it
+- **AND** the Harness Catalog, Host response, and delegation inspection remain unfiltered
+
+#### Scenario: Locked Thread uses a hidden Model
+- **WHEN** a locked Composer's confirmed Model is in the stored deny-list
+- **THEN** that Model stays in the displayed Catalog and remains the selection
+
 ### Requirement: Selectable Model aliases remain distinct from resolved Models
 An Adapter SHALL preserve every distinct native selectable value as an Adapter-owned Model Ref even when multiple values currently resolve to the same underlying Model. A dynamic default or family alias SHALL NOT be replaced by a resolved Model string that cannot reproduce the same policy selection.
 

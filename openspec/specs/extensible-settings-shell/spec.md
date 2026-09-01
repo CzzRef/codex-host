@@ -31,8 +31,20 @@ The settings shell SHALL consume an immutable ordered registry of cohesive page 
 
 #### Scenario: Default pages are registered
 - **WHEN** the production settings registry is constructed
-- **THEN** it SHALL contain Connections, Model Pool, Routes, Gateway, and Updates in deterministic order
+- **THEN** it SHALL contain Connections, Models, Updates, and About in deterministic order
 - **AND** Connections SHALL be the default page
+
+### Requirement: Models page owns the Renderer model visibility preference
+The settings shell SHALL provide a Models page that lists each registered external Harness's current Model Catalog through the existing inspection method and lets the user hide or show individual Models in the Renderer model picker. The preference SHALL be a Renderer-owned deny-list persisted per Harness in Renderer storage. It SHALL NOT modify the Adapter Catalog, the Host inspection response, the transport carrier, or delegation, and it SHALL NOT hide an Existing Thread's confirmed Model. When the preference would hide every Model of a Harness, the Renderer SHALL fail open and display the full Catalog.
+
+#### Scenario: User hides a Model
+- **WHEN** the user unchecks a Model on the Models page
+- **THEN** new-Thread model pickers for that Harness SHALL omit the Model after their next catalog load
+- **AND** an Existing Thread already using that Model SHALL keep it selectable and functional
+
+#### Scenario: Hidden Models would empty a catalog
+- **WHEN** the stored preference hides every Model that a Harness currently reports
+- **THEN** the Renderer SHALL ignore the preference for that Harness and display the full Catalog
 
 #### Scenario: Future capability contributes a page
 - **WHEN** a later capability composes a valid replacement or additional page definition before shell installation

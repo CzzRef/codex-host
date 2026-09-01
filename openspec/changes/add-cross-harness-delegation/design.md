@@ -72,11 +72,11 @@ Subagent 子 Thread 语义是「同一 Harness 内的只读附属品」，`exter
 
 现行契约在 `parentThreadId` / `ancestorThreadId` 过滤下会省略外部记录，且明确要求不得把外部血缘当作 Codex Subagent 关系。改动该契约会影响 Desktop 自身的列表行为，风险大于收益。因此 `thread list --parent` 由 Delegation 记录解析，普通过滤（cwd、limit、cursor、排序）仍映射到 `thread/list`。
 
-### 委派 Session 统一使用无人值守执行策略
+### czz-dev 委派 Session 保留原生默认权限
 
-`delegate start` 在创建目标 Session 时携带统一的 `unattended-full-access` 执行意图，而不是让 Coordinator 拼接 Harness 私有命令。各 Adapter 仅在目标 Harness 具备对应原生权限控制时转换该意图：Claude Code 使用 `auto` Permission Mode，由 Claude Code 判断哪些操作可自动执行；Grok 使用 `always-approve`；OMP 以 `--approval-mode yolo` 启动；Pi 本身不需要也不接受额外权限参数，因此忽略该执行策略。DeepSeek Harness 使用最新版 Host Remote `commands/execute` 执行 `/permission danger-full-access`，并在任务投递前同时校验命令成功以及历史中最终的 `permission/preset=danger-full-access`、`sandbox/mode=danger-full-access`、`approval/policy=never`；最新版调用必须显式传递空的 `images` 列表。原生 Codex 的官方 `thread/start` 显式携带 `approvalPolicy: "never"` 与 `sandbox: "danger-full-access"`。
+本分支的 `delegate start` 在创建目标 Session 时携带 `default` 执行策略，Coordinator 不拼接 Harness 私有权限命令，也不因委派自动提升权限。Claude Code、Grok、OMP、Pi、DeepSeek Harness 和 Cursor 保留各自默认权限语义；原生 Codex 的官方 `thread/start` 不再强制设置 `approvalPolicy` 与 `sandbox`。目标需要审批时，由现有 Host 交互通道交给用户，结果读取与等待可以返回尚在等待的状态。
 
-该策略只用于委派创建，不改变用户从 Desktop 创建普通 Thread 时选择的权限。未来恢复或继续委派 Thread 时应保留 Native Session 已记录的权限状态，而不是回退到 Adapter 默认值。若目标 Harness 声明支持该执行意图但无法应用，创建 SHALL 失败并走现有回滚，不得留下等待人工审批的半运行委派。
+该变化不改变用户从 Desktop 创建普通 Thread 时选择的权限，也不删除已有 Adapter 对显式 `unattended-full-access` 的映射能力；本分支 Coordinator 不再请求该能力。恢复或继续支持持久化的委派 Thread 时应保留 Native Session 已记录的权限状态。Cursor 仅支持当前 Host 运行期间的实时投影，Host 重启后明确拒绝恢复，不伪造历史或切换 Harness。
 
 ### 委派创建与结果观察解耦，由发起方 Agent 自主编排
 
@@ -120,7 +120,7 @@ codexhost thread list [--cwd <path>] [--parent <thread>] [--limit <n>] [--cursor
 - [用户修改了受管 Skill] → 不静默覆盖摘要不匹配的现有文件，报告冲突并保留用户内容。
 - [CLI 可操控用户提供的任意外部 Thread] → 授权模型是「用户显式给出标识即为授权」；列举能力默认限定在调用方 cwd 与自身委派血缘，避免模型发现并操控未被告知的会话。
 - [子 Thread 同时被 CLI 与用户操作] → 外部 Thread 同时只允许一个活跃 Turn；本变更只提供读取与等待，写入类操作留待后续变更并以用户输入优先。
-- [无人值守执行策略可能允许修改文件、执行命令与访问更广资源] → 该策略仅用于用户明确发起的委派 Session，并由各 Adapter 使用其明确映射的原生权限机制；普通 Thread 权限不受影响。Claude Code 使用 `auto`，不会绕过其权限判断。
+- [委派任务可能等待审批] → 本分支保留目标原生默认权限，不自动扩大文件、命令或网络访问。发起方通过有界 `read` / `wait` 观察，用户通过子 Thread 的交互界面响应。
 - [发起方结束 Turn 后不会被自动通知] → 这是刻意的首版边界；Agent 可在当前 Turn 内等待或轮询，也可把子 Thread 深度链接交给用户后结束。
 - [原生 Codex 的沙箱阻止工具调用连接本地 Runtime] → 已对 Codex CLI 0.149.1 的默认 `read-only` 沙箱实测：loopback TCP 与 Unix-domain socket 均不可连接。因此首版仍向官方进程传递同一 Runtime 的白名单连接参数并保持完全相同的 CLI 语义，但原生 Codex 作为发起方时必须使用允许本地连接的会话沙箱；默认沙箱下 CLI 以 `RUNTIME_UNREACHABLE` 明确失败，不静默回退到 PATH 或另一个 Runtime。原生 Codex 作为委派目标的带外官方请求不受此限制。
 - [向官方 App Server 放行环境变量削弱了既有隔离] → 白名单严格限定为 Runtime 连接参数，不含内部路径、更新状态或启动器信息，并为环境构造补充回归测试。

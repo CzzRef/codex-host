@@ -94,6 +94,7 @@ Windows 当前覆盖常见的：
 | Pi | 是 | 否，仍保留 Adapter 内实现 | 是 | 找不到时保留原有延迟失败语义 |
 | OMP | 是 | 否，仍保留 Adapter 内实现 | 是 | 找不到时保留原有延迟失败语义 |
 | Grok | 是 | 是 | 否 | GUI 精简 `PATH` 下仍应补齐 Node Runtime PATH |
+| Cursor (czz-dev) | 是 | 是 | 否 | 仅发现 `cursor-agent`，支持 `CODEXHOST_CURSOR_COMMAND`；不会使用与 Grok 冲突的 `agent` 名称；本机原生 macOS CLI 已验证 |
 | DeepSeek Harness | 否 | 否 | 否 | 优先连接 loopback DSH Web Host；本地 `dsh`/`npx` fallback 仍使用 Adapter 内发现代码 |
 
 因此，当前准确结论是：

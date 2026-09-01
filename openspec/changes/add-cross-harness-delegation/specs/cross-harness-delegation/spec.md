@@ -55,21 +55,20 @@ codexhost SHALL 从同一权威模板向 `~/.agents/skills/codexhost-delegation/
 #### Scenario: 委派给外部 Harness
 - **WHEN** 调用方发起一次委派且目标为可用的外部 Harness
 - **THEN** Host SHALL 为目标 Harness 建立独立的 Native Session 与一个普通可写 Host Thread
-- **AND** SHALL 请求该 Adapter 使用其委派默认的原生无人值守执行策略创建 Session
+- **AND** SHALL 请求该 Adapter 使用 `default` 执行策略创建 Session，保留目标 Harness 原有权限判断
 - **AND** SHALL 在无 Desktop 请求上下文的情况下主动发布该子 Host Thread 为已开始
 - **AND** 调用方 SHALL 收到该子 Thread 的标识与其深度链接
 
 #### Scenario: 委派给 DeepSeek Harness
 - **WHEN** 调用方发起一次委派且目标为 DeepSeek Harness
-- **THEN** Adapter SHALL 在创建 Native Session 后通过最新版 `commands/execute` 执行 `/permission danger-full-access`
-- **AND** 调用 SHALL 显式传递空的 `images` 列表
-- **AND** Adapter SHALL 在投递任务前确认命令成功，并从原生历史确认最终状态为 `permission/preset=danger-full-access`、`sandbox/mode=danger-full-access` 与 `approval/policy=never`
-- **AND** 任一确认失败时创建 SHALL 失败并触发现有委派回滚
+- **THEN** Adapter SHALL 保留 Native Session 的默认权限
+- **AND** Coordinator MUST NOT 自动要求 `/permission danger-full-access` 或 `approval/policy=never`
+- **AND** 原生审批需要用户响应时，子 Thread MAY 保持等待状态
 
 #### Scenario: 委派给原生 Codex
 - **WHEN** 调用方发起一次委派且目标为原生 Codex Harness
 - **THEN** Host SHALL 通过对官方 App Server 的带外请求创建一个原生 Codex Thread 并投递任务
-- **AND** `thread/start` SHALL 使用 `approvalPolicy: "never"` 与 `sandbox: "danger-full-access"`
+- **AND** `thread/start` MUST NOT 为委派强制覆盖 `approvalPolicy` 或 `sandbox`
 - **AND** 带外请求与其响应 MUST NOT 作为 Desktop 发起的请求被回送给 Desktop
 - **AND** Host SHALL 跟踪该 Thread 的官方通知以便后续提取结果
 - **AND** 该 Thread SHALL 按官方既有语义出现在聚合会话列表中
@@ -85,7 +84,7 @@ codexhost SHALL 从同一权威模板向 `~/.agents/skills/codexhost-delegation/
 - **AND** 它 MUST NOT 因为存在父子关系而被排除出列表
 
 #### Scenario: 目标启动失败
-- **WHEN** 目标 Harness 的会话无法建立，或其委派默认无人值守执行策略无法应用
+- **WHEN** 目标 Harness 的会话无法建立，或请求的显式配置无法应用
 - **THEN** 委派 SHALL 失败并返回可辨识的错误原因
 - **AND** Host MUST NOT 留下已发布或半持久化的子 Thread
 
@@ -93,6 +92,12 @@ codexhost SHALL 从同一权威模板向 `~/.agents/skills/codexhost-delegation/
 - **WHEN** 用户通过 Desktop 的普通创建路径建立 Thread
 - **THEN** Host SHALL 继续使用该请求与目标 Adapter 的既有权限选择语义
 - **AND** MUST NOT 因委派默认策略而强制提升普通 Thread 权限
+
+#### Scenario: 委派给仅支持实时历史的 Cursor
+- **WHEN** 目标 Cursor Adapter 显式报告 `history.transcript: "live-only"`
+- **THEN** 委派 SHALL 使用当前 Host 的实时投影提供结果读取与等待
+- **AND** MUST NOT 要求或伪造 NativeTurnRef、Fork Checkpoint 或持久化 transcript
+- **AND** Host 重启后的恢复 SHALL 明确失败并保留 Cursor 归属
 
 ### Requirement: 委派关系独立持久化且重复请求幂等
 Host SHALL 独立于 Thread 记录持久化 Delegation 关系，包含 Delegation 标识、父子 Thread 标识、父与目标 Harness、状态与可选 Request ID。调用方 SHALL 可以省略 Request ID；省略时 Host SHALL 在一个有界时间窗内依据父 Thread 与任务文本判定重复。Host MUST NOT 依据委派层级拒绝委派。

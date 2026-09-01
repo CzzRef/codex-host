@@ -175,11 +175,21 @@ Host Runtime SHALL use persisted ownership and the same HarnessAdapter Snapshot 
 - **AND** no Harness-specific rollback command SHALL be required
 
 ### Requirement: Persisted completion precedes Desktop terminal projection
-For every external Harness, Host SHALL persist a live Turn's NativeTurnRef and optional Checkpoint before projecting the corresponding successful terminal to Desktop. Store failure SHALL become an explicit failed lifecycle and MUST NOT expose an unpersisted Fork Anchor.
+For every external Harness whose `history.transcript` is `native` or omitted, Host SHALL persist a live Turn's NativeTurnRef and optional Checkpoint before projecting the corresponding successful terminal to Desktop. Store failure SHALL become an explicit failed lifecycle and MUST NOT expose an unpersisted Fork Anchor. Only an Adapter explicitly declaring `history.transcript: "live-only"` MAY complete without a NativeTurnRef; it MUST NOT advertise Fork or rollback, invent native history identity, or expose an unpersisted Fork Anchor.
 
 #### Scenario: Turn mapping write fails
 - **WHEN** an Adapter emits a successful terminal with stable Native identity but Mapping Store cannot commit it
 - **THEN** Host SHALL not project that success as a Forkable completed Turn
+
+#### Scenario: Live-only Adapter completes and is read in the same Host
+- **WHEN** a live-only Adapter completes without a NativeTurnRef
+- **THEN** Host SHALL retain and read the existing in-memory Turn projection without invoking native snapshot alignment
+- **AND** Host SHALL NOT create synthetic native Turn mappings or persist a second transcript
+
+#### Scenario: Live-only Thread is requested after Host restart
+- **WHEN** a persisted live-only Thread no longer has its original loaded Session
+- **THEN** the owning Adapter SHALL reject resume as unsupported
+- **AND** the persisted Thread SHALL remain externally owned without fallback to official Codex or a newly created empty Session
 
 ### Requirement: 已注册外部 Harness 必须共享一条 Usage 路由路径
 

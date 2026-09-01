@@ -1,3 +1,5 @@
+> **CzzRef / czz-dev fork:** use the [source installation guide](czz-dev.md) for this branch. It adds limited Cursor ACP support and a guarded source launcher; it does not restart an existing Codex Desktop. The upstream installation instructions below describe the upstream release.
+
 <div align="center">
 
 # CodexHost

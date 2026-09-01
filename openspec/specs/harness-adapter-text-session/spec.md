@@ -170,3 +170,19 @@ A concrete Adapter SHALL publish a Native Session Ref only when the native Harne
 - **WHEN** 具体 Harness 不提供可靠的 Usage Telemetry
 - **THEN** 其 Session MUST 将 `initialUsage` 暴露为 `null`，并且不发出 Usage 快照
 - **AND** 所有现有文本、cancel、state、fault 和 close 行为 MUST 保持不变
+
+### Requirement: Live-only transcript support is an explicit capability
+
+An Adapter that cannot obtain stable native Turn identity and replayable history MAY declare `capabilities.history.transcript: "live-only"` for a limited text Session. Omitted or `native` retains the existing native transcript contract. A live-only Session MUST still publish a confirmed Native Session identity and complete ordered Item and Turn lifecycles, but MUST NOT fabricate NativeTurnRef, Checkpoint, snapshot history, or persistent replay support.
+
+#### Scenario: Cursor provides streaming without native transcript replay
+
+- **WHEN** Cursor ACP provides a confirmed Session identity and streaming outputs but no stable native Turn identity or transcript replay
+- **THEN** the Adapter SHALL advertise live-only history with Fork and rollback disabled
+- **AND** successful live Turns MAY omit NativeTurnRef while the Host retains their current in-memory projection
+- **AND** `readSnapshot`, resume, Fork, and rollback SHALL return explicit unsupported errors instead of empty or fabricated history
+
+#### Scenario: Existing native transcript Adapter omits the new field
+
+- **WHEN** a previously registered Adapter does not set `history.transcript`
+- **THEN** all existing native identity, persistence, snapshot alignment, and resume requirements SHALL remain in force

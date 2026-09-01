@@ -1,3 +1,5 @@
+> **CzzRef / czz-dev 포크:** 이 브랜치는 제한적인 Cursor ACP 지원과 안전한 소스 실행기를 추가합니다. 설치는 [소스 설치 안내](czz-dev.md)를 따르세요. 실행 중인 Codex Desktop은 재시작하지 않습니다. 아래 설치 설명은 업스트림 배포판 기준입니다.
+
 <div align="center">
 
 # CodexHost
