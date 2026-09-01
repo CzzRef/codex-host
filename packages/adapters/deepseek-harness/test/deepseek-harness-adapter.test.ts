@@ -533,10 +533,7 @@ describe("DeepSeekHarnessAdapter local Host", () => {
     await expect(adapter.inspect()).resolves.toMatchObject({
       status: "ready",
       catalog: {
-        models: [
-          { label: "DeepSeek V4 Flash" },
-          { label: "DeepSeek V4 Pro" },
-        ],
+        models: [{ label: "DeepSeek V4 Flash" }, { label: "DeepSeek V4 Pro" }],
       },
     });
     expect(connection.connected).toBe(true);
