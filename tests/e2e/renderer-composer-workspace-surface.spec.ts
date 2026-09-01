@@ -61,7 +61,20 @@ const { outputFiles } = await build({
       branch.type = "button";
       branch.setAttribute("aria-label", "Switch branch main");
       branch.textContent = "main";
-      document.body.append(parent, branch);
+      const changes = document.createElement("button");
+      changes.type = "button";
+      changes.setAttribute("data-slot", "thread-summary-panel-item-button");
+      changes.textContent = "Changes +12 -3";
+      changes.style.width = "120px";
+      changes.style.height = "24px";
+      changes.addEventListener("click", () => {
+        globalThis.__changesClicks = (globalThis.__changesClicks ?? 0) + 1;
+      });
+      const turn = document.createElement("div");
+      turn.setAttribute("data-turn-key", "history-content:turn:turn-a");
+      turn.textContent = "You said: hello";
+      turn.style.minHeight = "24px";
+      document.body.append(parent, branch, changes, turn);
 
       const unavailable = async () => {
         throw new Error("unused fixed control");
@@ -138,7 +151,8 @@ const { outputFiles } = await build({
         if (!fileListener) throw new Error("File-change listener is unavailable");
         fileListener({
           threadId,
-          files: [{ path: "src/bar.ts", addedLines: 8, deletedLines: 2 }],
+          files: [{ path: "src/bar.ts", addedLines: 8, deletedLines: 2, preview: "+keep" }],
+          turnId: "turn-a",
         });
       };
       } catch (error) {
@@ -171,9 +185,6 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
     });
   });
   await page.goto("https://codexhost.test/");
-  await page.evaluate(() => {
-    sessionStorage.setItem("codexhost.prompt-reuse:thread-workspace-e2e", "验收一下当前改动");
-  });
   await page.addScriptTag({ content: browserBundle });
 
   const bar = page.locator("[data-codexhost-workspace-bar]");
@@ -192,16 +203,42 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
     .toBe(true);
 
   await page.evaluate("globalThis.emitWorkspaceFiles()");
-  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("src/bar.ts");
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText(
+    "files this conversation",
+  );
+  await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
+  await page.locator(".codexhost-workspace-files-toggle").click();
+  await expect(page.locator("[data-codexhost-workspace-file]")).toBeVisible();
+  await expect(page.locator("[data-codexhost-workspace-file]")).toContainText("src/bar.ts");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("+8");
+  await page.locator("[data-turn-key]").click();
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("this turn");
+  await expect(page.locator("[data-codexhost-turn-files]")).toHaveCount(1);
+  await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Edit");
+  await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Rollback");
 
   await expect(page.locator("[data-codexhost-branch-worktree-toggle] input")).toBeChecked();
+  await page.getByRole("button", { name: "Open review" }).click({ force: true });
+  await expect.poll(async () => page.evaluate("globalThis.__changesClicks ?? 0")).toBe(1);
 
+  const editor = page.locator('[data-codex-composer][contenteditable="true"]');
+  await composer.evaluate((node) => {
+    const stop = node.ownerDocument.createElement("button");
+    stop.setAttribute("aria-label", "Stop");
+    node.append(stop);
+  });
+  await editor.click();
+  await editor.evaluate((node) => {
+    node.textContent = "现在是第二段";
+  });
+  await editor.press("Enter");
+  await expect(editor).toHaveText("");
+  await expect(page.locator("[data-codexhost-prompt-ghost]")).toHaveCount(0);
+  await composer.evaluate((node) => node.querySelector('[aria-label="Stop"]')?.remove());
   const ghost = page.locator("[data-codexhost-prompt-ghost]");
   await expect(ghost).toBeVisible();
-  await expect(ghost).toContainText("验收一下当前改动");
-  const editor = page.locator('[data-codex-composer][contenteditable="true"]');
+  await expect(ghost).toContainText("现在是第二段");
   await editor.click();
   await editor.press("Tab");
-  await expect(editor).toContainText("验收一下当前改动");
+  await expect(editor).toContainText("现在是第二段");
 });

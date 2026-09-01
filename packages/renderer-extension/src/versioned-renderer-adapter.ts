@@ -884,6 +884,8 @@ export function installCurrentRendererAdapter(): {
       currentModelClient().inspectThreadUsage(input),
     inspectThreadWorkspace: (input: ThreadWorkspaceInspectParams) =>
       currentModelClient().inspectThreadWorkspace(input),
+    rollbackThread: (input: { threadId: string; numTurns: number }) =>
+      currentModelClient().rollbackThread?.(input) ?? Promise.resolve(),
     subscribeThreadUsage: (listener: (update: ThreadUsageInspection) => void) =>
       usageSubscription.subscribe(listener),
     subscribeThreadWorkspace: (listener: (update: ThreadWorkspaceSnapshot) => void) => {

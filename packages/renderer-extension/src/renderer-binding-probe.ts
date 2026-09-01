@@ -75,6 +75,7 @@ import { installRendererSidebarAgentIcons } from "./renderer-sidebar-agent-icons
 import { installRendererSettingsLifecycle } from "./renderer-settings-lifecycle.js";
 import { installRendererBranchWorktreeToggle } from "./renderer-branch-worktree-toggle.js";
 import { installRendererComposerPromptReuse } from "./renderer-composer-prompt-reuse.js";
+import { installRendererTurnActions } from "./renderer-turn-actions.js";
 import { installRendererWorkspaceBar } from "./renderer-workspace-bar.js";
 import type {
   RendererConnectionDiagnostics,
@@ -572,6 +573,9 @@ export function installRendererBindingProbe(
   });
   const branchWorktreeToggle = installRendererBranchWorktreeToggle();
   const promptReuse = installRendererComposerPromptReuse();
+  const turnActions = installRendererTurnActions({
+    getClient: () => modelControl,
+  });
   let connectionDiagnostics: RendererConnectionDiagnostics | null = null;
   const settingsLifecycle = installRendererSettingsLifecycle(window, {
     getUpdateClient: () => modelControl,
@@ -579,6 +583,7 @@ export function installRendererBindingProbe(
     getModelCatalogClient: () => modelControl,
     onLocaleChange() {
       workspaceBar.refresh();
+      turnActions.refresh();
       for (const mounted of mountedByComposer.values()) renderMounted(mounted);
     },
   });
@@ -2382,6 +2387,7 @@ export function installRendererBindingProbe(
       workspaceBar.refresh();
       branchWorktreeToggle.refresh();
       promptReuse.refresh();
+      turnActions.refresh();
       void refreshHarnessAvailabilityForHost("local");
       reconcileHarnessAvailabilityHost();
       const connected = connectedComposers();
@@ -2417,6 +2423,7 @@ export function installRendererBindingProbe(
       workspaceBar.dispose();
       branchWorktreeToggle.dispose();
       promptReuse.dispose();
+      turnActions.dispose();
       settingsLifecycle.dispose();
       document.removeEventListener("beforeinput", onBeforeInput, true);
       document.removeEventListener("submit", onSubmit, true);

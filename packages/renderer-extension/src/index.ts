@@ -150,7 +150,17 @@ export {
 } from "./renderer-sidebar-agent-icons.js";
 export type { RendererSidebarContractInspection } from "./renderer-sidebar-agent-icons.js";
 export {
+  installRendererTurnActions,
+  nativeTurnButton,
+  orderedTurnKeys,
+  turnsAfterKey,
+} from "./renderer-turn-actions.js";
+export type { RendererTurnActions } from "./renderer-turn-actions.js";
+export {
   installRendererWorkspaceBar,
+  isNativeWorkspaceDiffControl,
+  nativeWorkspaceDiffControl,
+  openNativeWorkspaceDiff,
   WORKSPACE_BAR_ATTRIBUTE,
   WORKSPACE_BAR_SELECTOR,
   WORKSPACE_ROW_ATTRIBUTE,
