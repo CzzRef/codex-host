@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 
 import type { HostThreadSnapshot } from "@codexhost/harness-adapter";
-import { MappingStore, type StoredTurnMappingV1 } from "@codexhost/mapping-store";
+import {
+  MappingStore,
+  storedThreadRecordV1Schema,
+  type StoredThreadRecordV1,
+  type StoredTurnMappingV1,
+} from "@codexhost/mapping-store";
 import {
   harnessIdSchema,
   hostThreadIdSchema,
@@ -11,9 +16,13 @@ import {
   nativeSessionRefSchema,
   nativeTurnRefSchema,
 } from "@codexhost/shared-contracts";
+import type { JsonObject } from "@codexhost/protocol-core";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ExternalThreadRepository } from "../src/external-thread-repository.js";
+import {
+  ExternalThreadRepository,
+  externalThreadValue,
+} from "../src/external-thread-repository.js";
 
 const temporaryDirectories: string[] = [];
 const harnessId = harnessIdSchema.parse("claude-code");
@@ -229,5 +238,61 @@ describe("ExternalThreadRepository", () => {
       aligned.record.turnMappings.map(({ hostTurnId }) => hostTurnId),
     );
     await repository.close();
+  });
+});
+
+describe("externalThreadValue", () => {
+  function storedRecord(title: string): StoredThreadRecordV1 {
+    return storedThreadRecordV1Schema.parse({
+      formatVersion: 1,
+      revision: 1,
+      hostThreadId,
+      createRequestId: "create-1",
+      harnessId,
+      state: "ready",
+      nativeSessionRef,
+      cwd: "/tmp/project",
+      title,
+      archived: false,
+      transportModelId: "model-1",
+      ephemeral: false,
+      historyMode: "paginated",
+      turnMappings: [],
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    }) as StoredThreadRecordV1;
+  }
+
+  function userMessageTurn(text: string): JsonObject {
+    return { items: [{ type: "userMessage", content: [{ type: "text", text }] }] };
+  }
+
+  it("names an untitled Thread after its first user message", () => {
+    const value = externalThreadValue({
+      record: storedRecord(""),
+      turns: [
+        userMessageTurn("  \u4fee\u590d\u91c7\u8d2d\u5355\u6539\u4ef7\n\u7b2c\u4e8c\u884c  "),
+      ],
+      sessionId: "native-session-1",
+    });
+
+    expect(value.name).toBe("\u4fee\u590d\u91c7\u8d2d\u5355\u6539\u4ef7 \u7b2c\u4e8c\u884c");
+  });
+
+  it("prefers a stored title and leaves a Thread with no user message unnamed", () => {
+    expect(
+      externalThreadValue({
+        record: storedRecord("260901-\u5df2\u547d\u540d"),
+        turns: [userMessageTurn("\u4f60\u597d")],
+        sessionId: "native-session-1",
+      }).name,
+    ).toBe("260901-\u5df2\u547d\u540d");
+    expect(
+      externalThreadValue({
+        record: storedRecord(""),
+        turns: [],
+        sessionId: "native-session-1",
+      }).name,
+    ).toBeNull();
   });
 });

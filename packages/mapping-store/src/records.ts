@@ -44,8 +44,13 @@ export const storedThreadRecordV1Schema = z
     nativeSessionRef: nativeSessionRefSchema.optional(),
     cwd: nonBlankTextSchema.max(16_384),
     title: z.string().max(4_096),
-    titleSource: z.enum(["desktop", "native"]).optional(),
+    // `fallback` is a name the Host derived from the first user message, not
+    // a name a person or the Harness chose; it never blocks a later rename.
+    titleSource: z.enum(["desktop", "native", "fallback"]).optional(),
     archived: z.boolean(),
+    // Unread is Host-owned for extra processes: the Desktop persists its own
+    // unread for native Threads only, so this must survive a Host restart.
+    unread: z.boolean().optional(),
     pinned: z.boolean().optional(),
     sectionId: nonBlankTextSchema.max(1_024).optional(),
     sectionPosition: z.number().int().optional(),

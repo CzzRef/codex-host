@@ -583,7 +583,7 @@ export class MappingStore {
   async setTitle(
     hostThreadId: HostThreadId,
     title: string,
-    source: "desktop" | "native" = "desktop",
+    source: "desktop" | "native" | "fallback" = "desktop",
   ): Promise<StoredThreadRecordV1> {
     return this.#update(hostThreadId, (current) =>
       current.title === title && current.titleSource === source
@@ -604,6 +604,14 @@ export class MappingStore {
   async setArchived(hostThreadId: HostThreadId, archived: boolean): Promise<StoredThreadRecordV1> {
     return this.#update(hostThreadId, (current) =>
       current.archived === archived ? null : { ...current, archived },
+    );
+  }
+
+  async setUnread(hostThreadId: HostThreadId, unread: boolean): Promise<StoredThreadRecordV1> {
+    return this.#update(
+      hostThreadId,
+      (current) => ((current.unread ?? false) === unread ? null : { ...current, unread }),
+      { touchUpdatedAt: false },
     );
   }
 

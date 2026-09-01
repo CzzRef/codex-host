@@ -64,10 +64,16 @@ import { executeExternalThreadRollback } from "./external-thread-rollback.js";
 import {
   createExternalThreadRecordInput,
   createProductionExternalThreadStore,
+  derivedThreadName,
   ExternalThreadRepository,
   externalThreadValue,
   type ExternalThreadStore,
 } from "./external-thread-repository.js";
+import {
+  createTitleOverlayWatch,
+  defaultTitleOverlayDirectory,
+  type TitleOverlayWatch,
+} from "./external-thread-title-overlay.js";
 import {
   ExternalThreadRuntime,
   type ExternalThread,
@@ -186,6 +192,7 @@ export interface AppServerHostOptions {
   diagnosticOutput?: Writable;
   externalAdapters: ReadonlyMap<ExternalHarnessId, HarnessAdapter>;
   mappingStore?: ExternalThreadStore;
+  titleOverlayDirectory?: string;
   /** Defaults to true. A listener that shares one store across sessions owns closing it. */
   closeMappingStoreOnExit?: boolean;
   spawnOfficial?: typeof spawn;
@@ -474,7 +481,6 @@ export class AppServerHost {
    * Host-owned because the Desktop's persisted unread atom excludes external
    * Threads; cleared by Desktop-side read/resume, never by the delegation
    * CLI's non-consuming reads. In-memory: a Host restart starts read. */
-  #externalUnreadThreadIds = new Set<string>();
   #closeRequested = false;
   #workspaceWatch = createThreadWorkspaceWatch((threadId) => {
     void this.#writer.json({
@@ -482,6 +488,7 @@ export class AppServerHost {
       params: { threadId },
     });
   });
+  #titleOverlayWatch: TitleOverlayWatch;
 
   constructor(options: AppServerHostOptions) {
     this.#options = {
@@ -546,11 +553,22 @@ export class AppServerHost {
     });
     this.#unregisterDelegationApi =
       typeof unregisterDelegationApi === "function" ? unregisterDelegationApi : undefined;
+    this.#titleOverlayWatch = createTitleOverlayWatch({
+      directory:
+        options.titleOverlayDirectory ??
+        defaultTitleOverlayDirectory(this.#options.environment ?? process.env),
+      onTitle: (threadId, title) => {
+        void this.#applyHostTitleOverlay(threadId, title).catch((error) => {
+          this.#diagnose(error);
+        });
+      },
+    });
   }
 
   close(): void {
     if (this.#closeRequested) return;
     this.#closeRequested = true;
+    this.#titleOverlayWatch.dispose();
     this.#workspaceWatch.dispose();
     this.#options.desktopInput.destroy();
     this.#terminateOfficial();
@@ -559,8 +577,10 @@ export class AppServerHost {
   async run(): Promise<number> {
     try {
       await this.#repository.initialize();
+      await this.#titleOverlayWatch.start();
     } catch (error) {
       this.#diagnose(`Mapping Store initialization failed: ${errorMessage(error)}`);
+      this.#titleOverlayWatch.dispose();
       return 1;
     }
     let official: OfficialAppServerConnection;
@@ -623,6 +643,7 @@ export class AppServerHost {
       this.#routeObservationTracker.clear();
       this.#unregisterDelegationApi?.();
       this.#unregisterDelegationApi = undefined;
+      this.#titleOverlayWatch.dispose();
       if (this.#options.closeMappingStoreOnExit !== false) {
         await this.#repository.close().catch((error) => this.#diagnose(error));
       }
@@ -1594,7 +1615,7 @@ export class AppServerHost {
             status,
             // Only external Threads carry Host-owned unread; official rows
             // keep the Desktop's own unread authority and omit the field.
-            ...(record ? { hasUnreadTurn: this.#externalUnreadThreadIds.has(entry.id) } : {}),
+            ...(record ? { hasUnreadTurn: record.unread === true } : {}),
             // A Turn blocked on a Desktop question or approval is
             // caller-visible attention; consumers surface it instead of a
             // plain "running". Questions map to input; approvals stay
@@ -2825,6 +2846,64 @@ export class AppServerHost {
     return { threadId: location.record.hostThreadId, title };
   }
 
+  async #applyHostTitleOverlay(threadId: string, title: string): Promise<void> {
+    const location = await this.#locateExternalThread(threadId);
+    if (location.kind !== "external") return;
+    if (location.record.title === title && location.record.titleSource === "native") return;
+    await this.#renameDelegationThread({ threadId, name: title });
+  }
+
+  /**
+   * Codexhost disables Codex title generation for external Threads, so a
+   * Thread nobody renamed stays nameless everywhere. Desktop writes a
+   * first-user-message fallback of its own, but nothing does when the Thread
+   * was started by a Harness or the delegation CLI, and `thread/list`
+   * projects records with no Turn items — so a read-side fallback cannot
+   * reach the sidebar or the CLI. Persist the same fallback here instead.
+   *
+   * It is stored as `titleSource: "fallback"` rather than impersonating the
+   * Desktop fallback: a name the Host derived is never a hand-set name, and
+   * saying so keeps it replaceable without depending on preview evidence that
+   * a freshly started Turn does not have yet.
+   */
+  async #nameUntitledThreadAfterFirstMessage(thread: ExternalThread, text: string): Promise<void> {
+    if (thread.record.title.length > 0) return;
+    const derived = derivedThreadName(text);
+    if (derived === null) return;
+    try {
+      thread.record = await this.#repository.setTitle(
+        thread.record.hostThreadId,
+        derived,
+        "fallback",
+      );
+    } catch {
+      this.#diagnose("External fallback Thread title could not be persisted");
+      return;
+    }
+    thread.thread.name = derived;
+    await this.#writer.json({
+      method: "thread/name/updated",
+      params: { threadId: thread.record.hostThreadId, threadName: derived },
+    });
+  }
+
+  /**
+   * External unread used to live in a process-local Set, so a Host restart
+   * silently reported every extra process as read: nobody had viewed those
+   * Threads, the memory was simply gone, and Desktop's own persisted unread
+   * then disagreed with the Host about the same Thread. It rides the Thread
+   * record instead. `updatedAt` is deliberately left alone — marking a Thread
+   * read is not activity and must not reorder the sidebar.
+   */
+  async #markExternalUnread(thread: ExternalThread, unread: boolean): Promise<void> {
+    if ((thread.record.unread ?? false) === unread) return;
+    try {
+      thread.record = await this.#repository.setUnread(thread.record.hostThreadId, unread);
+    } catch {
+      this.#diagnose("External Thread unread state could not be persisted");
+    }
+  }
+
   async #syncNativeThreadName(
     thread: ExternalThread,
     nativeTitle: { text: string; source: "user" | "generated" },
@@ -2866,16 +2945,18 @@ export class AppServerHost {
   }
 
   /**
-   * A generated native title may replace the stored name unless a person
-   * chose that name in Codex Desktop. Desktop-side names are fallback titles
-   * derived from the first user message (codexhost disables Codex title
-   * generation for external Threads), so a stored desktop name that matches
-   * the Thread's first-message preview is still replaceable.
+   * A generated native title may replace an empty name, a Host-derived
+   * fallback, or a Desktop first-message fallback. It must not replace a
+   * Host CLI / overlay native name. Desktop-side names that match the
+   * Thread's first-message preview are still replaceable.
    */
   #nativeTitleMayReplace(thread: ExternalThread): boolean {
     const title = thread.record.title;
     if (title.length === 0) return true;
-    if (thread.record.titleSource === "native") return true;
+    // A Host-derived fallback is not a chosen name; it always yields.
+    if (thread.record.titleSource === "fallback") return true;
+    // Generated Grok titles must not replace a Host CLI / overlay native name.
+    // User-sourced native titles still apply in #syncNativeThreadName.
     const preview = this.#threadPreviewEvidence(thread);
     if (preview.length === 0) return false;
     const normalizedTitle = title
@@ -3051,7 +3132,7 @@ export class AppServerHost {
     historyFresh: boolean,
   ): Promise<void> {
     // A Desktop-side content read is the "viewed" signal for external unread.
-    if (includeTurns) this.#externalUnreadThreadIds.delete(thread.record.hostThreadId);
+    if (includeTurns) await this.#markExternalUnread(thread, false);
     if (includeTurns && thread.record.historyMode === "paginated") {
       await this.#writer.json(
         rpcError(request, -32602, "Paginated External Threads require thread/turns/list"),
@@ -3122,7 +3203,7 @@ export class AppServerHost {
     historyFresh: boolean,
   ): Promise<void> {
     // Resuming is the Desktop opening the Thread; the unread mark is consumed.
-    this.#externalUnreadThreadIds.delete(thread.record.hostThreadId);
+    await this.#markExternalUnread(thread, false);
     if (!thread.running && !historyFresh) {
       const refreshed = await this.#refreshExternalThread(thread);
       if (refreshed) {
@@ -3248,6 +3329,10 @@ export class AppServerHost {
       }
     };
     if (thread.running) {
+      if (thread.activeTurnId && thread.session.capabilities.turns?.steer === true) {
+        await this.#injectExternalTurnStartAsSteer(request, thread, alsoAnswer);
+        return;
+      }
       if (thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
         await replyError(-32072, "External Thread already has an active Turn");
         return;
@@ -3341,6 +3426,7 @@ export class AppServerHost {
       this.#dispatchQueuedExternalTurn(thread);
       return;
     }
+    await this.#nameUntitledThreadAfterFirstMessage(thread, text);
     try {
       const pending = projection.projector.pendingTurn();
       await writer.json(rpcEnvelope(request, { result: { turn: pending } }));
@@ -3595,10 +3681,10 @@ export class AppServerHost {
         thread.turns.push(result.completedTurn);
         thread.thread.updatedAt = completedAt;
         thread.thread.recencyAt = completedAt;
-        // The Desktop persists unread only for native Threads, so the Host is
-        // the sole owner of external unread. A finished non-ephemeral Turn is
-        // unread until the Desktop views the Thread again.
-        this.#externalUnreadThreadIds.add(thread.record.hostThreadId);
+        // The Desktop persists its own unread for native Threads only, so the
+        // Host is the owner for extra processes. A finished non-ephemeral Turn
+        // is unread until the Desktop views the Thread again.
+        await this.#markExternalUnread(thread, true);
       }
       thread.historyHydrated = false;
       thread.running = false;
@@ -3638,6 +3724,59 @@ export class AppServerHost {
       } else {
         this.#dispatchQueuedExternalTurn(thread);
       }
+    }
+  }
+
+  async #injectExternalTurnStartAsSteer(
+    request: JsonRpcRequest,
+    thread: ExternalThread,
+    alsoAnswer: readonly JsonRpcRequest[] = [],
+  ): Promise<void> {
+    const writer = request.id === null ? { json: async () => undefined } : this.#writer;
+    const replyError = async (code: number, message: string): Promise<void> => {
+      await writer.json(rpcError(request, code, message));
+      for (const peer of alsoAnswer) {
+        if (peer.id === null) continue;
+        await this.#writer.json(rpcError(peer, code, message));
+      }
+    };
+    const turnId = thread.activeTurnId;
+    if (!turnId) {
+      await replyError(-32072, "External Thread already has an active Turn");
+      return;
+    }
+    let text: string;
+    try {
+      text = requestText(requestObject(request));
+    } catch (error) {
+      await replyError(-32602, errorMessage(error));
+      return;
+    }
+    const result = await thread.session.execute({
+      type: "turn.steer",
+      turnId,
+      input: [{ type: "text", text }],
+    });
+    if (!result.ok) {
+      this.#diagnose(
+        `External native steer failed: ${result.error.message}; holding turn/start until the active Turn completes`,
+      );
+      if (thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
+        await replyError(-32072, "External Thread already has an active Turn");
+        return;
+      }
+      thread.queuedTurnStarts.push(request);
+      if (alsoAnswer.length > 0) thread.queuedTurnStarts.push(...alsoAnswer);
+      return;
+    }
+    const pending = thread.projectedTurns.get(turnId)?.projector.pendingTurn() ?? {
+      id: turnId,
+      status: "inProgress",
+    };
+    await writer.json(rpcEnvelope(request, { result: { turn: pending } }));
+    for (const peer of alsoAnswer) {
+      if (peer.id === null) continue;
+      await this.#writer.json(rpcEnvelope(peer, { result: { turn: pending } }));
     }
   }
 
