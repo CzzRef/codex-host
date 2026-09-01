@@ -50,6 +50,7 @@ function validMetafile(extraInputs = {}) {
       "packages/adapters/claude-code/dist/index.js": {},
       "packages/adapters/deepseek-harness/dist/index.js": {},
       "packages/adapters/grok/dist/index.js": {},
+      "packages/adapters/cursor/dist/index.js": {},
       "packages/adapters/omp/dist/index.js": {},
       "node_modules/@agentclientprotocol/sdk/index.js": {},
       "node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs": {},
@@ -131,6 +132,12 @@ describe("release Host Bundle", () => {
     delete withoutGrok["packages/adapters/grok/dist/index.js"];
     expect(() => auditHostBundleMetafile({ inputs: withoutGrok })).toThrow(
       "missing required input: /packages/adapters/grok/",
+    );
+
+    const withoutCursor = { ...validMetafile().inputs };
+    delete withoutCursor["packages/adapters/cursor/dist/index.js"];
+    expect(() => auditHostBundleMetafile({ inputs: withoutCursor })).toThrow(
+      "missing required input: /packages/adapters/cursor/",
     );
 
     const withoutOmp = { ...validMetafile().inputs };
