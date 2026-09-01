@@ -15,6 +15,7 @@ import { FakeHarnessAdapter, FakeHarnessSession } from "@codexhost/harness-adapt
 import { MappingStore } from "@codexhost/mapping-store";
 import {
   CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
+  CODEX_PINNED_THREAD_SECTION_ID,
   encodeClaudeTransportModel,
   encodePiTransportModel,
   type ExternalHarnessId,
@@ -2409,11 +2410,20 @@ describe("AppServerHost HarnessAdapter projection", () => {
       fixture.collector.waitFor((message) => requestId(message, 53)),
     ).resolves.toMatchObject({
       id: 53,
-      result: { thread: { id: threadId, isPinned: true } },
+      result: {
+        thread: {
+          id: threadId,
+          isPinned: true,
+          section: { id: CODEX_PINNED_THREAD_SECTION_ID },
+        },
+      },
     });
     await expect(
       fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
-    ).resolves.toMatchObject({ pinned: true });
+    ).resolves.toMatchObject({
+      pinned: true,
+      sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+    });
     writeRequest(fixture.desktopInput, {
       id: 59,
       method: "thread/metadata/update",
@@ -2448,7 +2458,78 @@ describe("AppServerHost HarnessAdapter projection", () => {
     expect(officialWrite).not.toHaveBeenCalled();
     const stored = await fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId));
     expect(stored).toMatchObject({ pinned: false });
+    expect(stored).not.toHaveProperty("sectionId");
     expect(stored).not.toHaveProperty("gitInfo");
+    await stopFixture(fixture);
+  });
+
+  it("pins an External Thread through thread/section/move and lists it by section", async () => {
+    const fixture = createFixture();
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    const threadId = await startPiThread(fixture);
+    const before = await fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId));
+    writeRequest(fixture.desktopInput, {
+      id: 71,
+      method: "thread/section/move",
+      params: {
+        threadId,
+        sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+        beforeThreadId: null,
+      },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 71))).resolves.toEqual({
+      id: 71,
+      result: {},
+    });
+    const pinned = await fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId));
+    expect(pinned).toMatchObject({
+      pinned: true,
+      sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+      updatedAt: before?.updatedAt,
+    });
+    expect(officialWrite).not.toHaveBeenCalled();
+
+    fixture.official.stdin.once("data", (chunk: Buffer) => {
+      const request = JSON.parse(chunk.toString("utf8")) as JsonObject;
+      fixture.official.stdout.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: { data: [], nextCursor: null, backwardsCursor: null },
+        })}\n`,
+      );
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 72,
+      method: "thread/list",
+      params: {
+        sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+        sortKey: "section_position",
+        modelProviders: [],
+        useStateDbOnly: true,
+      },
+    });
+    const listed = await fixture.collector.waitFor((message) => requestId(message, 72));
+    const data = (listed.result as JsonObject).data as JsonObject[];
+    expect(data.map((thread) => thread.id)).toEqual([threadId]);
+    expect(data[0]).toMatchObject({
+      id: threadId,
+      isPinned: true,
+      section: { id: CODEX_PINNED_THREAD_SECTION_ID },
+    });
+
+    writeRequest(fixture.desktopInput, {
+      id: 73,
+      method: "thread/section/move",
+      params: { threadId, sectionId: null },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 73))).resolves.toEqual({
+      id: 73,
+      result: {},
+    });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ pinned: false });
     await stopFixture(fixture);
   });
 
@@ -2826,13 +2907,23 @@ describe("AppServerHost HarnessAdapter projection", () => {
         method: "thread/inject_items",
         params: { threadId: "official-thread", items: [] },
       },
+      {
+        id: 59,
+        method: "thread/section/move",
+        params: {
+          threadId: "official-thread",
+          sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+          beforeThreadId: null,
+        },
+      },
     ];
     for (const request of requests) {
       writeRequest(fixture.desktopInput, request);
       await expect(
         officialRequests.waitFor((message) => message.id === request.id),
       ).resolves.toEqual(request);
-      const result = request.id === 55 ? {} : { thread: { id: "official-thread" } };
+      const result =
+        request.id === 55 || request.id === 59 ? {} : { thread: { id: "official-thread" } };
       fixture.official.stdout.write(`${JSON.stringify({ id: request.id, result })}\n`);
       await fixture.collector.waitFor((message) => message.id === request.id);
     }

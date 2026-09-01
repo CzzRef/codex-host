@@ -608,8 +608,48 @@ export class MappingStore {
   }
 
   async setPinned(hostThreadId: HostThreadId, pinned: boolean): Promise<StoredThreadRecordV1> {
-    return this.#update(hostThreadId, (current) =>
-      (current.pinned ?? false) === pinned ? null : { ...current, pinned },
+    return this.#update(
+      hostThreadId,
+      (current) => ((current.pinned ?? false) === pinned ? null : { ...current, pinned }),
+      { touchUpdatedAt: false },
+    );
+  }
+
+  async assignSection(
+    hostThreadId: HostThreadId,
+    input: {
+      sectionId: string | null;
+      pinned: boolean;
+      sectionPosition?: number;
+      sectionEnteredAt?: string;
+    },
+  ): Promise<StoredThreadRecordV1> {
+    return this.#update(
+      hostThreadId,
+      (current) => {
+        const currentId = current.sectionId ?? null;
+        const currentPinned = current.pinned ?? false;
+        if (
+          currentId === input.sectionId &&
+          currentPinned === input.pinned &&
+          (input.sectionPosition === undefined || current.sectionPosition === input.sectionPosition)
+        ) {
+          return null;
+        }
+        const next: StoredThreadRecordV1 = { ...current, pinned: input.pinned };
+        if (input.sectionId == null) {
+          delete next.sectionId;
+          delete next.sectionPosition;
+          delete next.sectionEnteredAt;
+        } else {
+          next.sectionId = input.sectionId;
+          if (input.sectionPosition !== undefined) next.sectionPosition = input.sectionPosition;
+          next.sectionEnteredAt =
+            input.sectionEnteredAt ?? current.sectionEnteredAt ?? this.#now().toISOString();
+        }
+        return next;
+      },
+      { touchUpdatedAt: false },
     );
   }
 
@@ -659,6 +699,7 @@ export class MappingStore {
   async #update(
     hostThreadId: HostThreadId,
     change: (current: StoredThreadRecordV1) => StoredThreadRecordV1 | null,
+    options: { touchUpdatedAt?: boolean } = {},
   ): Promise<StoredThreadRecordV1> {
     this.#requireInitialized();
     let result: StoredThreadRecordV1 | null = null;
@@ -674,7 +715,7 @@ export class MappingStore {
       const next = storedThreadRecordV1Schema.parse({
         ...changed,
         revision: current.revision + 1,
-        updatedAt: this.#now().toISOString(),
+        updatedAt: options.touchUpdatedAt === false ? current.updatedAt : this.#now().toISOString(),
       }) as StoredThreadRecordV1;
       this.#validateGlobal(next, hostThreadId);
       await this.#replaceFile(this.#recordPath(hostThreadId), next, true);

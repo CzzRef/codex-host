@@ -51,6 +51,13 @@ Host SHALL apply supported `thread/list` filters to External records using only 
 - **THEN** Host SHALL match External records against their persisted Mapping Store pin state
 - **AND** returned External rows SHALL expose `isPinned` from that persisted state, with absent treated as false
 
+#### Scenario: Section rows are requested
+- **WHEN** `sectionId` is omitted, null, or a section identity, including the well-known pinned section
+- **THEN** Host SHALL treat omission as every section, `null` as unsectioned External records, and a section identity as records persisted in that section
+- **AND** pinned External records without an explicit `sectionId` SHALL match the well-known pinned section
+- **AND** returned External rows SHALL expose `section` from that persisted membership
+- **AND** `sortKey=section_position` SHALL be a supported External aggregation sort, defaulting omitted `sortDirection` to `asc`
+
 #### Scenario: Unknown filter semantics are received
 - **WHEN** a future `thread/list` field could change which External records match and Host cannot safely interpret it
 - **THEN** Host SHALL preserve the official list behavior without injecting External rows
@@ -132,12 +139,20 @@ Host SHALL preserve original official Codex behavior for Thread list and managem
 - **THEN** every pending aggregate request SHALL settle with failure in bounded time
 
 ### Requirement: External Pin state is persisted management metadata
-Host SHALL handle `thread/metadata/update` with only `isPinned` for an External Thread by updating Mapping Store pin metadata, reporting success after the state is durable, and exposing the persisted state through thread projections and list filtering. It MUST NOT open or modify the Harness Native Session or forward the External Thread ID to official Codex.
+Host SHALL persist External pin and section membership as Mapping Store management metadata. Current Codex Desktop pins a Thread by moving it into the well-known pinned section (`thread/section/move` plus `thread/list` with that `sectionId` and `sortKey=section_position`). Host MUST handle that path for External Threads, keep `thread/metadata/update` `isPinned` as a compatibility write of the same membership, and MUST NOT open or modify the Harness Native Session or forward the External Thread ID to official Codex.
+
+#### Scenario: External section move is requested
+- **WHEN** `thread/section/move` references an External Thread
+- **THEN** Host SHALL persist the destination `sectionId` (`null` removes the Thread from its section)
+- **AND** the well-known pinned section SHALL be stored as pinned membership
+- **AND** it SHALL answer with `{}` after the state is durable, matching official section-move results
+- **AND** later `thread/read` and matching `thread/list` rows SHALL expose `section.id` for that membership
+- **AND** Host MUST NOT change persisted recency solely because of a section or pin update
 
 #### Scenario: External Pin update is requested
 - **WHEN** `thread/metadata/update` references an External Thread and requests only `isPinned`
-- **THEN** Host SHALL persist the pin state in Mapping Store
-- **AND** it SHALL answer with `{ thread }` carrying that `isPinned` value, matching official Codex metadata-update results
+- **THEN** Host SHALL persist the same pinned-section membership used by `thread/section/move`
+- **AND** it SHALL answer with `{ thread }` carrying that `isPinned` value and `section`
 - **AND** the Native Session and loaded runtime SHALL remain intact
 - **AND** Host MUST NOT change persisted recency solely because of a pin update
 
@@ -154,4 +169,8 @@ A current or future management request that references a persisted External Thre
 
 #### Scenario: Official metadata update is requested
 - **WHEN** `thread/metadata/update` references no persisted External Thread
+- **THEN** Host SHALL forward the original frame to official Codex unchanged
+
+#### Scenario: Official section move is requested
+- **WHEN** `thread/section/move` references no persisted External Thread
 - **THEN** Host SHALL forward the original frame to official Codex unchanged

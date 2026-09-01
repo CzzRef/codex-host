@@ -602,6 +602,33 @@ describe("mapping-store package", () => {
     await third.close();
   });
 
+  it("persists section membership without changing recency", async () => {
+    const directory = await temporaryStoreDirectory();
+    const store = new MappingStore({
+      directory,
+      now: () => new Date("2026-08-01T00:00:00.000Z"),
+    });
+    await store.initialize();
+    await createReady(store);
+    const before = await store.getThread(threadId);
+    const assigned = await store.assignSection(threadId, {
+      pinned: true,
+      sectionId: "01984de2-8f74-7c91-a3b2-5c5e937cf318",
+      sectionPosition: 1,
+    });
+    expect(assigned).toMatchObject({
+      pinned: true,
+      sectionId: "01984de2-8f74-7c91-a3b2-5c5e937cf318",
+      sectionPosition: 1,
+      updatedAt: before?.updatedAt,
+      revision: (before?.revision ?? 0) + 1,
+    });
+    const cleared = await store.assignSection(threadId, { pinned: false, sectionId: null });
+    expect(cleared).toMatchObject({ pinned: false, updatedAt: before?.updatedAt });
+    expect(cleared).not.toHaveProperty("sectionId");
+    await store.close();
+  });
+
   it("keeps prior archive state and Revision when archive replacement fails", async () => {
     const directory = await temporaryStoreDirectory();
     let fail = false;

@@ -1,5 +1,9 @@
 import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
-import { decodeThreadListRequest, type JsonObject } from "@codexhost/protocol-core";
+import {
+  CODEX_PINNED_THREAD_SECTION_ID,
+  decodeThreadListRequest,
+  type JsonObject,
+} from "@codexhost/protocol-core";
 import {
   harnessIdSchema,
   hostThreadIdSchema,
@@ -135,7 +139,27 @@ describe("External Thread metadata catalog", () => {
         query: query({ isPinned: true }),
         runtimeFor: () => null,
       }).data[0]?.thread,
-    ).toMatchObject({ isPinned: true });
+    ).toMatchObject({
+      isPinned: true,
+      section: { id: CODEX_PINNED_THREAD_SECTION_ID, name: "Pinned" },
+    });
+    expect(
+      listExternalThreadMetadata({
+        records: [active, pinned],
+        query: query({
+          sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+          sortKey: "section_position",
+        }),
+        runtimeFor: () => null,
+      }).data.map((entry) => entry.thread.id),
+    ).toEqual(["pinned"]);
+    expect(
+      listExternalThreadMetadata({
+        records: [active, pinned],
+        query: query({ sectionId: null }),
+        runtimeFor: () => null,
+      }).data.map((entry) => entry.thread.id),
+    ).toEqual(["active"]);
   });
 
   it("resolves a Fork tree in one record map and rejects cycles", () => {

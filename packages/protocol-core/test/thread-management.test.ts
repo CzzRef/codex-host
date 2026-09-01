@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CODEX_PINNED_THREAD_SECTION_ID,
   decodeHostThreadListCursor,
   decodeOfficialThreadListPage,
   decodeThreadArchiveRequest,
   decodeThreadListRequest,
   decodeThreadMetadataUpdateRequest,
+  decodeThreadSectionMoveRequest,
   encodeHostThreadListCursor,
 } from "../src/index.js";
 
@@ -37,6 +39,34 @@ describe("Codex Thread list and management protocol boundary", () => {
       supportsExternal: true,
     });
     expect(decoded?.queryFingerprint).toMatch(/^[a-f0-9]{64}$/u);
+    expect(decoded?.sectionFilter).toEqual({ kind: "any" });
+  });
+
+  it("decodes section list filters and section_position sort", () => {
+    expect(
+      decodeThreadListRequest({
+        id: 1,
+        method: "thread/list",
+        params: {
+          sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+          sortKey: "section_position",
+          modelProviders: [],
+          useStateDbOnly: true,
+        },
+      }),
+    ).toMatchObject({
+      sectionFilter: { kind: "id", sectionId: CODEX_PINNED_THREAD_SECTION_ID },
+      sortKey: "section_position",
+      sortDirection: "asc",
+      supportsExternal: true,
+    });
+    expect(
+      decodeThreadListRequest({
+        id: 2,
+        method: "thread/list",
+        params: { sectionId: null },
+      })?.sectionFilter,
+    ).toEqual({ kind: "unsectioned" });
   });
 
   it("rejects malformed list fields and conflicting relationships", () => {
@@ -140,6 +170,21 @@ describe("Codex Thread list and management protocol boundary", () => {
       threadId: "thread-1",
       isPinned: true,
       gitInfo: { branch: "main", sha: null },
+    });
+    expect(
+      decodeThreadSectionMoveRequest({
+        id: 3,
+        method: "thread/section/move",
+        params: {
+          threadId: "thread-1",
+          sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+          beforeThreadId: null,
+        },
+      }),
+    ).toEqual({
+      threadId: "thread-1",
+      sectionId: CODEX_PINNED_THREAD_SECTION_ID,
+      beforeThreadId: null,
     });
   });
 

@@ -18,11 +18,16 @@ const THREAD_LIST_FIELDS = new Set([
   "modelProviders",
   "parentThreadId",
   "searchTerm",
+  "sectionId",
   "sortDirection",
   "sortKey",
   "sourceKinds",
   "useStateDbOnly",
 ]);
+
+/** Well-known Codex Desktop pinned section. Sidebar pin moves a Thread into this section. */
+export const CODEX_PINNED_THREAD_SECTION_ID = "01984de2-8f74-7c91-a3b2-5c5e937cf318";
+export const CODEX_PINNED_THREAD_SECTION_NAME = "Pinned";
 
 const THREAD_SOURCE_KINDS = new Set([
   "cli",
@@ -38,7 +43,9 @@ const THREAD_SOURCE_KINDS = new Set([
 ]);
 
 export type ThreadListSortDirection = "asc" | "desc";
-export type ThreadListSortKey = "created_at" | "updated_at" | "recency_at";
+export type ThreadListSortKey = "created_at" | "updated_at" | "recency_at" | "section_position";
+export type ThreadListSectionFilter =
+  { kind: "any" } | { kind: "unsectioned" } | { kind: "id"; sectionId: string };
 
 export interface ThreadListExternalAnchor {
   timestamp: number;
@@ -59,6 +66,7 @@ export interface DecodedThreadListRequest {
   archived: boolean;
   cwd: string[] | null;
   isPinned: boolean | null;
+  sectionFilter: ThreadListSectionFilter;
   limit: number;
   modelProviders: string[] | null;
   parentThreadId: string | null;
@@ -84,6 +92,11 @@ export interface DecodedThreadMetadataUpdateRequest extends DecodedThreadManagem
     originUrl?: string | null;
     sha?: string | null;
   } | null;
+}
+
+export interface DecodedThreadSectionMoveRequest extends DecodedThreadManagementRequest {
+  sectionId: string | null;
+  beforeThreadId: string | null;
 }
 
 export interface OfficialThreadListPage {
@@ -146,10 +159,51 @@ function decodeSortDirection(value: unknown): ThreadListSortDirection {
 
 function decodeSortKey(value: unknown): ThreadListSortKey {
   if (value === undefined || value === null) return "created_at";
-  if (value !== "created_at" && value !== "updated_at" && value !== "recency_at") {
+  if (
+    value !== "created_at" &&
+    value !== "updated_at" &&
+    value !== "recency_at" &&
+    value !== "section_position"
+  ) {
     throw new Error("thread/list params.sortKey is unsupported");
   }
   return value;
+}
+
+function decodeSectionFilter(params: Record<string, unknown>): ThreadListSectionFilter {
+  if (!Object.prototype.hasOwnProperty.call(params, "sectionId")) return { kind: "any" };
+  if (params.sectionId === null) return { kind: "unsectioned" };
+  if (typeof params.sectionId !== "string" || params.sectionId.length === 0) {
+    throw new Error("thread/list params.sectionId must be text, null, or omitted");
+  }
+  return { kind: "id", sectionId: params.sectionId };
+}
+
+export function effectiveThreadSectionId(record: {
+  pinned?: boolean | undefined;
+  sectionId?: string | undefined;
+}): string | null {
+  if (typeof record.sectionId === "string" && record.sectionId.length > 0) return record.sectionId;
+  return record.pinned === true ? CODEX_PINNED_THREAD_SECTION_ID : null;
+}
+
+export function projectedThreadSection(record: {
+  pinned?: boolean | undefined;
+  sectionId?: string | undefined;
+  sectionEnteredAt?: string | undefined;
+}): { section: JsonObject | null; sectionEnteredAt: number | null; isPinned: boolean } {
+  const sectionId = effectiveThreadSectionId(record);
+  if (!sectionId) return { section: null, sectionEnteredAt: null, isPinned: false };
+  const entered =
+    typeof record.sectionEnteredAt === "string" ? Date.parse(record.sectionEnteredAt) : Number.NaN;
+  return {
+    section: {
+      id: sectionId,
+      name: sectionId === CODEX_PINNED_THREAD_SECTION_ID ? CODEX_PINNED_THREAD_SECTION_NAME : "",
+    },
+    sectionEnteredAt: Number.isFinite(entered) ? Math.floor(entered / 1_000) : null,
+    isPinned: sectionId === CODEX_PINNED_THREAD_SECTION_ID,
+  };
 }
 
 function queryFingerprint(value: JsonObject): string {
@@ -260,8 +314,12 @@ export function decodeThreadListRequest(request: JsonRpcRequest): DecodedThreadL
     throw new Error("thread/list cannot combine parentThreadId and ancestorThreadId");
   }
   const searchTerm = nullableText(params.searchTerm, "thread/list params.searchTerm");
-  const sortDirection = decodeSortDirection(params.sortDirection);
   const sortKey = decodeSortKey(params.sortKey);
+  const sortDirection =
+    params.sortDirection === undefined && sortKey === "section_position"
+      ? "asc"
+      : decodeSortDirection(params.sortDirection);
+  const sectionFilter = decodeSectionFilter(params);
   const sourceKinds = nullableTextArray(params.sourceKinds, "thread/list params.sourceKinds");
   if (sourceKinds?.some((kind) => !THREAD_SOURCE_KINDS.has(kind))) {
     throw new Error("thread/list params.sourceKinds contains an unsupported value");
@@ -277,6 +335,12 @@ export function decodeThreadListRequest(request: JsonRpcRequest): DecodedThreadL
     modelProviders,
     parentThreadId,
     searchTerm,
+    sectionId:
+      sectionFilter.kind === "any"
+        ? "*"
+        : sectionFilter.kind === "unsectioned"
+          ? null
+          : sectionFilter.sectionId,
     sortKey,
     sourceKinds,
     useStateDbOnly: params.useStateDbOnly === true,
@@ -297,6 +361,7 @@ export function decodeThreadListRequest(request: JsonRpcRequest): DecodedThreadL
     archived,
     cwd,
     isPinned,
+    sectionFilter,
     limit: decodeLimit(params.limit),
     modelProviders,
     parentThreadId,
@@ -352,6 +417,34 @@ export function decodeThreadMetadataUpdateRequest(
   if (params.isPinned !== undefined) decoded.isPinned = isPinned;
   if (params.gitInfo !== undefined) decoded.gitInfo = gitInfo ?? null;
   return decoded;
+}
+
+export function decodeThreadSectionMoveRequest(
+  request: JsonRpcRequest,
+): DecodedThreadSectionMoveRequest | null {
+  if (request.method !== "thread/section/move") return null;
+  const params = paramsObject(request, request.method);
+  if (typeof params.threadId !== "string" || params.threadId.length === 0) {
+    throw new Error("thread/section/move params.threadId must be non-empty text");
+  }
+  if (!Object.prototype.hasOwnProperty.call(params, "sectionId")) {
+    throw new Error("thread/section/move params.sectionId is required");
+  }
+  if (
+    params.sectionId !== null &&
+    (typeof params.sectionId !== "string" || params.sectionId.length === 0)
+  ) {
+    throw new Error("thread/section/move params.sectionId must be text or null");
+  }
+  const beforeThreadId = nullableText(
+    params.beforeThreadId,
+    "thread/section/move params.beforeThreadId",
+  );
+  return {
+    threadId: params.threadId,
+    sectionId: params.sectionId,
+    beforeThreadId,
+  };
 }
 
 function optionalCursor(value: unknown, name: string): string | null {
