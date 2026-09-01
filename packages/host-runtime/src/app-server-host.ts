@@ -151,6 +151,7 @@ import {
   type CodexApprovalProjection,
   type CodexQuestionProjection,
   type DecodedThreadForkRequest,
+  type DecodedThreadMetadataUpdateRequest,
   type DecodedThreadListRequest,
   type DecodedThreadRevertRequest,
   type DecodedThreadRollbackRequest,
@@ -260,6 +261,13 @@ export function officialEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEn
     "CODEXHOST_NPM_CLI_PATH",
     "CODEXHOST_NPM_LAUNCHER_PATH",
     "CODEXHOST_NPM_PACKAGE_ROOT",
+    "CODEXHOST_DISABLE_UPDATES",
+    "CODEXHOST_REFUSE_RUNNING_DESKTOP",
+    "CODEXHOST_CURSOR_COMMAND",
+    "CODEXHOST_GROK_COMMAND",
+    "CODEXHOST_OMP_COMMAND",
+    "CODEXHOST_DEEPSEEK_HARNESS_COMMAND",
+    "CODEXHOST_DEEPSEEK_HARNESS_ENDPOINT",
   ]);
   return Object.fromEntries(
     Object.entries(source).filter(([key]) => !internal.has(key) || allowed.has(key)),
@@ -294,6 +302,8 @@ function approvalServerName(harnessId: ExternalHarnessId): string {
       return "Grok";
     case "omp":
       return "Oh My Pi";
+    case "cursor":
+      return "Cursor";
   }
 }
 
@@ -305,6 +315,7 @@ const EXPLICIT_EXTERNAL_THREAD_METHODS = new Set([
   "thread/archive",
   "thread/delete",
   "thread/fork",
+  "thread/inject_items",
   "thread/items/list",
   "thread/metadata/update",
   "thread/name/set",
@@ -698,24 +709,23 @@ export class AppServerHost {
         continue;
       }
       if (request.method === "thread/metadata/update") {
-        let threadId: string;
+        let decoded;
         try {
-          const decoded = decodeThreadMetadataUpdateRequest(request);
+          decoded = decodeThreadMetadataUpdateRequest(request);
           if (!decoded) throw new Error("Expected thread/metadata/update request");
-          threadId = decoded.threadId;
         } catch (error) {
           await this.#writer.json(rpcError(request, -32602, errorMessage(error)));
           continue;
         }
-        const location = await this.#locateExternalThread(threadId);
+        const location = await this.#locateExternalThread(decoded.threadId);
         if (await this.#writeResolutionError(request, location)) continue;
         if (location.kind === "official") {
           await writeFrame(official.stdin, frame);
           continue;
         }
-        await this.#writer.json(
-          rpcError(request, -32078, "External Thread metadata updates are unsupported"),
-        );
+        if (location.kind === "external") {
+          await this.#updateExternalThreadMetadata(request, location, decoded);
+        }
         continue;
       }
       let createRoute: CreateRequestRouteObservation | null;
@@ -831,6 +841,18 @@ export class AppServerHost {
             params,
             resolution.historyFresh,
           );
+          continue;
+        }
+      }
+      if (request.method === "thread/inject_items") {
+        const params = requestObject(request);
+        const location =
+          typeof params.threadId === "string"
+            ? await this.#locateExternalThread(params.threadId)
+            : ({ kind: "official" } as const);
+        if (await this.#writeResolutionError(request, location)) continue;
+        if (location.kind === "external") {
+          await this.#injectExternalThreadItems(request, params);
           continue;
         }
       }
@@ -1226,8 +1248,6 @@ export class AppServerHost {
     const started = await this.#officialRequestBroker.request("thread/start", {
       cwd: input.cwd,
       ...(input.model ? { model: input.model.id } : {}),
-      approvalPolicy: "never",
-      sandbox: "danger-full-access",
       ephemeral: false,
       historyMode: "paginated",
     });
@@ -2492,6 +2512,21 @@ export class AppServerHost {
     await this.#notifyExternalThreadStarted(result.thread);
   }
 
+  async #injectExternalThreadItems(request: JsonRpcRequest, params: JsonObject): Promise<void> {
+    if (!Array.isArray(params.items)) {
+      await this.#writer.json(
+        rpcError(request, -32602, "thread/inject_items params.items must be an array"),
+      );
+      return;
+    }
+    // Codex Desktop injects side-conversation boundary items immediately after
+    // a side-chat thread/fork. An External Fork's derived Native Session
+    // already carries the full parent context, and injected Codex items have
+    // no native representation, so the injection is acknowledged without a
+    // history projection.
+    await this.#writer.json(rpcEnvelope(request, { result: {} }));
+  }
+
   async #notifyExternalThreadStarted(thread: JsonObject): Promise<void> {
     await this.#writer.json({
       method: "thread/started",
@@ -2578,6 +2613,35 @@ export class AppServerHost {
       method: "thread/name/updated",
       params: { threadId: location.record.hostThreadId, threadName: name },
     });
+  }
+
+  async #updateExternalThreadMetadata(
+    request: JsonRpcRequest,
+    location: Extract<ExternalThreadLocation, { kind: "external" }>,
+    decoded: DecodedThreadMetadataUpdateRequest,
+  ): Promise<void> {
+    if (decoded.gitInfo !== undefined || decoded.isPinned === undefined) {
+      await this.#writer.json(
+        rpcError(request, -32078, "External Thread metadata updates are unsupported"),
+      );
+      return;
+    }
+    const pinned = decoded.isPinned === true;
+    let record: StoredThreadRecordV1;
+    try {
+      record = await this.#repository.setPinned(location.record.hostThreadId, pinned);
+    } catch {
+      await this.#writer.json(
+        rpcError(request, -32081, "External Thread pin state could not be persisted"),
+      );
+      return;
+    }
+    if (location.thread) {
+      location.thread.record = record;
+      location.thread.thread.isPinned = pinned;
+      location.thread.thread.updatedAt = unixSeconds();
+    }
+    await this.#writer.json(rpcEnvelope(request, { result: {} }));
   }
 
   async #deleteExternalThread(

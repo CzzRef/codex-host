@@ -62,6 +62,7 @@ export interface ExternalThreadStore {
     transportModelId: string,
   ): Promise<StoredThreadRecordV1>;
   setArchived(hostThreadId: HostThreadId, archived: boolean): Promise<StoredThreadRecordV1>;
+  setPinned(hostThreadId: HostThreadId, pinned: boolean): Promise<StoredThreadRecordV1>;
   removeProvisional(hostThreadId: HostThreadId): Promise<void>;
   removeThread(hostThreadId: HostThreadId): Promise<void>;
   close(): Promise<void>;
@@ -178,6 +179,10 @@ export class ExternalThreadRepository {
 
   setArchived(hostThreadId: HostThreadId, archived: boolean): Promise<StoredThreadRecordV1> {
     return this.store.setArchived(hostThreadId, archived);
+  }
+
+  setPinned(hostThreadId: HostThreadId, pinned: boolean): Promise<StoredThreadRecordV1> {
+    return this.store.setPinned(hostThreadId, pinned);
   }
 
   removeProvisional(hostThreadId: HostThreadId): Promise<void> {
@@ -566,7 +571,7 @@ export function externalThreadValue(input: {
     ephemeral: record.ephemeral,
     canAcceptDirectInput: record.subagent ? false : input.loaded === false ? null : true,
     historyMode: record.historyMode,
-    isPinned: false,
+    isPinned: record.pinned ?? false,
     agentNickname: record.subagent ? record.title || null : null,
     agentRole: record.subagent?.role ?? null,
     extra: null,

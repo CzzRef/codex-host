@@ -116,7 +116,7 @@ describe("HarnessDelegationCoordinator", () => {
       expect(adapter.openInputs).toContainEqual(
         expect.objectContaining({
           kind: "create",
-          executionPolicy: "unattended-full-access",
+          executionPolicy: "default",
         }),
       );
       expect(adapter.openInputs[0]).not.toHaveProperty("model");

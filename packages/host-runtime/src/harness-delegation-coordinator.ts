@@ -281,7 +281,7 @@ export class HarnessDelegationCoordinator {
         kind: "create",
         cwd: record.cwd,
         environment: { ...this.#environment, [DELEGATION_THREAD_ID_ENV]: childThreadId },
-        executionPolicy: "unattended-full-access",
+        executionPolicy: "default",
         ...(input.model ? { model: input.model } : {}),
         ...(input.thinkingOptionId ? { thinkingOptionId: input.thinkingOptionId } : {}),
       });

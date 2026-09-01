@@ -114,6 +114,28 @@ describe("External Thread metadata catalog", () => {
         }).data,
       ).toEqual([]);
     }
+    const pinned = record("pinned", { pinned: true });
+    expect(
+      listExternalThreadMetadata({
+        records: [active, pinned],
+        query: query({ isPinned: true }),
+        runtimeFor: () => null,
+      }).data.map((entry) => entry.thread.id),
+    ).toEqual(["pinned"]);
+    expect(
+      listExternalThreadMetadata({
+        records: [active, pinned],
+        query: query({ isPinned: false }),
+        runtimeFor: () => null,
+      }).data.map((entry) => entry.thread.id),
+    ).toEqual(["active"]);
+    expect(
+      listExternalThreadMetadata({
+        records: [pinned],
+        query: query({ isPinned: true }),
+        runtimeFor: () => null,
+      }).data[0]?.thread,
+    ).toMatchObject({ isPinned: true });
   });
 
   it("resolves a Fork tree in one record map and rejects cycles", () => {

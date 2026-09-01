@@ -1268,10 +1268,10 @@ describe("AppServerHost HarnessAdapter projection", () => {
       method: "thread/start",
       params: {
         cwd: "/synthetic",
-        approvalPolicy: "never",
-        sandbox: "danger-full-access",
       },
     });
+    expect(threadStart.params).not.toHaveProperty("approvalPolicy");
+    expect(threadStart.params).not.toHaveProperty("sandbox");
     fixture.official.stdout.write(
       `${JSON.stringify({ id: threadStart.id, result: { thread: { id: "native-child" } } })}\n`,
     );
@@ -2107,26 +2107,42 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("fails External current and future metadata updates closed without official fallback", async () => {
+  it("persists External pin state and fails other metadata updates closed", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
     fixture.official.stdin.on("data", officialWrite);
     const threadId = await startPiThread(fixture);
-    for (const [id, patch] of [
-      [53, { isPinned: true }],
-      [54, { gitInfo: { branch: "main", sha: null } }],
-    ] as const) {
-      writeRequest(fixture.desktopInput, {
-        id,
-        method: "thread/metadata/update",
-        params: { threadId, ...patch },
-      });
-      await expect(
-        fixture.collector.waitFor((message) => requestId(message, id)),
-      ).resolves.toMatchObject({
-        error: { code: -32078, message: "External Thread metadata updates are unsupported" },
-      });
-    }
+    writeRequest(fixture.desktopInput, {
+      id: 53,
+      method: "thread/metadata/update",
+      params: { threadId, isPinned: true },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 53))).resolves.toEqual({
+      id: 53,
+      result: {},
+    });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ pinned: true });
+    writeRequest(fixture.desktopInput, {
+      id: 59,
+      method: "thread/metadata/update",
+      params: { threadId, isPinned: false },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 59))).resolves.toEqual({
+      id: 59,
+      result: {},
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 54,
+      method: "thread/metadata/update",
+      params: { threadId, gitInfo: { branch: "main", sha: null } },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 54)),
+    ).resolves.toMatchObject({
+      error: { code: -32078, message: "External Thread metadata updates are unsupported" },
+    });
     writeRequest(fixture.desktopInput, {
       id: 58,
       method: "thread/future/manage",
@@ -2139,8 +2155,39 @@ describe("AppServerHost HarnessAdapter projection", () => {
     });
     expect(officialWrite).not.toHaveBeenCalled();
     const stored = await fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId));
-    expect(stored).not.toHaveProperty("isPinned");
+    expect(stored).toMatchObject({ pinned: false });
     expect(stored).not.toHaveProperty("gitInfo");
+    await stopFixture(fixture);
+  });
+
+  it("acknowledges side-conversation item injection on an External Thread", async () => {
+    const fixture = createFixture();
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    const threadId = await startPiThread(fixture);
+    writeRequest(fixture.desktopInput, {
+      id: 61,
+      method: "thread/inject_items",
+      params: {
+        threadId,
+        items: [{ type: "message", content: "side conversation boundary" }],
+      },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 61))).resolves.toEqual({
+      id: 61,
+      result: {},
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 62,
+      method: "thread/inject_items",
+      params: { threadId, items: "invalid" },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 62)),
+    ).resolves.toMatchObject({
+      error: { code: -32602, message: "thread/inject_items params.items must be an array" },
+    });
+    expect(officialWrite).not.toHaveBeenCalled();
     await stopFixture(fixture);
   });
 
@@ -2154,6 +2201,11 @@ describe("AppServerHost HarnessAdapter projection", () => {
         id: 57,
         method: "thread/metadata/update",
         params: { threadId: "official-thread", isPinned: true },
+      },
+      {
+        id: 58,
+        method: "thread/inject_items",
+        params: { threadId: "official-thread", items: [] },
       },
     ];
     for (const request of requests) {
@@ -2615,6 +2667,114 @@ describe("AppServerHost HarnessAdapter projection", () => {
     expect(fixture.adapter.sessions).toHaveLength(0);
     expect(officialWrite).not.toHaveBeenCalled();
     await stopFixture(fixture);
+  });
+
+  it("reads and continues live-only Cursor turns without native history and rejects restart resume", async () => {
+    const adapter = new FakeHarnessAdapter(harnessIdSchema.parse("cursor"), undefined, false);
+    const originalOpen = adapter.open.bind(adapter);
+    const snapshotReads = vi.fn();
+    vi.spyOn(adapter, "open").mockImplementation(async (input) => {
+      if (input.kind !== "create") {
+        return {
+          ok: false,
+          error: { code: "unsupported", message: "Live-only history", retryable: false },
+        };
+      }
+      const opened = await originalOpen(input);
+      if (!opened.ok) return opened;
+      const session = opened.value;
+      Object.defineProperty(session, "capabilities", {
+        value: {
+          ...session.capabilities,
+          history: { ...session.capabilities.history, transcript: "live-only" },
+        },
+      });
+      vi.spyOn(session, "readSnapshot").mockImplementation(async () => {
+        snapshotReads();
+        return {
+          ok: false,
+          error: { code: "unsupported", message: "No native transcript", retryable: false },
+        };
+      });
+      const outputs = session.outputs;
+      Object.defineProperty(session, "outputs", {
+        value: (async function* () {
+          for await (const output of outputs) {
+            if (output.kind === "event" && output.event.type === "turn.completed") {
+              yield {
+                kind: "event" as const,
+                event: {
+                  type: "turn.completed" as const,
+                  turnId: output.event.turnId,
+                  outcome: output.event.outcome,
+                },
+              };
+            } else yield output;
+          }
+        })(),
+      });
+      return opened;
+    });
+    const fixture = createFixture({ externalAdapters: new Map([["cursor", adapter]]) });
+    const threadId = await startExternalThread(fixture, "codexhost/cursor-native");
+    const session = adapter.sessions[0];
+    if (!session) throw new Error("Synthetic Cursor Session was not opened");
+    const turnIds = [];
+    for (const id of [2, 3]) {
+      const turnId = await startPiTurn(fixture, threadId, id);
+      turnIds.push(turnId);
+      session.appendText(`live answer ${id}`);
+      session.succeedTurn();
+      await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    }
+    for (const [id, requestMethod] of [
+      [4, "thread/read"],
+      [5, "thread/resume"],
+    ] as const) {
+      writeRequest(fixture.desktopInput, {
+        id,
+        method: requestMethod,
+        params: { threadId, includeTurns: true },
+      });
+      await expect(
+        fixture.collector.waitFor((message) => requestId(message, id)),
+      ).resolves.toMatchObject({
+        result: {
+          thread: {
+            id: threadId,
+            turns: turnIds.map((turnId) => ({ id: turnId, status: "completed" })),
+          },
+        },
+      });
+    }
+    expect(snapshotReads).not.toHaveBeenCalled();
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({
+      harnessId: "cursor",
+      turnMappings: [],
+    });
+    const directory = fixture.mappingStoreDirectory;
+    await closeFixture(fixture);
+    const restarted = createFixture({
+      externalAdapters: new Map([["cursor", adapter]]),
+      mappingStoreDirectory: directory,
+    });
+    const officialWrite = vi.fn();
+    restarted.official.stdin.on("data", officialWrite);
+    writeRequest(restarted.desktopInput, { id: 6, method: "thread/resume", params: { threadId } });
+    await expect(
+      restarted.collector.waitFor((message) => requestId(message, 6)),
+    ).resolves.toMatchObject({
+      error: { message: "External Harness does not support resume" },
+    });
+    expect(officialWrite).not.toHaveBeenCalled();
+    await expect(
+      restarted.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({
+      harnessId: "cursor",
+    });
+    await stopFixture(restarted);
   });
 
   it("projects early Adapter outputs after the turn/start response and supports thread/read", async () => {
@@ -5335,6 +5495,9 @@ describe("AppServerHost HarnessAdapter projection", () => {
         CODEXHOST_CLI_PATH: "/opt/codexhost/bin/codexhost",
         CODEXHOST_DATA_DIR: "/synthetic/codexhost-data",
         CODEXHOST_CLAUDE_COMMAND: "/synthetic/claude",
+        CODEXHOST_DISABLE_UPDATES: "1",
+        CODEXHOST_REFUSE_RUNNING_DESKTOP: "1",
+        CODEXHOST_CURSOR_COMMAND: "/synthetic/cursor-agent",
       },
     });
 

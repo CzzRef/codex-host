@@ -599,6 +599,12 @@ export class MappingStore {
     );
   }
 
+  async setPinned(hostThreadId: HostThreadId, pinned: boolean): Promise<StoredThreadRecordV1> {
+    return this.#update(hostThreadId, (current) =>
+      (current.pinned ?? false) === pinned ? null : { ...current, pinned },
+    );
+  }
+
   async removeProvisional(hostThreadId: HostThreadId): Promise<void> {
     this.#requireInitialized();
     const record = this.#records.get(hostThreadId);
