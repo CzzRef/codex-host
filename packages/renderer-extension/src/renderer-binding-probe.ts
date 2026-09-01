@@ -281,6 +281,12 @@ export function shouldPersistNewThreadConfigurationSelection(phase: ComposerAgen
   return phase === "draft";
 }
 
+function retainPermissionModeView(
+  view: ExternalPermissionModeControlView,
+): view is ExternalPermissionModeControlView & { status: "ready" | "error" | "selecting" } {
+  return view.status === "ready" || view.status === "error" || view.status === "selecting";
+}
+
 export function restoredThreadOwnership(inspection: ThreadInspection): RestoredThreadOwnership {
   if (inspection.owner === "codex") return { agent: "codex" };
   if (inspection.harnessId === "pi") {
@@ -930,6 +936,9 @@ export function installRendererBindingProbe(
     if (resolution === "none") return false;
 
     const previousTarget = mounted.modelTarget;
+    const retainedPermissionModeView = retainPermissionModeView(mounted.permissionModeView)
+      ? mounted.permissionModeView
+      : { status: "idle" as const };
     const nextHostId = activeModelHostId() ?? mounted.hostId;
     const nextControllerTarget = controllerTarget(currentTarget, nextHostId);
     mounted.modelTarget = currentTarget;
@@ -952,7 +961,7 @@ export function installRendererBindingProbe(
     } else {
       mounted.composerId = controller.get(mounted.composer).composerId;
       mounted.modelView = { status: "idle" };
-      mounted.permissionModeView = { status: "idle" };
+      mounted.permissionModeView = retainedPermissionModeView;
       mounted.threadConfiguration = undefined;
       mounted.ownershipStatus = "loading";
       mounted.usage = null;
@@ -982,7 +991,9 @@ export function installRendererBindingProbe(
           ? { error: `${agent} runtime is ${availability}` }
           : {}),
       };
-      mounted.permissionModeView = { status: "idle" };
+      if (!retainPermissionModeView(mounted.permissionModeView)) {
+        mounted.permissionModeView = { status: "idle" };
+      }
       renderMounted(mounted);
       if (availability === "checking") void refreshHarnessAvailability();
       return;
@@ -991,7 +1002,9 @@ export function installRendererBindingProbe(
       status: adapterStatus.state === "ready" ? "loading" : "waitingForAdapter",
       thinkingSelectionSupported: false,
     };
-    mounted.permissionModeView = { status: "idle" };
+    if (!retainPermissionModeView(mounted.permissionModeView)) {
+      mounted.permissionModeView = { status: "idle" };
+    }
     renderMounted(mounted);
     if (adapterStatus.state !== "ready") return;
     const generation = controller.beginModelRequest(mounted.composer);

@@ -5,6 +5,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { rendererPermissionModePresentation } from "../src/renderer-harness-localization.js";
+import { isExternalPermissionModePickerVisible } from "../src/renderer-composer-dom.js";
 import {
   isPermissionModeControlReady,
   rendererPermissionModeLabel,
@@ -37,6 +38,18 @@ describe("Renderer Permission Mode picker presentation", () => {
     expect(isPermissionModeControlReady({ status: "selecting", catalog, selected })).toBe(false);
     expect(isPermissionModeControlReady({ status: "error", catalog, selected })).toBe(true);
     expect(isPermissionModeControlReady({ status: "error", error: "inspection failed" })).toBe(
+      false,
+    );
+  });
+
+  it("keeps the picker visible after the first conversation without native verification", () => {
+    const selected = harnessPermissionModeIdSchema.parse("default");
+    const ready = { status: "ready" as const, catalog, selected };
+    expect(isExternalPermissionModePickerVisible("grok", ready)).toBe(true);
+    expect(isExternalPermissionModePickerVisible("claude-code", ready)).toBe(true);
+    expect(isExternalPermissionModePickerVisible("codex", ready)).toBe(false);
+    expect(isExternalPermissionModePickerVisible("grok", { status: "idle" })).toBe(false);
+    expect(isExternalPermissionModePickerVisible("grok", { status: "loading", catalog })).toBe(
       false,
     );
   });

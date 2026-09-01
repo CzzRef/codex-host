@@ -88,6 +88,7 @@ export interface ComposerAgentControl {
   nativePermissionModeControl: NativePermissionModeControlState | null;
   nativeContextUsageControl?: NativeControlState | null;
   nativePermissionModeControlVerified: boolean;
+  extraHiddenNativePermissionModeControls: NativeControlState[];
   credits: RendererCreditsControl;
   usage: RendererUsageControl | null;
   composerId: string;
@@ -309,13 +310,33 @@ export function isNativePermissionModeControlCandidate(element: Element): boolea
   return ownsTrigger && ownsComposerPermissionState;
 }
 
-function semanticNativePermissionModeControlForComposer(composer: Element): HTMLElement | null {
-  const candidates = [
+function nativePermissionModeButtons(composer: Element): HTMLElement[] {
+  return [
     ...composer.querySelectorAll<HTMLElement>(
       'button[aria-haspopup="menu"][data-composer-navigation-target="permissions"]',
     ),
   ].filter((element) => !element.hasAttribute("data-codexhost-permission-mode-control"));
+}
+
+function semanticNativePermissionModeControlForComposer(composer: Element): HTMLElement | null {
+  const candidates = nativePermissionModeButtons(composer);
   return candidates.length === 1 ? (candidates[0] ?? null) : null;
+}
+
+function firstNativePermissionModeButton(composer: Element): HTMLElement | null {
+  return nativePermissionModeButtons(composer)[0] ?? null;
+}
+
+export function isExternalPermissionModePickerVisible(
+  agent: RendererAgent,
+  view: RendererPermissionModeControlView,
+): boolean {
+  return (
+    agent !== "codex" &&
+    view.status !== "idle" &&
+    view.status !== "loading" &&
+    view.status !== "unsupported"
+  );
 }
 
 function nativePermissionModeControlForComposer(composer: Element): HTMLElement | null {
@@ -531,23 +552,45 @@ function refreshCreditsPlacement(control: ComposerAgentControl): void {
 }
 
 function refreshNativePermissionModeControl(control: ComposerAgentControl): void {
-  const semanticCandidate = semanticNativePermissionModeControlForComposer(control.composer);
-  if (semanticCandidate !== control.nativePermissionModeControl?.element) {
+  const placement = firstNativePermissionModeButton(control.composer);
+  if (placement !== control.nativePermissionModeControl?.element) {
     restoreNativeControl(control.nativePermissionModeControl);
-    control.nativePermissionModeControl = captureNativeControl(semanticCandidate);
+    control.nativePermissionModeControl = captureNativeControl(placement);
   }
-  const candidate = nativePermissionModeControlForComposer(control.composer);
+  const verified = nativePermissionModeControlForComposer(control.composer);
   control.nativePermissionModeControlVerified =
-    candidate === semanticCandidate && candidate !== null;
-  if (!candidate) return;
+    verified !== null && verified === placement;
+  if (!placement) return;
   syncRendererPermissionModeTriggerClass(control.permissionModePicker);
-  const parent = candidate.parentElement;
+  const parent = placement.parentElement;
   if (
     parent &&
     (control.permissionModePicker.root.parentElement !== parent ||
-      control.permissionModePicker.root.nextElementSibling !== candidate)
+      control.permissionModePicker.root.nextElementSibling !== placement)
   ) {
-    parent.insertBefore(control.permissionModePicker.root, candidate);
+    parent.insertBefore(control.permissionModePicker.root, placement);
+  }
+}
+
+function refreshHiddenNativePermissionModeControls(
+  control: ComposerAgentControl,
+  hide: boolean,
+): void {
+  control.extraHiddenNativePermissionModeControls ??= [];
+  const extras = nativePermissionModeButtons(control.composer).filter(
+    (element) => element !== control.nativePermissionModeControl?.element,
+  );
+  for (const state of control.extraHiddenNativePermissionModeControls) {
+    if (!extras.includes(state.element)) restoreNativeControl(state);
+  }
+  control.extraHiddenNativePermissionModeControls = extras.map((element) => {
+    const existing = control.extraHiddenNativePermissionModeControls.find(
+      (state) => state.element === element,
+    );
+    return existing ?? captureNativeControl(element)!;
+  });
+  for (const state of control.extraHiddenNativePermissionModeControls) {
+    setNativeControlHidden(state, hide);
   }
 }
 
@@ -585,6 +628,7 @@ export function reconcileComposerNativeControls(
   // it below, so Credits never reads a stale (e.g. mount-time fallback)
   // location for it within this same pass.
   refreshNativePermissionModeControl(control);
+  refreshHiddenNativePermissionModeControls(control, hidePermissionMode);
   refreshTrailingClusterPlacement(control);
   refreshUsagePlacement(control);
   refreshCreditsPlacement(control);
@@ -652,6 +696,7 @@ export function mountComposerAgentControl(
     nativePermissionModeControl,
     nativeContextUsageControl,
     nativePermissionModeControlVerified,
+    extraHiddenNativePermissionModeControls: [],
     credits,
     usage: null,
     harnessCommands,
@@ -695,10 +740,7 @@ export function renderComposerAgentControl(
   const modelBlocked =
     state.agent !== "codex" && (modelView.status === "selecting" || !modelReady || !thinkingReady);
   const permissionModeBlocked =
-    state.agent !== "codex" &&
-    (!isPermissionModeControlReady(permissionModeView) ||
-      (permissionModeView.status !== "unsupported" &&
-        !control.nativePermissionModeControlVerified));
+    state.agent !== "codex" && !isPermissionModeControlReady(permissionModeView);
   const submissionBlocked = switching || modelBlocked || permissionModeBlocked;
   if (submissionBlocked && control.sendDisabledBeforeSwitch === null) {
     control.sendDisabledBeforeSwitch = control.sendButton.disabled;
@@ -720,12 +762,10 @@ export function renderComposerAgentControl(
     switching || state.agent !== "codex",
   );
   renderRendererModelPicker(control.modelPicker, modelView, state.agent !== "codex");
-  const permissionModeVisible =
-    state.agent !== "codex" &&
-    permissionModeView.status !== "idle" &&
-    permissionModeView.status !== "loading" &&
-    permissionModeView.status !== "unsupported" &&
-    control.nativePermissionModeControlVerified;
+  const permissionModeVisible = isExternalPermissionModePickerVisible(
+    state.agent,
+    permissionModeView,
+  );
   renderRendererPermissionModePicker(
     control.permissionModePicker,
     permissionModeView,
@@ -744,6 +784,9 @@ export function disposeComposerAgentControl(control: ComposerAgentControl): void
   restoreNativeControl(control.nativeModelControl);
   restoreNativeControl(control.nativeContextUsageControl);
   restoreNativeControl(control.nativePermissionModeControl);
+  for (const state of control.extraHiddenNativePermissionModeControls ?? []) {
+    restoreNativeControl(state);
+  }
   control.credits.dispose();
   control.usage?.dispose();
   control.usage = null;

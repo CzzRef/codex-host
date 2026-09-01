@@ -52,6 +52,7 @@ export {
 export type { RendererTranscriptContractInspection } from "./renderer-transcript-dom.js";
 export {
   inspectRendererComposerContract,
+  isExternalPermissionModePickerVisible,
   isNativeContextUsageControlCandidate,
   nativeContextUsageControlForComposer,
 } from "./renderer-composer-dom.js";
