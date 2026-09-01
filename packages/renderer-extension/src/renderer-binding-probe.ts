@@ -42,6 +42,7 @@ import {
 } from "./renderer-composer-dom.js";
 import {
   decodeClaudeTransportModelId,
+  decodeCursorTransportModelId,
   decodeDeepSeekHarnessTransportModelId,
   decodeGrokTransportModelId,
   decodeOmpTransportModelId,
@@ -66,6 +67,10 @@ import {
   writeNewThreadAgentPreference,
   writeNewThreadExternalConfigurationPreference,
 } from "./renderer-new-thread-preference.js";
+import {
+  RENDERER_MODEL_VISIBILITY_CHANGED_EVENT,
+  visibleExternalModelCatalog,
+} from "./renderer-model-visibility-preference.js";
 import { installRendererSidebarAgentIcons } from "./renderer-sidebar-agent-icons.js";
 import { installRendererSettingsLifecycle } from "./renderer-settings-lifecycle.js";
 import type {
@@ -79,6 +84,7 @@ const externalHarnessIds = {
   "deepseek-harness": harnessIdSchema.parse("deepseek-harness"),
   grok: harnessIdSchema.parse("grok"),
   omp: harnessIdSchema.parse("omp"),
+  cursor: harnessIdSchema.parse("cursor"),
 } as const;
 
 const externalAgents: readonly ExternalRendererAgent[] = [
@@ -87,6 +93,7 @@ const externalAgents: readonly ExternalRendererAgent[] = [
   "deepseek-harness",
   "grok",
   "omp",
+  "cursor",
 ];
 type HarnessAvailability = Partial<Record<ExternalRendererAgent, RendererAgentAvailability>>;
 type HarnessAvailabilityErrors = Record<ExternalRendererAgent, CodexhostError | undefined>;
@@ -291,6 +298,17 @@ export function restoredThreadOwnership(inspection: ThreadInspection): RestoredT
       ...(inspection.effectivePermissionModeId
         ? { permissionModeId: inspection.effectivePermissionModeId }
         : {}),
+    };
+  }
+  if (inspection.harnessId === "cursor") {
+    const selection = decodeCursorTransportModelId(inspection.transportModelId);
+    if (!selection) throw new Error("Cursor Thread reported an incompatible transport Model");
+    const model = inspection.effectiveModel ?? selection.model;
+    const permissionModeId = inspection.effectivePermissionModeId ?? selection.permissionModeId;
+    return {
+      agent: "cursor",
+      ...(model ? { model } : {}),
+      ...(permissionModeId ? { permissionModeId } : {}),
     };
   }
   if (inspection.harnessId === "grok") {
@@ -543,6 +561,7 @@ export function installRendererBindingProbe(
   const settingsLifecycle = installRendererSettingsLifecycle(window, {
     getUpdateClient: () => modelControl,
     getConnectionDiagnostics: () => connectionDiagnostics,
+    getModelCatalogClient: () => modelControl,
     onLocaleChange() {
       for (const mounted of mountedByComposer.values()) renderMounted(mounted);
     },
@@ -563,6 +582,7 @@ export function installRendererBindingProbe(
       "deepseek-harness": undefined,
       grok: undefined,
       omp: undefined,
+      cursor: undefined,
     },
     requestGeneration: 0,
     request: null,
@@ -989,9 +1009,14 @@ export function installRendererBindingProbe(
       if (inspection.status !== "ready") throw new Error(inspection.error.message);
       const current = controller.get(mounted.composer);
       const previousModel = controller.modelForAgent(mounted.composer, agent);
+      const visibleCatalog = visibleExternalModelCatalog(
+        agent,
+        inspection.catalog,
+        previousModel ? [previousModel.id] : [],
+      );
       const previousModelAvailable =
         previousModel !== undefined &&
-        inspection.catalog.models.some((model) => model.ref.id === previousModel.id);
+        visibleCatalog.models.some((model) => model.ref.id === previousModel.id);
       if (current.phase === "locked" && previousModel && !previousModelAvailable) {
         throw new Error("Existing Thread Model is absent from the current Catalog");
       }
@@ -999,7 +1024,7 @@ export function installRendererBindingProbe(
         current.phase === "draft" && !previousModelAvailable
           ? readNewThreadExternalConfigurationPreference(
               agent,
-              inspection.catalog,
+              visibleCatalog,
               inspection.permissionModes,
             )
           : undefined;
@@ -1039,11 +1064,11 @@ export function installRendererBindingProbe(
 
       if (
         !inspection.capabilities.configuration.selectModel ||
-        inspection.catalog.models.length === 0
+        visibleCatalog.models.length === 0
       ) {
         mounted.modelView = {
           status: "empty",
-          catalog: inspection.catalog,
+          catalog: visibleCatalog,
           thinkingSelectionSupported: false,
         };
         if (selectedPermissionModeId && mounted.permissionModeView.catalog) {
@@ -1059,12 +1084,12 @@ export function installRendererBindingProbe(
 
       const selected = previousModelAvailable
         ? previousModel
-        : (preferredConfiguration?.model ?? inspection.catalog.defaultModel);
+        : (preferredConfiguration?.model ?? visibleCatalog.defaultModel);
       if (!selected) throw new Error("External Harness did not report its default Model");
       const effectiveCatalog =
         current.phase === "locked" && mounted.threadConfiguration
-          ? catalogWithConfigurationState(inspection.catalog, selected, mounted.threadConfiguration)
-          : inspection.catalog;
+          ? catalogWithConfigurationState(visibleCatalog, selected, mounted.threadConfiguration)
+          : visibleCatalog;
       const previousThinkingOptionId = controller.thinkingOptionForAgent(mounted.composer, agent);
       const requestedThinkingOptionId = previousModelAvailable
         ? previousThinkingOptionId
@@ -2239,8 +2264,17 @@ export function installRendererBindingProbe(
       void refreshHarnessAvailability(true);
     }
   };
+  const onModelVisibilityChanged = (): void => {
+    for (const mounted of mountedByComposer.values()) {
+      const state = controller.get(mounted.composer);
+      if (state.agent !== "codex" && state.phase === "draft") {
+        void loadExternalCatalog(mounted);
+      }
+    }
+  };
   window.addEventListener("codexhost:draft-prewarm-policy-changed", onHostRouteChange);
   window.addEventListener("codexhost:renderer-adapter-status", onAdapterStatus);
+  window.addEventListener(RENDERER_MODEL_VISIBILITY_CHANGED_EVENT, onModelVisibilityChanged);
   window.addEventListener("focus", onWindowFocus);
 
   const connectedComposers = (): MountedComposer[] =>
@@ -2360,6 +2394,7 @@ export function installRendererBindingProbe(
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("codexhost:draft-prewarm-policy-changed", onHostRouteChange);
       window.removeEventListener("codexhost:renderer-adapter-status", onAdapterStatus);
+      window.removeEventListener(RENDERER_MODEL_VISIBILITY_CHANGED_EVENT, onModelVisibilityChanged);
       window.removeEventListener("focus", onWindowFocus);
       for (const state of harnessAvailabilityByHost.values()) {
         state.requestGeneration += 1;

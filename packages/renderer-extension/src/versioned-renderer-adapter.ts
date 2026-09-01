@@ -21,6 +21,14 @@ import {
 } from "@codexhost/shared-contracts";
 
 import type { RendererAgent } from "./agent-selection-state.js";
+import { CURSOR_TRANSPORT_MODEL_ID, cursorTransportModelId } from "./cursor-renderer-models.js";
+export {
+  CURSOR_TRANSPORT_MODEL_ID,
+  CURSOR_TRANSPORT_MODEL_PREFIX,
+  cursorTransportModelId,
+  decodeCursorTransportModelId,
+  isCursorTransportModelId,
+} from "./cursor-renderer-models.js";
 import { installRendererForkControl } from "./renderer-fork-control.js";
 import {
   createRendererModelClient,
@@ -133,6 +141,7 @@ function transportModelIdForAgent(agent: RendererAgent): string | null {
   if (agent === "deepseek-harness") return DEEPSEEK_HARNESS_TRANSPORT_MODEL_ID;
   if (agent === "grok") return GROK_TRANSPORT_MODEL_ID;
   if (agent === "omp") return OMP_TRANSPORT_MODEL_ID;
+  if (agent === "cursor") return CURSOR_TRANSPORT_MODEL_ID;
   return null;
 }
 
@@ -762,17 +771,19 @@ export function modelSelectionForAgent(
   permissionModeId?: HarnessPermissionModeId,
 ): ModelPowerSelection | null {
   const transportModelId =
-    agent === "pi"
-      ? piTransportModelId(model, thinkingOptionId)
-      : agent === "claude-code"
-        ? claudeTransportModelId(model, permissionModeId, thinkingOptionId)
-        : agent === "deepseek-harness"
-          ? deepSeekHarnessTransportModelId(model, permissionModeId)
-          : agent === "grok"
-            ? grokTransportModelId(model, permissionModeId, thinkingOptionId)
-            : agent === "omp"
-              ? ompTransportModelId(model, thinkingOptionId)
-              : transportModelIdForAgent(agent);
+    agent === "cursor"
+      ? cursorTransportModelId(model, permissionModeId)
+      : agent === "pi"
+        ? piTransportModelId(model, thinkingOptionId)
+        : agent === "claude-code"
+          ? claudeTransportModelId(model, permissionModeId, thinkingOptionId)
+          : agent === "deepseek-harness"
+            ? deepSeekHarnessTransportModelId(model, permissionModeId)
+            : agent === "grok"
+              ? grokTransportModelId(model, permissionModeId, thinkingOptionId)
+              : agent === "omp"
+                ? ompTransportModelId(model, thinkingOptionId)
+                : transportModelIdForAgent(agent);
   return transportModelId ? { model: transportModelId, reasoningEffort } : officialSelection;
 }
 

@@ -380,6 +380,49 @@ button {
   line-height: 20px;
 }
 
+.settings-models-content {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.settings-model-group .settings-section-label {
+  padding: 0 0 12px;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.settings-model-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--settings-panel);
+}
+
+.settings-model-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--settings-divider);
+  color: var(--settings-text);
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.settings-model-row:last-child {
+  border-bottom: none;
+}
+
+.settings-model-row__label {
+  flex: 0 1 auto;
+}
+
+.settings-model-row__resolved {
+  color: var(--settings-muted);
+  font-size: 12px;
+}
+
 .settings-preference-row {
   display: flex;
   align-items: center;

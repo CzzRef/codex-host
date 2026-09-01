@@ -106,6 +106,10 @@ export interface RendererSettingsMessages {
   readonly updateCopyFailed: string;
   readonly updateDownloadFromReleases: string;
   readonly updateDownloadWindowsInstaller: string;
+  readonly modelsDescription: string;
+  readonly modelsLoading: string;
+  readonly modelsEmpty: string;
+  readonly modelsLoadFailed: string;
   readonly aboutTagline: string;
   readonly aboutParagraphs: readonly string[];
   readonly aboutOpenSource: string;
@@ -211,6 +215,11 @@ const ENGLISH_MESSAGES: RendererSettingsMessages = Object.freeze({
   updateCopyFailed: "Copy failed",
   updateDownloadFromReleases: "Download from GitHub Releases",
   updateDownloadWindowsInstaller: "Download Windows installer",
+  modelsDescription:
+    "Choose which Models each Harness shows in the model picker. Hiding a Model never affects an existing Thread that already uses it.",
+  modelsLoading: "Loading model catalogs...",
+  modelsEmpty: "No Models reported.",
+  modelsLoadFailed: "Could not load the model catalogs.",
   aboutTagline: "Run Pi and other Harnesses in Codex Desktop",
   aboutParagraphs: Object.freeze([
     "We believe Codex Desktop offers the best desktop development experience available today.",
@@ -222,6 +231,7 @@ const ENGLISH_MESSAGES: RendererSettingsMessages = Object.freeze({
   aboutRepository: "Open-source repository",
   pageLabels: Object.freeze({
     connections: "Connections",
+    models: "Models",
     updates: "Updates",
     about: "About",
   }),
@@ -321,6 +331,11 @@ const CHINESE_MESSAGES: RendererSettingsMessages = Object.freeze({
   updateCopyFailed: "复制失败",
   updateDownloadFromReleases: "前往 GitHub Releases 下载",
   updateDownloadWindowsInstaller: "下载 Windows 安装包",
+  modelsDescription:
+    "选择各 Harness 在模型选择器中展示哪些模型。隐藏模型不会影响已在使用它的现有会话。",
+  modelsLoading: "正在加载模型目录...",
+  modelsEmpty: "未报告任何模型。",
+  modelsLoadFailed: "模型目录加载失败。",
   aboutTagline: "在 Codex Desktop 中运行 Pi 和其他 Harness",
   aboutParagraphs: Object.freeze([
     "我们认为 Codex Desktop 提供了目前最好的桌面开发交互体验。",
@@ -332,6 +347,7 @@ const CHINESE_MESSAGES: RendererSettingsMessages = Object.freeze({
   aboutRepository: "开源仓库",
   pageLabels: Object.freeze({
     connections: "连接",
+    models: "模型",
     updates: "更新",
     about: "关于",
   }),
