@@ -47,10 +47,20 @@ import {
   type GrokRewindParams,
 } from "./grok-rewind.js";
 import {
+  GROK_INTERJECT_METHOD,
+  buildGrokInterjectParams,
+  parseGrokInterjectResult,
+  type GrokInterjectResult,
+} from "./grok-interject.js";
+import {
   decodeGrokPermissionModeId,
   grokPermissionModeNotification,
   grokPermissionModeSessionMeta,
 } from "./permission-modes.js";
+import {
+  GROK_CODEXHOST_TITLE_OVERLAY_FILE,
+  resolveGrokNativeTitle,
+} from "./grok-title-overlay.js";
 
 export type GrokTransportFaultKind =
   "notInstalled" | "authenticationRequired" | "unavailable" | "protocolError" | "processExited";
@@ -424,21 +434,28 @@ export async function locateGrokNativeSession(
       typeof parsed.source_workspace_dir === "string" && parsed.source_workspace_dir.length > 0
         ? path.resolve(parsed.source_workspace_dir)
         : undefined;
-    const summaryTitle =
-      typeof parsed.session_summary === "string" && parsed.session_summary.trim().length > 0
-        ? parsed.session_summary.trim()
-        : undefined;
+    let overlay: unknown;
+    try {
+      overlay = JSON.parse(
+        await readFile(
+          path.join(
+            grokHomeDir(options),
+            "sessions",
+            entry.name,
+            sessionId,
+            GROK_CODEXHOST_TITLE_OVERLAY_FILE,
+          ),
+          "utf8",
+        ),
+      );
+    } catch {
+      overlay = undefined;
+    }
+    const title = resolveGrokNativeTitle({ summary: parsed, overlay });
     matches.push({
       cwd,
       ...(sourceWorkspaceDir ? { sourceWorkspaceDir } : {}),
-      ...(summaryTitle
-        ? {
-            title: {
-              text: summaryTitle,
-              source: parsed.title_is_manual === true ? ("user" as const) : ("generated" as const),
-            },
-          }
-        : {}),
+      ...(title ? { title } : {}),
     });
   }
   return matches.length === 1 ? (matches[0] ?? null) : null;
@@ -512,6 +529,11 @@ export class GrokAcpTransport {
   get sessionId(): string {
     if (!this.#sessionId) throw new Error("Grok ACP Session is not open");
     return this.#sessionId;
+  }
+
+  sessionDirectory(): string | null {
+    if (!this.#sessionId) return null;
+    return path.dirname(nativeSessionFile(this.#options, this.#sessionId, "summary.json"));
   }
 
   get stderrTail(): string {
@@ -860,6 +882,40 @@ export class GrokAcpTransport {
       if (this.#activeCompact === active) this.#activeCompact = null;
     }
   }
+  async interject(text: string): Promise<GrokInterjectResult> {
+    const connection = this.#connection;
+    if (!connection || !this.#sessionId || this.#closed || this.#closing) {
+      throw new GrokTransportError("unavailable", "Grok ACP Session is unavailable");
+    }
+    if (text.length === 0) {
+      throw new GrokTransportError("protocolError", "Grok interject text must not be empty");
+    }
+    if (!this.#activePrompt) {
+      throw new GrokTransportError("unavailable", "Grok ACP Session has no active Prompt");
+    }
+    try {
+      const raw = await withTimeout(
+        connection.request<unknown, unknown>(
+          GROK_INTERJECT_METHOD,
+          buildGrokInterjectParams(this.#sessionId, text),
+        ),
+        this.#options.commandTimeoutMs,
+        "Grok native interject",
+      );
+      return parseGrokInterjectResult(raw);
+    } catch (error) {
+      if (error instanceof GrokTransportError) throw error;
+      if (isGrokMethodNotFound(error)) {
+        throw new GrokTransportError(
+          "protocolError",
+          `Grok ACP Method Not Found: ${GROK_INTERJECT_METHOD}`,
+          { cause: error },
+        );
+      }
+      throw new GrokTransportError("unavailable", "Grok Native Interject failed", { cause: error });
+    }
+  }
+
   async setModel(modelId: string, reasoningEffort?: string): Promise<void> {
     const connection = this.#connection;
     if (!connection || !this.#sessionId) throw new Error("Grok ACP Session is unavailable");
