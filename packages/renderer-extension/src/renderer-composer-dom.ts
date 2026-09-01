@@ -560,8 +560,7 @@ function refreshNativePermissionModeControl(control: ComposerAgentControl): void
     control.nativePermissionModeControl = captureNativeControl(placement);
   }
   const verified = nativePermissionModeControlForComposer(control.composer);
-  control.nativePermissionModeControlVerified =
-    verified !== null && verified === placement;
+  control.nativePermissionModeControlVerified = verified !== null && verified === placement;
   if (!placement) return;
   syncRendererPermissionModeTriggerClass(control.permissionModePicker);
   const parent = placement.parentElement;

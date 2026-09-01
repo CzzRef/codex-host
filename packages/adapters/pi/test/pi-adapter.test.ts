@@ -351,10 +351,7 @@ describe("Pi HarnessAdapter Session", () => {
     await expect(adapter.inspect({ cwd: "/synthetic", refresh: true })).resolves.toMatchObject({
       status: "ready",
       catalog: {
-        models: [
-          { label: "alternate-model" },
-          { label: "synthetic-model" },
-        ],
+        models: [{ label: "alternate-model" }, { label: "synthetic-model" }],
         defaultModel: encodePiModelRef({
           provider: "synthetic-provider",
           id: "synthetic-model",
