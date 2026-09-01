@@ -1,6 +1,7 @@
 import type { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -227,6 +228,7 @@ function createFixture(
     options.externalAdapters?.get("pi") ?? new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
   const mappingStoreDirectory =
     options.mappingStoreDirectory ?? mkdtempSync(path.join(tmpdir(), "codexhost-host-test-"));
+  const titleOverlayDirectory = path.join(mappingStoreDirectory, "title-overlays");
   const mappingStore =
     options.mappingStore ?? new MappingStore({ directory: mappingStoreDirectory });
   const desktopInput = new PassThrough();
@@ -243,6 +245,7 @@ function createFixture(
     desktopOutput,
     diagnosticOutput,
     mappingStore,
+    titleOverlayDirectory,
     ...(options.closeMappingStoreOnExit !== undefined
       ? { closeMappingStoreOnExit: options.closeMappingStoreOnExit }
       : {}),
@@ -268,6 +271,7 @@ function createFixture(
     running,
     mappingStore,
     mappingStoreDirectory,
+    titleOverlayDirectory,
     spawnOfficial,
   };
 }
@@ -1131,6 +1135,70 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const viewedListing = await listExternal();
     expect(viewedListing.external).toMatchObject({ hasUnreadTurn: false });
     await stopFixture(fixture);
+  });
+
+  it("keeps external unread across a Host restart", async () => {
+    // The unread mark used to live in a process-local Set, so restarting the
+    // Host reported every extra process as read without anyone viewing it.
+    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-unread-"));
+    const listExternal = async (
+      fixture: ReturnType<typeof createFixture>,
+      api: DelegationControlApi,
+      threadId: string,
+    ) => {
+      const pending = api.list({ cwd: "/synthetic", limit: 25, sort: "created-desc" });
+      const request = await readJsonLine(fixture.official.stdin);
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: request.id, result: { data: [], nextCursor: null } })}\n`,
+      );
+      const result = await pending;
+      return result.threads.find((thread) => thread.threadId === threadId);
+    };
+
+    try {
+      let firstApi: DelegationControlApi | undefined;
+      const first = createFixture({
+        mappingStoreDirectory: directory,
+        onDelegationApi: (api) => {
+          firstApi = api;
+          return undefined;
+        },
+      });
+      await vi.waitFor(() => expect(firstApi).toBeDefined());
+      if (!firstApi) throw new Error("Delegation API was not registered");
+      const threadId = await startPiThread(first);
+      await completePiTurn(first, threadId, 41);
+      expect(await listExternal(first, firstApi, threadId)).toMatchObject({
+        hasUnreadTurn: true,
+      });
+      await expect(
+        first.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+      ).resolves.toMatchObject({ unread: true });
+      await closeFixture(first);
+
+      let secondApi: DelegationControlApi | undefined;
+      const second = createFixture({
+        mappingStoreDirectory: directory,
+        onDelegationApi: (api) => {
+          secondApi = api;
+          return undefined;
+        },
+      });
+      await vi.waitFor(() => expect(secondApi).toBeDefined());
+      if (!secondApi) throw new Error("Delegation API was not registered after restart");
+      // The restarted Host re-reads the store from disk; wait for that load.
+      await vi.waitFor(async () =>
+        expect(
+          (await second.mappingStore.listThreads()).map((record) => record.hostThreadId),
+        ).toContain(threadId),
+      );
+      expect(await listExternal(second, secondApi, threadId)).toMatchObject({
+        hasUnreadTurn: true,
+      });
+      await closeFixture(second);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("follows a Desktop bypass into unattended full access with adapter fallback", async () => {
@@ -2564,6 +2632,30 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("names an untitled extra process after its first user message", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "" });
+
+    await completePiTurn(fixture, threadId, 2);
+
+    await expect(
+      fixture.collector.waitFor(
+        (message) =>
+          method(message, "thread/name/updated") &&
+          messageParams(message).threadName === "synthetic",
+      ),
+    ).resolves.toMatchObject({ params: { threadId, threadName: "synthetic" } });
+    // Recorded as a Host-derived fallback, never as a chosen name, so a later
+    // Harness or Desktop rename still replaces it.
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "synthetic", titleSource: "fallback" });
+    await stopFixture(fixture);
+  });
+
   it("syncs a generated native Session title into the Thread name", async () => {
     const fixture = createFixture();
     const threadId = await startPiThread(fixture);
@@ -2708,6 +2800,56 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("does not let a generated native title replace a Host CLI rename", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    const threadId = await startPiThread(fixture);
+    await completePiTurn(fixture, threadId, 2);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    await expect(
+      delegationApi.rename({ threadId, name: "260901-Grok标题Host复用" }),
+    ).resolves.toEqual({ threadId, title: "260901-Grok标题Host复用" });
+    session.publishNativeTitle({ text: "生成标题不该覆盖", source: "generated" });
+    session.publishUsage(null);
+    await fixture.collector.waitFor((message) => method(message, "codexhost/thread/usage/updated"));
+    expect(
+      fixture.collector.messages.some(
+        (message) => messageParams(message).threadName === "生成标题不该覆盖",
+      ),
+    ).toBe(false);
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "260901-Grok标题Host复用", titleSource: "native" });
+    await stopFixture(fixture);
+  });
+
+  it("applies a Host title overlay to any extra-process Thread", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    await mkdir(fixture.titleOverlayDirectory, { recursive: true });
+    await writeFile(
+      path.join(fixture.titleOverlayDirectory, `${threadId}.json`),
+      JSON.stringify({ title: "260901-Host标题Overlay", title_is_manual: true }),
+    );
+    await fixture.collector.waitFor(
+      (message) =>
+        method(message, "thread/name/updated") &&
+        messageParams(message).threadName === "260901-Host标题Overlay",
+    );
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "260901-Host标题Overlay", titleSource: "native" });
+    await stopFixture(fixture);
+  });
+
   it("batches queued turn/start follow-ups into one Turn", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
@@ -2845,6 +2987,38 @@ describe("AppServerHost HarnessAdapter projection", () => {
       result: {},
     });
     await vi.waitFor(() => expect(session.steeredInputs).toEqual(["steer one", "steer two"]));
+    expect(
+      fixture.collector.messages.filter((message) => method(message, "turn/started")),
+    ).toHaveLength(1);
+    session.appendText("still the same Turn");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    expect(
+      fixture.collector.messages.filter((message) => method(message, "turn/started")),
+    ).toHaveLength(1);
+    expect(officialWrite).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
+  it("injects in-flight turn/start as native steer when the Session supports it", async () => {
+    const fixture = createFixture();
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    const threadId = await startPiThread(fixture);
+    const turnId = await startPiTurn(fixture, threadId, 2);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    session.enableSteer();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
+    writeRequest(fixture.desktopInput, {
+      id: 4,
+      method: "turn/start",
+      params: { threadId, input: [{ type: "text", text: "follow-up now" }] },
+    });
+    const started = await fixture.collector.waitFor((message) => requestId(message, 4));
+    const startedTurn = (started.result as JsonObject).turn as JsonObject;
+    expect(startedTurn.id).toBe(turnId);
+    await vi.waitFor(() => expect(session.steeredInputs).toEqual(["follow-up now"]));
     expect(
       fixture.collector.messages.filter((message) => method(message, "turn/started")),
     ).toHaveLength(1);

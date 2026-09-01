@@ -63,6 +63,13 @@ export type {
   ThreadRenameResult,
   ThreadWaitInput,
 } from "./delegation-types.js";
+export {
+  CODEXHOST_TITLE_OVERLAY_DIRNAME,
+  createTitleOverlayWatch,
+  defaultTitleOverlayDirectory,
+  parseCodexhostTitleOverlay,
+  titleOverlayPath,
+} from "./external-thread-title-overlay.js";
 export { hasLauncherManagedUpdateRuntime, runHostRuntime } from "./run-host-runtime.js";
 export {
   REMOTE_CONTROL_BRIDGE_DESCRIPTOR_FILE,

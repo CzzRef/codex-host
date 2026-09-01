@@ -1,10 +1,16 @@
 ## MODIFIED Requirements
 
 ### Requirement: External turn starts queue behind the active Turn
-Codex Desktop queues follow-up messages and treats any `turn/start` rejection as a permanently paused follow-up. Host SHALL therefore hold `turn/start` requests that reference an external Thread with an active Turn. When the active Turn completes successfully, Host SHALL start **one** follow-up Turn whose input is every held `turn/start` text concatenated in arrival order (separated by a blank line), SHALL answer each held request with that same Turn, and SHALL NOT dispatch those follow-ups as separate Turns. Host SHALL NOT dispatch held `turn/start` requests after a user `turn/interrupt`; those held requests SHALL fail explicitly. Requests beyond the bound SHALL be rejected explicitly. Session fault and Thread deletion SHALL also fail held requests explicitly.
+Codex Desktop queues follow-up messages and treats any `turn/start` rejection as a permanently paused follow-up. When `turn/start` references an external Thread whose Turn is running and the Session declares `turns.steer=true`, Host SHALL execute `turn.steer` on that active Turn, MUST NOT open a new Host Turn, and SHALL answer the `turn/start` with the current in-progress Turn. Host SHALL hold `turn/start` only when the Session does not declare native steer. When the active Turn completes successfully, Host SHALL start **one** follow-up Turn whose input is every held `turn/start` text concatenated in arrival order (separated by a blank line), SHALL answer each held request with that same Turn, and SHALL NOT dispatch those follow-ups as separate Turns. Host SHALL NOT dispatch held `turn/start` requests after a user `turn/interrupt`; those held requests SHALL fail explicitly. Requests beyond the bound SHALL be rejected explicitly. Session fault and Thread deletion SHALL also fail held requests explicitly.
+
+#### Scenario: Follow-up arrives during a steerable Turn
+- **WHEN** `turn/start` references an external Thread whose Turn is running and the Session declares `turns.steer=true`
+- **THEN** Host executes `turn.steer` on the active Turn
+- **AND** answers the `turn/start` with that same in-progress Turn
+- **AND** MUST NOT start a new Host Turn
 
 #### Scenario: Follow-up arrives during an active Turn
-- **WHEN** `turn/start` references an external Thread whose Turn is running
+- **WHEN** `turn/start` references an external Thread whose Turn is running and the Session does not declare native steer
 - **THEN** Host holds the request without responding
 
 #### Scenario: Multiple follow-ups append as one Turn

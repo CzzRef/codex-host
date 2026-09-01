@@ -63,13 +63,14 @@ export interface ExternalThreadStore {
   setTitle(
     hostThreadId: HostThreadId,
     title: string,
-    source?: "desktop" | "native",
+    source?: "desktop" | "native" | "fallback",
   ): Promise<StoredThreadRecordV1>;
   setTransportModelId(
     hostThreadId: HostThreadId,
     transportModelId: string,
   ): Promise<StoredThreadRecordV1>;
   setArchived(hostThreadId: HostThreadId, archived: boolean): Promise<StoredThreadRecordV1>;
+  setUnread(hostThreadId: HostThreadId, unread: boolean): Promise<StoredThreadRecordV1>;
   setPinned(hostThreadId: HostThreadId, pinned: boolean): Promise<StoredThreadRecordV1>;
   assignSection(
     hostThreadId: HostThreadId,
@@ -186,7 +187,7 @@ export class ExternalThreadRepository {
   setTitle(
     hostThreadId: HostThreadId,
     title: string,
-    source: "desktop" | "native" = "desktop",
+    source: "desktop" | "native" | "fallback" = "desktop",
   ): Promise<StoredThreadRecordV1> {
     return this.store.setTitle(hostThreadId, title, source);
   }
@@ -200,6 +201,10 @@ export class ExternalThreadRepository {
 
   setArchived(hostThreadId: HostThreadId, archived: boolean): Promise<StoredThreadRecordV1> {
     return this.store.setArchived(hostThreadId, archived);
+  }
+
+  setUnread(hostThreadId: HostThreadId, unread: boolean): Promise<StoredThreadRecordV1> {
+    return this.store.setUnread(hostThreadId, unread);
   }
 
   setPinned(hostThreadId: HostThreadId, pinned: boolean): Promise<StoredThreadRecordV1> {
@@ -530,6 +535,20 @@ export function createExternalThreadRecordInput(input: {
   };
 }
 
+/**
+ * Codexhost disables Codex title generation for external Threads, so a Thread
+ * that nobody renamed reaches Desktop and the delegation CLI as `name: null`
+ * and renders as an untitled row. Derive the same first-user-message fallback
+ * Desktop writes by hand instead of persisting one: `record.title` stays
+ * empty, so a later native rename still replaces it, `titleSource` keeps
+ * meaning "a person or the Harness chose this", and existing records need no
+ * backfill. A Thread with no user message yet still projects `null`.
+ */
+export function derivedThreadName(previewText: string): string | null {
+  const collapsed = previewText.replace(/\s+/gu, " ").trim();
+  return collapsed.length > 0 ? collapsed.slice(0, 120) : null;
+}
+
 export function externalThreadValue(input: {
   record: StoredThreadRecordV1;
   turns: JsonObject[];
@@ -597,7 +616,7 @@ export function externalThreadValue(input: {
           : { type: "idle" },
     turns: input.turns,
     preview: previewText,
-    name: record.title || null,
+    name: record.title || derivedThreadName(previewText),
     gitInfo: null,
     forkedFromId: record.forkSource?.hostThreadId ?? null,
     parentThreadId: record.subagent?.parentHostThreadId ?? null,
