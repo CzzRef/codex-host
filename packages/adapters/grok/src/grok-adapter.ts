@@ -1131,12 +1131,28 @@ class GrokHarnessSession implements HarnessSession {
       }
     }
     await this.#refreshCredits().catch(() => undefined);
+    await this.#refreshNativeTitle().catch(() => undefined);
     this.#finish(
       active,
       checkpoint ? { ...outcome, checkpoint } : outcome,
       sessionUsageFromHistory(history) ?? (response ? usageFromPrompt(response) : null),
       nativeTurnRef,
     );
+  }
+
+  async #refreshNativeTitle(): Promise<void> {
+    const sessionId = this.#transport.sessionId;
+    if (!sessionId) return;
+    const title = (await this.#transport.locateSession(sessionId))?.title;
+    if (
+      !title ||
+      (this.#state.nativeTitle?.text === title.text &&
+        this.#state.nativeTitle.source === title.source)
+    ) {
+      return;
+    }
+    this.#state = { ...this.#state, nativeTitle: title };
+    this.#event({ type: "session.state.changed", state: this.#state });
   }
 
   #finish(

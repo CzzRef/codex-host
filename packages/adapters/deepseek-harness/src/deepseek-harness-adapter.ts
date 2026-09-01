@@ -444,6 +444,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
   #model: HarnessModelRef;
   readonly #permissionModes: HarnessPermissionModeCatalog | null;
   #permissionModeId: HarnessPermissionModeId | undefined;
+  #nativeTitle: { text: string; source: "user" | "generated" } | undefined;
   #permissionProjectionSeq: number;
   #permissionRefresh: Promise<void> | null = null;
   #selectingPermission = false;
@@ -518,6 +519,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
         ? { availableThinkingOptions: this.#availableThinkingOptions }
         : {}),
       ...(this.#permissionModeId ? { effectivePermissionModeId: this.#permissionModeId } : {}),
+      ...(this.#nativeTitle ? { nativeTitle: this.#nativeTitle } : {}),
     };
   }
 
@@ -1287,6 +1289,18 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
   #event(type: string, data: Record<string, unknown>, seq: number): void {
     const active = this.#active;
     switch (type) {
+      case "session/title": {
+        const title = typeof data.title === "string" ? data.title.trim() : "";
+        if (title.length === 0) return;
+        const source =
+          isRecord(data.source) && data.source.kind === "user"
+            ? ("user" as const)
+            : ("generated" as const);
+        if (this.#nativeTitle?.text === title && this.#nativeTitle.source === source) return;
+        this.#nativeTitle = { text: title, source };
+        this.#emit({ type: "session.state.changed", state: this.#configurationState() });
+        return;
+      }
       case "turn/start": {
         if (!active || !Number.isSafeInteger(data.turn) || active.started) {
           throw new Error("DeepSeek Harness turn/start does not match the pending Turn");

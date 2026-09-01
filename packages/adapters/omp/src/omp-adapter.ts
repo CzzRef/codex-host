@@ -1622,7 +1622,9 @@ class OmpHarnessSession implements HarnessSession {
     active: ActiveTurn,
     transport: OmpTurnTransport,
   ): Promise<{ nativeTurnRef: NativeTurnRef; checkpoint: NativeCheckpointRef }> {
-    const snapshot = mapOmpSnapshot(await transport.getEntries(), {
+    const history = await transport.getEntries();
+    this.#refreshNativeTitle(history.title);
+    const snapshot = mapOmpSnapshot(history, {
       sessionId: transport.state.sessionId,
       model: nativeModelForHistory(transport.state),
     });
@@ -1637,6 +1639,12 @@ class OmpHarnessSession implements HarnessSession {
     const turn = created[0];
     if (!turn?.checkpoint) throw new Error("Omp Turn has no terminal Checkpoint identity");
     return { nativeTurnRef: turn.nativeTurnRef, checkpoint: turn.checkpoint };
+  }
+
+  #refreshNativeTitle(title: string | undefined): void {
+    if (!title || this.#state.nativeTitle?.text === title) return;
+    this.#state = { ...this.#state, nativeTitle: { text: title, source: "generated" } };
+    this.#event({ type: "session.state.changed", state: this.#state });
   }
 
   #completeTurn(

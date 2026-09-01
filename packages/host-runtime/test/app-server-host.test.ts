@@ -2191,6 +2191,103 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("syncs a generated native Session title into the Thread name", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    await completePiTurn(fixture, threadId, 2);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    session.publishNativeTitle({ text: "原生生成标题", source: "generated" });
+    await expect(
+      fixture.collector.waitFor(
+        (message) =>
+          method(message, "thread/name/updated") &&
+          messageParams(message).threadName === "原生生成标题",
+      ),
+    ).resolves.toMatchObject({ params: { threadId, threadName: "原生生成标题" } });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "原生生成标题", titleSource: "native" });
+    await stopFixture(fixture);
+  });
+
+  it("keeps a Desktop rename against generated titles until a native user rename", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    await completePiTurn(fixture, threadId, 2);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    writeRequest(fixture.desktopInput, {
+      id: 40,
+      method: "thread/name/set",
+      params: { threadId, name: "用户自定义标题" },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 40));
+    session.publishNativeTitle({ text: "生成标题不该覆盖", source: "generated" });
+    session.publishUsage(null);
+    await fixture.collector.waitFor((message) =>
+      method(message, "codexhost/thread/usage/updated"),
+    );
+    expect(
+      fixture.collector.messages.some(
+        (message) => messageParams(message).threadName === "生成标题不该覆盖",
+      ),
+    ).toBe(false);
+    session.publishNativeTitle({ text: "原生用户改名", source: "user" });
+    await fixture.collector.waitFor(
+      (message) =>
+        method(message, "thread/name/updated") &&
+        messageParams(message).threadName === "原生用户改名",
+    );
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ title: "原生用户改名", titleSource: "native" });
+    await stopFixture(fixture);
+  });
+
+  it("queues turn/start during an active Turn and rejects turn/steer explicitly", async () => {
+    const fixture = createFixture();
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    const threadId = await startPiThread(fixture);
+    const turnId = await startPiTurn(fixture, threadId, 2);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
+    writeRequest(fixture.desktopInput, {
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: [{ type: "text", text: "queued follow-up" }] },
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 4,
+      method: "turn/steer",
+      params: { threadId, input: [{ type: "text", text: "steer now" }] },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 4))).resolves.toMatchObject(
+      {
+        error: { code: -32076, message: "External Thread does not support turn/steer" },
+      },
+    );
+    expect(fixture.collector.messages.some((message) => requestId(message, 3))).toBe(false);
+    session.appendText("first answer");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    const queuedResponse = await fixture.collector.waitFor((message) => requestId(message, 3));
+    const queuedTurn = (queuedResponse.result as JsonObject).turn as JsonObject;
+    if (typeof queuedTurn.id !== "string") throw new Error("Queued turn response has no ID");
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/started", queuedTurn.id as string),
+    );
+    session.appendText("second answer");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/completed", queuedTurn.id as string),
+    );
+    expect(officialWrite).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
   it("forwards official Archive, Unarchive, and metadata updates unchanged", async () => {
     const fixture = createFixture();
     const officialRequests = new JsonLineCollector(fixture.official.stdin);

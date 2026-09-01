@@ -110,6 +110,12 @@ export interface HarnessSessionState {
   effectiveThinkingOptionId?: HarnessThinkingOptionId;
   availableThinkingOptions?: HarnessThinkingOption[];
   effectivePermissionModeId?: HarnessPermissionModeId;
+  /**
+   * Current native Session title, when the Harness maintains one. `user`
+   * means a person set it natively (pins the name); `generated` means the
+   * Harness produced it automatically.
+   */
+  nativeTitle?: { text: string; source: "user" | "generated" };
 }
 
 export interface HostTextInput {

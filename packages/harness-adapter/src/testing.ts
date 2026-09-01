@@ -250,6 +250,12 @@ export class FakeHarnessSession implements HarnessSession {
     this.#state = cloneJson(state);
   }
 
+  publishNativeTitle(nativeTitle: { text: string; source: "user" | "generated" }): void {
+    if (this.#closed) throw new Error("Fake Harness Session is closed");
+    this.#state = { ...this.#state, nativeTitle };
+    this.#event({ type: "session.state.changed", state: this.#state });
+  }
+
   publishEphemeralCommand(turnId: HostTurnId, item: HostItem): void {
     if (this.#closed) throw new Error("Fake Harness Session is closed");
     this.#event({ type: "turn.started", turnId });

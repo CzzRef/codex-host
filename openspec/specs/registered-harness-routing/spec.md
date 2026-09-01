@@ -119,6 +119,23 @@ Host Runtime SHALL dispatch Harness inspection through the requested registered 
 - **THEN** Host SHALL return an explicit unsupported error
 - **AND** it SHALL NOT execute the command or invoke another Adapter
 
+### Requirement: External turn starts queue behind the active Turn
+Codex Desktop queues follow-up messages and treats any `turn/start` rejection as a permanently paused follow-up. Host SHALL therefore hold a bounded number of `turn/start` requests that reference an external Thread with an active Turn and SHALL answer each held request when it is actually dispatched after the active Turn completes, in arrival order. Host SHALL NOT dispatch held requests after an interrupted Turn and SHALL fail them explicitly then, on Session fault, and on Thread deletion. Requests beyond the bound SHALL be rejected explicitly.
+
+#### Scenario: Follow-up arrives during an active Turn
+- **WHEN** `turn/start` references an external Thread whose Turn is running
+- **THEN** Host holds the request without responding and starts it after the active Turn completes
+- **AND** the held request receives the started Turn as its response
+
+#### Scenario: Active Turn is interrupted
+- **WHEN** the active Turn completes as interrupted while requests are held
+- **THEN** Host SHALL fail every held request explicitly instead of dispatching it
+
+#### Scenario: Steering is requested for an external Thread
+- **WHEN** a `turn/` method other than `turn/start` and `turn/interrupt` (for example `turn/steer`) references an external Thread
+- **THEN** Host SHALL return an explicit unsupported error
+- **AND** it SHALL NOT forward the request to the official app-server
+
 ### Requirement: Protocol Core owns finite transport Model decoding
 Protocol Core SHALL decode Desktop transport Model carriers for each finite external Harness and SHALL return only an opaque Harness Model Ref, optional supported configuration values, no override, or a non-matching result to Host Runtime. Host Runtime MUST NOT parse Pi or Claude Model carrier prefixes.
 

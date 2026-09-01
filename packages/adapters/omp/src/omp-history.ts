@@ -25,6 +25,8 @@ import { encodeOmpModelRef, type OmpNativeModelRef } from "./omp-model-catalog.j
 export interface OmpSessionHistory {
   entries: JsonObject[];
   leafId: string | null;
+  /** Last native session title record, when the session file carries one. */
+  title?: string;
 }
 
 export interface OmpHistoryState {

@@ -56,7 +56,11 @@ export interface ExternalThreadStore {
     hostThreadId: HostThreadId,
     mappings: StoredTurnMappingV1[],
   ): Promise<StoredThreadRecordV1>;
-  setTitle(hostThreadId: HostThreadId, title: string): Promise<StoredThreadRecordV1>;
+  setTitle(
+    hostThreadId: HostThreadId,
+    title: string,
+    source?: "desktop" | "native",
+  ): Promise<StoredThreadRecordV1>;
   setTransportModelId(
     hostThreadId: HostThreadId,
     transportModelId: string,
@@ -166,8 +170,12 @@ export class ExternalThreadRepository {
     return this.store.commitReady({ hostThreadId, nativeSessionRef, turnMappings });
   }
 
-  setTitle(hostThreadId: HostThreadId, title: string): Promise<StoredThreadRecordV1> {
-    return this.store.setTitle(hostThreadId, title);
+  setTitle(
+    hostThreadId: HostThreadId,
+    title: string,
+    source: "desktop" | "native" = "desktop",
+  ): Promise<StoredThreadRecordV1> {
+    return this.store.setTitle(hostThreadId, title, source);
   }
 
   setTransportModelId(

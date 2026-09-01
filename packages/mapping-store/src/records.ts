@@ -44,6 +44,7 @@ export const storedThreadRecordV1Schema = z
     nativeSessionRef: nativeSessionRefSchema.optional(),
     cwd: nonBlankTextSchema.max(16_384),
     title: z.string().max(4_096),
+    titleSource: z.enum(["desktop", "native"]).optional(),
     archived: z.boolean(),
     pinned: z.boolean().optional(),
     transportModelId: nonBlankTextSchema.max(1_024),

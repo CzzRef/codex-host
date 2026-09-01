@@ -16,6 +16,7 @@ import {
   type ExternalHarnessId,
   type ExternalThreadRpcError,
   type JsonObject,
+  type JsonRpcRequest,
 } from "@codexhost/protocol-core";
 import { HarnessOutputChannel } from "@codexhost/harness-adapter";
 import type {
@@ -64,6 +65,8 @@ export interface ExternalThread {
   ephemeralTurnIds: Set<HostTurnId>;
   persistenceError: Error | null;
   ignoredInteractionIds: Set<HostInteractionId>;
+  /** turn/start requests accepted while a Turn is active; answered on dispatch. */
+  queuedTurnStarts: JsonRpcRequest[];
 }
 
 export type ExternalThreadLocation =
@@ -277,6 +280,7 @@ export class ExternalThreadRuntime {
       ephemeralTurnIds: new Set(),
       persistenceError: null,
       ignoredInteractionIds: new Set(),
+      queuedTurnStarts: [],
     };
     externalThread.outputTask = this.#consumeOutputs(externalThread);
     this.#threads.set(externalThread.id, externalThread);

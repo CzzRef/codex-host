@@ -154,6 +154,7 @@ export interface GrokRewindOpenInput {
 export interface GrokNativeSessionLocation {
   cwd: string;
   sourceWorkspaceDir?: string;
+  title?: { text: string; source: "user" | "generated" };
 }
 
 export type GrokOpenInput =
@@ -423,9 +424,21 @@ export async function locateGrokNativeSession(
       typeof parsed.source_workspace_dir === "string" && parsed.source_workspace_dir.length > 0
         ? path.resolve(parsed.source_workspace_dir)
         : undefined;
+    const summaryTitle =
+      typeof parsed.session_summary === "string" && parsed.session_summary.trim().length > 0
+        ? parsed.session_summary.trim()
+        : undefined;
     matches.push({
       cwd,
       ...(sourceWorkspaceDir ? { sourceWorkspaceDir } : {}),
+      ...(summaryTitle
+        ? {
+            title: {
+              text: summaryTitle,
+              source: parsed.title_is_manual === true ? ("user" as const) : ("generated" as const),
+            },
+          }
+        : {}),
     });
   }
   return matches.length === 1 ? (matches[0] ?? null) : null;

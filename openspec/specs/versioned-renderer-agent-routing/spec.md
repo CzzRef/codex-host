@@ -158,6 +158,22 @@ The versioned main-process policy SHALL bind each supported metadata generation 
 - **WHEN** the service owner, Probe, or locked Composer cannot be determined uniquely
 - **THEN** remote title generation is skipped rather than sending potentially Pi-owned content to Codex
 
+### Requirement: Native Session titles synchronize to the Thread name
+When an external Harness Session reports a native title through ordered Session state, Host SHALL persist it as the Thread name with a native title source and SHALL emit the same `thread/name/updated` notification the Desktop rename path uses. A native user-set title SHALL always replace the stored name. A generated native title SHALL replace the stored name only when the stored name is empty, was itself synchronized natively, or matches the Desktop's first-message fallback shape; it SHALL NOT replace a distinct Desktop-chosen name.
+
+#### Scenario: Native session renames itself after a Turn
+- **WHEN** the owning Session emits Session state carrying a changed generated native title and the stored name is the Desktop first-message fallback
+- **THEN** Host persists the native title, updates the loaded Thread, and emits `thread/name/updated`
+
+#### Scenario: Desktop rename is pinned against generated titles
+- **WHEN** the user renamed the Thread through `thread/name/set` to a name that is not the first-message fallback
+- **THEN** a later generated native title SHALL NOT replace it
+- **AND** a later native user-set title SHALL replace it
+
+#### Scenario: Native title cannot be persisted
+- **WHEN** Mapping Store rejects the native title write
+- **THEN** Host SHALL keep the previous name and SHALL NOT emit a name notification
+
 ### Requirement: Prewarm ownership does not create unused Pi processes
 
 The Host SHALL establish Pi Thread ownership at `thread/start` and SHALL defer `PiRpcSession` startup until the first `turn/start` for that exact Thread ID.

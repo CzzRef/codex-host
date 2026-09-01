@@ -580,8 +580,16 @@ export class MappingStore {
     });
   }
 
-  async setTitle(hostThreadId: HostThreadId, title: string): Promise<StoredThreadRecordV1> {
-    return this.#update(hostThreadId, (current) => ({ ...current, title }));
+  async setTitle(
+    hostThreadId: HostThreadId,
+    title: string,
+    source: "desktop" | "native" = "desktop",
+  ): Promise<StoredThreadRecordV1> {
+    return this.#update(hostThreadId, (current) =>
+      current.title === title && current.titleSource === source
+        ? null
+        : { ...current, title, titleSource: source },
+    );
   }
 
   async setTransportModelId(

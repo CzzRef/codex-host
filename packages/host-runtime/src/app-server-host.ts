@@ -307,6 +307,7 @@ function approvalServerName(harnessId: ExternalHarnessId): string {
   }
 }
 
+const MAX_QUEUED_EXTERNAL_TURN_STARTS = 8;
 const HOST_APPROVAL_REQUEST_ID_MIN = -2_000_000;
 const HOST_APPROVAL_REQUEST_ID_MAX = -1_000_001;
 const HOST_QUESTION_REQUEST_ID_MIN = -1_000_000;
@@ -886,6 +887,25 @@ export class AppServerHost {
         if (await this.#writeResolutionError(request, resolution)) continue;
         if (resolution.kind === "external") {
           await this.#interruptExternalTurn(request, resolution.thread, params.turnId);
+          continue;
+        }
+      }
+      if (
+        request.method.startsWith("turn/") &&
+        request.method !== "turn/start" &&
+        request.method !== "turn/interrupt" &&
+        isRecord(request.params) &&
+        typeof request.params.threadId === "string"
+      ) {
+        // Codex Desktop's Steer control sends turn/steer while a Turn runs.
+        // External Threads must answer explicitly instead of leaking the
+        // request to the official app-server, which does not know them.
+        const location = await this.#locateExternalThread(request.params.threadId);
+        if (await this.#writeResolutionError(request, location)) continue;
+        if (location.kind === "external") {
+          await this.#writer.json(
+            rpcError(request, -32076, `External Thread does not support ${request.method}`),
+          );
           continue;
         }
       }
@@ -2615,6 +2635,51 @@ export class AppServerHost {
     });
   }
 
+  async #syncNativeThreadName(
+    thread: ExternalThread,
+    nativeTitle: { text: string; source: "user" | "generated" },
+  ): Promise<void> {
+    const text = nativeTitle.text.trim();
+    if (text.length === 0 || text.length > 4_096 || text === thread.record.title) return;
+    if (nativeTitle.source !== "user" && !this.#nativeTitleMayReplace(thread)) return;
+    let record: StoredThreadRecordV1;
+    try {
+      record = await this.#repository.setTitle(thread.record.hostThreadId, text, "native");
+    } catch {
+      this.#diagnose("External native title could not be persisted");
+      return;
+    }
+    thread.record = record;
+    thread.thread.name = text;
+    thread.thread.updatedAt = unixSeconds();
+    await this.#writer.json({
+      method: "thread/name/updated",
+      params: { threadId: thread.record.hostThreadId, threadName: text },
+    });
+  }
+
+  /**
+   * A generated native title may replace the stored name unless a person
+   * chose that name in Codex Desktop. Desktop-side names are fallback titles
+   * derived from the first user message (codexhost disables Codex title
+   * generation for external Threads), so a stored desktop name that matches
+   * the Thread's first-message preview is still replaceable.
+   */
+  #nativeTitleMayReplace(thread: ExternalThread): boolean {
+    const title = thread.record.title;
+    if (title.length === 0) return true;
+    if (thread.record.titleSource === "native") return true;
+    const preview = thread.thread.preview;
+    if (typeof preview !== "string" || preview.length === 0) return false;
+    const normalizedTitle = title
+      .replace(/[.…]+$/u, "")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (normalizedTitle.length === 0) return false;
+    const normalizedPreview = preview.replace(/\s+/gu, " ").trim();
+    return normalizedPreview.startsWith(normalizedTitle);
+  }
+
   async #updateExternalThreadMetadata(
     request: JsonRpcRequest,
     location: Extract<ExternalThreadLocation, { kind: "external" }>,
@@ -2649,6 +2714,9 @@ export class AppServerHost {
     location: Extract<ExternalThreadLocation, { kind: "external" }>,
   ): Promise<void> {
     const thread = location.thread;
+    if (thread) {
+      await this.#flushQueuedExternalTurns(thread, "External Thread was deleted");
+    }
     try {
       await this.#repository.removeThread(location.record.hostThreadId);
     } catch {
@@ -2879,9 +2947,16 @@ export class AppServerHost {
 
   async #startExternalTurn(request: JsonRpcRequest, thread: ExternalThread): Promise<void> {
     if (thread.running) {
-      await this.#writer.json(
-        rpcError(request, -32072, "External Thread already has an active Turn"),
-      );
+      if (thread.queuedTurnStarts.length >= MAX_QUEUED_EXTERNAL_TURN_STARTS) {
+        await this.#writer.json(
+          rpcError(request, -32072, "External Thread already has an active Turn"),
+        );
+        return;
+      }
+      // Codex Desktop queues follow-up messages and marks any turn/start
+      // rejection as permanently paused. Hold the request instead and answer
+      // it when the active Turn completes and this one actually starts.
+      thread.queuedTurnStarts.push(request);
       return;
     }
     const params = requestObject(request);
@@ -3084,6 +3159,9 @@ export class AppServerHost {
           }
         }
         thread.stateObserver.update(event.state);
+        if (event.state.nativeTitle) {
+          await this.#syncNativeThreadName(thread, event.state.nativeTitle);
+        }
       } catch (error) {
         thread.persistenceError = error instanceof Error ? error : new Error(errorMessage(error));
         thread.stateObserver.fault(thread.persistenceError);
@@ -3147,6 +3225,7 @@ export class AppServerHost {
     if (event.type === "session.faulted") {
       thread.stateObserver.fault(new Error(event.error.message));
       this.#diagnose(`${thread.harnessId} Harness Session faulted: ${event.error.message}`);
+      await this.#flushQueuedExternalTurns(thread, "External Harness Session faulted");
       return;
     }
 
@@ -3241,6 +3320,31 @@ export class AppServerHost {
           ? { type: "active", activeFlags: [] }
           : { type: "idle" },
       );
+      if (result.completedTurn?.status === "interrupted") {
+        // Native Codex does not drain queued follow-ups after an interrupt.
+        await this.#flushQueuedExternalTurns(
+          thread,
+          "External queued Turn was discarded after interrupt",
+        );
+      } else {
+        this.#dispatchQueuedExternalTurn(thread);
+      }
+    }
+  }
+
+  #dispatchQueuedExternalTurn(thread: ExternalThread): void {
+    if (thread.running) return;
+    const next = thread.queuedTurnStarts.shift();
+    if (!next) return;
+    void this.#startExternalTurn(next, thread).catch((error) => {
+      this.#diagnose(error);
+    });
+  }
+
+  async #flushQueuedExternalTurns(thread: ExternalThread, message: string): Promise<void> {
+    const queued = thread.queuedTurnStarts.splice(0);
+    for (const request of queued) {
+      await this.#writer.json(rpcError(request, -32072, message));
     }
   }
 

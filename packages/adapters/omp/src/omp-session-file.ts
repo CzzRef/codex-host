@@ -37,6 +37,7 @@ function historyEntry(value: unknown): JsonObject | null {
 export async function readOmpSessionHistory(sessionFile: string): Promise<OmpSessionHistory> {
   const entries: JsonObject[] = [];
   let leafId: string | null = null;
+  let title: string | undefined;
   const lines = readline.createInterface({
     input: createReadStream(sessionFile, { encoding: "utf8" }),
     crlfDelay: Number.POSITIVE_INFINITY,
@@ -50,6 +51,15 @@ export async function readOmpSessionHistory(sessionFile: string): Promise<OmpSes
       } catch {
         continue;
       }
+      if (
+        isRecord(parsed) &&
+        parsed.type === "title" &&
+        typeof parsed.title === "string" &&
+        parsed.title.trim().length > 0
+      ) {
+        title = parsed.title.trim();
+        continue;
+      }
       const entry = historyEntry(parsed);
       if (!entry) continue;
       entries.push(entry);
@@ -58,7 +68,7 @@ export async function readOmpSessionHistory(sessionFile: string): Promise<OmpSes
   } finally {
     lines.close();
   }
-  return { entries, leafId };
+  return { entries, leafId, ...(title ? { title } : {}) };
 }
 
 async function readOmpSessionHeader(sessionFile: string): Promise<OmpSessionHeader> {

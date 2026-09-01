@@ -2098,6 +2098,25 @@ class ClaudeHarnessSession implements HarnessSession {
     this.#occupancy.clear();
     this.#transport?.setIdleLive(false);
     active.resolveCompletion();
+    queueMicrotask(() => {
+      if (this.#phase === "open") void this.#refreshNativeTitle();
+    });
+  }
+
+  async #refreshNativeTitle(): Promise<void> {
+    try {
+      const info = await getClaudeSessionInfo(this.#sessionId);
+      const customTitle = typeof info?.customTitle === "string" ? info.customTitle.trim() : "";
+      const summary = typeof info?.summary === "string" ? info.summary.trim() : "";
+      const text = customTitle || summary;
+      if (!text || this.#state.nativeTitle?.text === text) return;
+      this.#publishState({
+        ...this.#state,
+        nativeTitle: { text, source: customTitle ? "user" : "generated" },
+      });
+    } catch {
+      // The native title refresh is advisory and must not affect the Turn.
+    }
   }
 
   #fault(error: HarnessError): void {
