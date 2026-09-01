@@ -37,6 +37,8 @@ export {
   THREAD_THINKING_SELECT_METHOD,
   THREAD_OWNERSHIP_LIST_METHOD,
   THREAD_USAGE_INSPECT_METHOD,
+  THREAD_WORKSPACE_INSPECT_METHOD,
+  THREAD_WORKSPACE_UPDATED_METHOD,
   UPDATE_CHECK_METHOD,
   UPDATE_START_METHOD,
   UPDATE_STATUS_METHOD,
@@ -147,6 +149,27 @@ export {
   SIDEBAR_THREAD_ROW_SELECTOR,
 } from "./renderer-sidebar-agent-icons.js";
 export type { RendererSidebarContractInspection } from "./renderer-sidebar-agent-icons.js";
+export {
+  installRendererWorkspaceBar,
+  WORKSPACE_BAR_ATTRIBUTE,
+  WORKSPACE_BAR_SELECTOR,
+  WORKSPACE_ROW_ATTRIBUTE,
+} from "./renderer-workspace-bar.js";
+export type { RendererWorkspaceBar } from "./renderer-workspace-bar.js";
+export {
+  BRANCH_WORKTREE_PREFERENCE_KEY,
+  BRANCH_WORKTREE_TOGGLE_ATTRIBUTE,
+  installRendererBranchWorktreeToggle,
+  isSwitchBranchButton,
+  readBranchWorktreePreference,
+} from "./renderer-branch-worktree-toggle.js";
+export {
+  installRendererComposerPromptReuse,
+  PROMPT_GHOST_ATTRIBUTE,
+  reusablePromptRemainder,
+  shouldAcceptPromptTab,
+} from "./renderer-composer-prompt-reuse.js";
+export type { RendererComposerPromptReuse } from "./renderer-composer-prompt-reuse.js";
 export type {
   ExternalModelControlView,
   ExternalPermissionModeControlView,

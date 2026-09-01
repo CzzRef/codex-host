@@ -19,6 +19,8 @@ import {
   threadOwnershipListResultSchema,
   threadUsageInspectionParamsSchema,
   threadUsageInspectionSchema,
+  threadWorkspaceInspectParamsSchema,
+  threadWorkspaceSnapshotSchema,
   updateCheckResultSchema,
   updateEmptyParamsSchema,
   updateStartResultSchema,
@@ -42,10 +44,17 @@ import {
   type ThreadOwnershipListResult,
   type ThreadUsageInspection,
   type ThreadUsageInspectionParams,
+  type ThreadWorkspaceInspectParams,
+  type ThreadWorkspaceSnapshot,
   type UpdateCheckResult,
   type UpdateStartResult,
   type UpdateStatusResult,
 } from "@codexhost/shared-contracts";
+import {
+  conversationFilesFromNotification,
+  THREAD_FILE_CHANGE_UPDATED_METHOD,
+  type ThreadConversationFileUpdate,
+} from "./renderer-conversation-files.js";
 
 export const HARNESS_INSPECT_METHOD = "codexhost/harness/inspect";
 export const THREAD_FORK_METHOD = "codexhost/thread/fork";
@@ -59,6 +68,8 @@ export const THREAD_OWNERSHIP_LIST_METHOD = "codexhost/thread/ownership/list";
 export const THREAD_USAGE_INSPECT_METHOD = "codexhost/thread/usage/inspect";
 export const THREAD_USAGE_UPDATED_METHOD = "codexhost/thread/usage/updated";
 export const THREAD_TOKEN_USAGE_UPDATED_METHOD = "thread/tokenUsage/updated";
+export const THREAD_WORKSPACE_INSPECT_METHOD = "codexhost/thread/workspace/inspect";
+export const THREAD_WORKSPACE_UPDATED_METHOD = "codexhost/thread/workspace/updated";
 export const UPDATE_CHECK_METHOD = "codexhost/update/check";
 export const UPDATE_START_METHOD = "codexhost/update/start";
 export const UPDATE_STATUS_METHOD = "codexhost/update/status";
@@ -107,6 +118,9 @@ export interface RendererModelClient {
   listThreadOwnership(input: ThreadOwnershipListParams): Promise<ThreadOwnershipListResult>;
   inspectThreadUsage(input: ThreadUsageInspectionParams): Promise<ThreadUsageInspection>;
   subscribeThreadUsage?(listener: (update: ThreadUsageInspection) => void): () => void;
+  inspectThreadWorkspace(input: ThreadWorkspaceInspectParams): Promise<ThreadWorkspaceSnapshot>;
+  subscribeThreadWorkspace?(listener: (update: ThreadWorkspaceSnapshot) => void): () => void;
+  subscribeThreadFileChanges?(listener: (update: ThreadConversationFileUpdate) => void): () => void;
   selectThreadModel(input: ThreadModelSelectParams): Promise<HarnessModelSelectionState>;
   selectThreadThinking(input: ThreadThinkingSelectParams): Promise<HarnessModelSelectionState>;
   selectThreadPermissionMode(
@@ -192,6 +206,13 @@ export function createRendererModelClient(
     const result = await manager.sendRequest(THREAD_USAGE_INSPECT_METHOD, params);
     return threadUsageInspectionSchema.parse(result);
   };
+  const inspectThreadWorkspace = async (
+    input: ThreadWorkspaceInspectParams,
+  ): Promise<ThreadWorkspaceSnapshot> => {
+    const params = threadWorkspaceInspectParamsSchema.parse(input);
+    const result = await manager.sendRequest(THREAD_WORKSPACE_INSPECT_METHOD, params);
+    return threadWorkspaceSnapshotSchema.parse(result);
+  };
   const selectThreadModel = async (
     input: ThreadModelSelectParams,
   ): Promise<HarnessModelSelectionState> => {
@@ -243,6 +264,7 @@ export function createRendererModelClient(
       return result;
     },
     inspectThreadUsage,
+    inspectThreadWorkspace,
     subscribeThreadUsage(listener: (update: ThreadUsageInspection) => void): () => void {
       const notifications = notificationTarget(manager);
       if (!notifications?.addNotificationCallback) {
@@ -270,6 +292,54 @@ export function createRendererModelClient(
         generations.clear();
         removeNotificationCallback();
       };
+    },
+    subscribeThreadWorkspace(listener: (update: ThreadWorkspaceSnapshot) => void): () => void {
+      const notifications = notificationTarget(manager);
+      if (!notifications?.addNotificationCallback) {
+        throw new Error("Renderer workspace notification callback is unavailable");
+      }
+      let disposed = false;
+      const generations = new Map<ThreadWorkspaceInspectParams["threadId"], number>();
+      const removeNotificationCallback = notifications.addNotificationCallback(
+        THREAD_WORKSPACE_UPDATED_METHOD,
+        (notification) => {
+          if (!isRecord(notification) || notification.method !== THREAD_WORKSPACE_UPDATED_METHOD) {
+            return;
+          }
+          const params = notification.params;
+          if (!isRecord(params)) return;
+          const parsed = hostThreadIdSchema.safeParse(params.threadId);
+          if (!parsed.success) return;
+          const threadId = parsed.data;
+          const generation = (generations.get(threadId) ?? 0) + 1;
+          generations.set(threadId, generation);
+          void inspectThreadWorkspace({ threadId })
+            .then((update) => {
+              if (!disposed && generations.get(threadId) === generation) listener(update);
+            })
+            .catch(() => undefined);
+        },
+      );
+      return () => {
+        if (disposed) return;
+        disposed = true;
+        generations.clear();
+        removeNotificationCallback();
+      };
+    },
+    subscribeThreadFileChanges(listener: (update: ThreadConversationFileUpdate) => void) {
+      const notifications = notificationTarget(manager);
+      if (!notifications?.addNotificationCallback) {
+        throw new Error("Renderer file-change notification callback is unavailable");
+      }
+      const removeNotificationCallback = notifications.addNotificationCallback(
+        THREAD_FILE_CHANGE_UPDATED_METHOD,
+        (notification) => {
+          const update = conversationFilesFromNotification(notification);
+          if (update) listener(update);
+        },
+      );
+      return removeNotificationCallback;
     },
     selectThreadModel,
     selectThreadThinking,
