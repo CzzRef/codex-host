@@ -54,6 +54,8 @@ import {
   type TurnCancelAccepted,
   type TurnCancelCommand,
   type TurnStartAccepted,
+  type TurnSteerAccepted,
+  type TurnSteerCommand,
   type TurnStartCommand,
 } from "@codexhost/harness-adapter";
 import {
@@ -640,6 +642,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
   }
 
   execute(command: TurnStartCommand): Promise<HarnessResult<TurnStartAccepted>>;
+  execute(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>>;
   execute(command: TurnCancelCommand): Promise<HarnessResult<TurnCancelAccepted>>;
   execute(command: InteractionRespondCommand): Promise<HarnessResult<InteractionRespondAccepted>>;
   execute(command: ModelSelectCommand): Promise<HarnessResult<ModelSelectCompleted>>;
@@ -652,6 +655,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
   ): Promise<
     HarnessResult<
       | TurnStartAccepted
+      | TurnSteerAccepted
       | TurnCancelAccepted
       | InteractionRespondAccepted
       | ModelSelectCompleted

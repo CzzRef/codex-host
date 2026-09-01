@@ -16,6 +16,8 @@ import {
   type OpenSessionInput,
   type TurnStartCommand,
   type TurnStartAccepted,
+  type TurnSteerAccepted,
+  type TurnSteerCommand,
   type TurnCancelCommand,
   type TurnCancelAccepted,
   type InteractionRespondCommand,
@@ -44,6 +46,7 @@ const HISTORY_MESSAGE =
 
 type Accepted =
   | TurnStartAccepted
+  | TurnSteerAccepted
   | TurnCancelAccepted
   | InteractionRespondAccepted
   | ModelSelectCompleted
@@ -119,6 +122,7 @@ class CursorSession implements HarnessSession {
   }
 
   execute(command: TurnStartCommand): Promise<HarnessResult<TurnStartAccepted>>;
+  execute(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>>;
   execute(command: TurnCancelCommand): Promise<HarnessResult<TurnCancelAccepted>>;
   execute(command: InteractionRespondCommand): Promise<HarnessResult<InteractionRespondAccepted>>;
   execute(command: ModelSelectCommand): Promise<HarnessResult<ModelSelectCompleted>>;

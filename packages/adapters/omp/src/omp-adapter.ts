@@ -47,6 +47,8 @@ import {
   type TurnCancelCommand,
   type TurnOutcome,
   type TurnStartAccepted,
+  type TurnSteerAccepted,
+  type TurnSteerCommand,
   type TurnStartCommand,
 } from "@codexhost/harness-adapter";
 import {
@@ -666,6 +668,7 @@ class OmpHarnessSession implements HarnessSession {
   }
 
   execute(command: TurnStartCommand): Promise<HarnessResult<TurnStartAccepted>>;
+  execute(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>>;
   execute(command: TurnCancelCommand): Promise<HarnessResult<TurnCancelAccepted>>;
   execute(command: InteractionRespondCommand): Promise<HarnessResult<InteractionRespondAccepted>>;
   execute(command: ModelSelectCommand): Promise<HarnessResult<ModelSelectCompleted>>;
@@ -678,6 +681,7 @@ class OmpHarnessSession implements HarnessSession {
   ): Promise<
     HarnessResult<
       | TurnStartAccepted
+      | TurnSteerAccepted
       | TurnCancelAccepted
       | InteractionRespondAccepted
       | ModelSelectCompleted

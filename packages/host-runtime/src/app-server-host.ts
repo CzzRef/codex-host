@@ -3592,10 +3592,10 @@ export class AppServerHost {
       ).then(() => this.#dispatchQueuedExternalTurn(thread));
       return;
     }
-    const combined: JsonRpcRequest = {
+    const combined = {
       ...first,
       params: { ...requestObject(first), input: [{ type: "text", text: combinedText }] },
-    };
+    } as unknown as JsonRpcRequest;
     void this.#startExternalTurn(combined, thread, rest).catch((error) => {
       this.#diagnose(error);
     });
