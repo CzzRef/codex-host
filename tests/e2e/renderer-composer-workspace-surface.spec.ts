@@ -218,7 +218,7 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
   await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Rollback");
 
   await expect(page.locator("[data-codexhost-branch-worktree-toggle] input")).toBeChecked();
-  await page.getByRole("button", { name: "Open review" }).click({ force: true });
+  await page.getByRole("button", { name: "Open review" }).first().click({ force: true });
   await expect.poll(async () => page.evaluate("globalThis.__changesClicks ?? 0")).toBe(1);
 
   const editor = page.locator('[data-codex-composer][contenteditable="true"]');
