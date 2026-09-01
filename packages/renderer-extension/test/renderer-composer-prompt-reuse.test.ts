@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isComposerStopLabel,
   normalizeComposerPrompt,
   promptReuseStorageKey,
   readStoredPrompt,
   reusablePromptRemainder,
   shouldAcceptPromptTab,
+  shouldQueueComposerPrompt,
+  shouldRevealPromptGhost,
   writeStoredPrompt,
 } from "../src/renderer-composer-prompt-reuse.js";
 
@@ -31,6 +34,16 @@ describe("composer prompt reuse", () => {
     expect(shouldAcceptPromptTab({ ...allowed, shiftKey: true })).toBe(false);
     expect(shouldAcceptPromptTab({ ...allowed, competing: true })).toBe(false);
     expect(shouldAcceptPromptTab({ ...allowed, remainder: null })).toBe(false);
+  });
+
+  it("queues the next prompt only while a turn is running, then reveals it when idle", () => {
+    expect(isComposerStopLabel("Stop")).toBe(true);
+    expect(isComposerStopLabel("Send")).toBe(false);
+    expect(shouldQueueComposerPrompt({ turnBusy: true, prompt: "第二段" })).toBe(true);
+    expect(shouldQueueComposerPrompt({ turnBusy: false, prompt: "第二段" })).toBe(false);
+    expect(shouldQueueComposerPrompt({ turnBusy: true, prompt: "" })).toBe(false);
+    expect(shouldRevealPromptGhost({ remainder: "第二段", turnBusy: true })).toBe(false);
+    expect(shouldRevealPromptGhost({ remainder: "第二段", turnBusy: false })).toBe(true);
   });
 
   it("persists a trimmed prompt per Thread", () => {

@@ -5,7 +5,10 @@ import {
 } from "@codexhost/shared-contracts";
 
 import {
+  filesForTurnSelection,
   mergeConversationFiles,
+  reviewPathMatches,
+  turnKeyMatches,
   type ThreadConversationFile,
 } from "./renderer-conversation-files.js";
 import { CODEX_COMPOSER_SELECTOR } from "./renderer-composer-dom.js";
@@ -19,6 +22,9 @@ export const WORKSPACE_BAR_ATTRIBUTE = "data-codexhost-workspace-bar";
 export const WORKSPACE_BAR_SELECTOR = `[${WORKSPACE_BAR_ATTRIBUTE}]`;
 export const WORKSPACE_ROW_ATTRIBUTE = "data-codexhost-workspace-row";
 export const WORKSPACE_FILES_ATTRIBUTE = "data-codexhost-workspace-files";
+export const WORKSPACE_FILE_ATTRIBUTE = "data-codexhost-workspace-file";
+export const WORKSPACE_PREVIEW_ATTRIBUTE = "data-codexhost-workspace-preview";
+export const TURN_FILES_ATTRIBUTE = "data-codexhost-turn-files";
 
 const STYLE_ATTRIBUTE = "data-codexhost-workspace-bar-style";
 const BAR_CLASS = "codexhost-workspace-bar";
@@ -82,6 +88,17 @@ function ensureStyle(ownerDocument: Document): void {
       display: inline-flex;
       gap: 6px;
       font-variant-numeric: tabular-nums;
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      padding: 0;
+      font: inherit;
+    }
+    .${BAR_CLASS} .codexhost-workspace-stats:hover {
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
     .${BAR_CLASS} .codexhost-workspace-added {
       color: var(--color-codex-git-added, #3fb950);
@@ -93,18 +110,91 @@ function ensureStyle(ownerDocument: Document): void {
       display: flex;
       flex-direction: column;
       gap: 2px;
-      max-height: 88px;
-      overflow: auto;
-      padding: 4px 10px 6px;
+      padding: 4px 8px 6px;
       border: 1px solid rgba(127, 127, 127, 0.18);
       border-radius: 10px;
       font-size: 11px;
       line-height: 16px;
     }
-    .${BAR_CLASS} [${WORKSPACE_FILES_ATTRIBUTE}] code {
+    .${BAR_CLASS} .codexhost-workspace-files-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      padding: 2px 2px 4px;
+      font: inherit;
+      text-align: left;
+    }
+    .${BAR_CLASS} .codexhost-workspace-files-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      max-height: 132px;
+      overflow: auto;
+    }
+    .${BAR_CLASS} [${WORKSPACE_FILES_ATTRIBUTE}="collapsed"] .codexhost-workspace-files-list {
+      display: none;
+    }
+    .${BAR_CLASS} [${WORKSPACE_FILE_ATTRIBUTE}] {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      appearance: none;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      padding: 2px 4px;
+      font: inherit;
+      text-align: left;
+    }
+    .${BAR_CLASS} [${WORKSPACE_FILE_ATTRIBUTE}]:hover {
+      background: rgba(127, 127, 127, 0.16);
+    }
+    .${BAR_CLASS} [${WORKSPACE_FILE_ATTRIBUTE}] code {
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    [${WORKSPACE_PREVIEW_ATTRIBUTE}] {
+      position: fixed;
+      z-index: 40;
+      width: min(420px, calc(100vw - 24px));
+      max-height: 280px;
+      overflow: auto;
+      padding: 8px 10px;
+      border: 1px solid rgba(127, 127, 127, 0.28);
+      border-radius: 10px;
+      background: rgba(20, 20, 20, 0.96);
+      color: inherit;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      line-height: 16px;
+      white-space: pre;
+      pointer-events: none;
+    }
+    [${WORKSPACE_PREVIEW_ATTRIBUTE}] .codexhost-workspace-preview-add {
+      color: var(--color-codex-git-added, #3fb950);
+    }
+    [${WORKSPACE_PREVIEW_ATTRIBUTE}] .codexhost-workspace-preview-del {
+      color: var(--color-codex-git-deleted, #f85149);
+    }
+    [${WORKSPACE_PREVIEW_ATTRIBUTE}] .codexhost-workspace-preview-meta {
+      opacity: 0.62;
+    }
+    [${TURN_FILES_ATTRIBUTE}] {
+      outline: 1px solid rgba(63, 185, 80, 0.55);
+      outline-offset: 4px;
+      border-radius: 12px;
     }
   `;
   (ownerDocument.head ?? ownerDocument.documentElement).append(style);
@@ -140,15 +230,78 @@ export function worktreeLabel(repository: ThreadWorkspaceRepository, chinese: bo
   return chinese ? `工作树 ${repository.worktreeName}` : `wt ${repository.worktreeName}`;
 }
 
+function controlLabel(element: Element): string {
+  return [element.getAttribute("aria-label"), element.getAttribute("title"), element.textContent]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+}
+
+function controlVisible(element: Element): boolean {
+  const typed = element as HTMLElement;
+  if (typed.hidden || typed.getAttribute("aria-hidden") === "true") return false;
+  const bounds = typed.getBoundingClientRect?.();
+  return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
+}
+
+export function isNativeWorkspaceDiffControl(element: Element): boolean {
+  const label = controlLabel(element);
+  if (
+    element.getAttribute("data-slot") === "thread-summary-panel-item-button" &&
+    /changes|files changed|变更|文件变更/i.test(label)
+  ) {
+    return true;
+  }
+  if (element.getAttribute("data-tab-id") === "diff") return true;
+  return /open review tab|打开审查|打开变更/i.test(label);
+}
+
+function nativeWorkspaceDiffRank(element: Element): number {
+  if (element.getAttribute("data-slot") === "thread-summary-panel-item-button") return 0;
+  if (/open review tab|打开审查|打开变更/i.test(controlLabel(element))) return 1;
+  if (element.getAttribute("data-tab-id") === "diff") return 2;
+  return 3;
+}
+
+export function nativeWorkspaceDiffControl(root: ParentNode): HTMLElement | null {
+  const candidates = [
+    ...root.querySelectorAll("button, [role='button'], [data-tab-id='diff']"),
+  ].filter((element) => isNativeWorkspaceDiffControl(element) && controlVisible(element));
+  candidates.sort((left, right) => nativeWorkspaceDiffRank(left) - nativeWorkspaceDiffRank(right));
+  const match = candidates[0];
+  if (!match) return null;
+  if (match instanceof HTMLElement && match.tagName === "BUTTON") return match;
+  const inner = match.querySelector("button");
+  return inner instanceof HTMLElement ? inner : match instanceof HTMLElement ? match : null;
+}
+
+export function openNativeWorkspaceDiff(root: ParentNode = document): boolean {
+  const control = nativeWorkspaceDiffControl(root);
+  if (!control) return false;
+  control.click();
+  return true;
+}
+
+export function nativeReviewFileControl(root: ParentNode, filePath: string): HTMLElement | null {
+  for (const element of root.querySelectorAll("[data-review-path]")) {
+    const reviewPath = element.getAttribute("data-review-path") ?? "";
+    if (!reviewPathMatches(reviewPath, filePath)) continue;
+    const header = element.querySelector<HTMLElement>('[class*="diff-header"]');
+    return header ?? (element instanceof HTMLElement ? element : null);
+  }
+  return null;
+}
+
 function snapshotSignature(
   snapshot: ThreadWorkspaceSnapshot | null,
   files: readonly ThreadConversationFile[],
+  selectedTurn: string | null,
 ): string {
   return JSON.stringify({
     threadId: snapshot?.threadId ?? null,
     cwd: snapshot?.cwd ?? null,
     repositories: snapshot?.repositories ?? [],
     files,
+    selectedTurn,
   });
 }
 
@@ -173,8 +326,15 @@ function renderRow(
     worktree.textContent = tree;
     row.append(worktree);
   }
-  const stats = ownerDocument.createElement("span");
+  const stats = ownerDocument.createElement("button");
+  stats.type = "button";
   stats.className = "codexhost-workspace-stats";
+  stats.setAttribute("aria-label", chinese ? "打开变更" : "Open review");
+  stats.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openNativeWorkspaceDiff(ownerDocument);
+  });
   const added = ownerDocument.createElement("span");
   added.className = "codexhost-workspace-added";
   added.textContent = `+${repository.addedLines.toLocaleString()}`;
@@ -184,6 +344,40 @@ function renderRow(
   stats.append(added, deleted);
   row.append(stats);
   return row;
+}
+
+function fillDiffPreview(host: HTMLElement, preview: string, chinese: boolean): void {
+  host.replaceChildren();
+  if (preview.length === 0) {
+    host.textContent = chinese ? "暂无改动预览" : "No diff preview";
+    return;
+  }
+  const ownerDocument = host.ownerDocument;
+  for (const line of preview.split("\n")) {
+    const row = ownerDocument.createElement("div");
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      row.className = "codexhost-workspace-preview-add";
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      row.className = "codexhost-workspace-preview-del";
+    } else {
+      row.className = "codexhost-workspace-preview-meta";
+    }
+    row.textContent = line.length > 0 ? line : " ";
+    host.append(row);
+  }
+}
+
+function placePreview(host: HTMLElement, anchor: DOMRect): void {
+  const width = Math.min(
+    420,
+    Math.max(240, host.ownerDocument.defaultView?.innerWidth ?? 420) - 24,
+  );
+  const maxLeft = (host.ownerDocument.defaultView?.innerWidth ?? width) - width - 8;
+  const left = Math.max(8, Math.min(Math.round(anchor.right + 8), maxLeft));
+  const top = Math.max(8, Math.round(anchor.top));
+  host.style.width = `${width}px`;
+  host.style.left = `${left}px`;
+  host.style.top = `${top}px`;
 }
 
 function placeBar(bar: HTMLElement, composer: Element): void {
@@ -205,7 +399,14 @@ export function installRendererWorkspaceBar(
   const generations = new Map<Element, number>();
   const loadedThreadIds = new Map<Element, string>();
   const conversationFiles = new Map<string, ThreadConversationFile[]>();
+  const filesByTurn = new Map<string, Map<string, ThreadConversationFile[]>>();
+  const selectedTurnKey = new Map<string, string | null>();
   const lastSnapshot = new Map<Element, ThreadWorkspaceSnapshot | null>();
+  const filesExpanded = new Map<Element, boolean>();
+  const preview = documentNode.createElement("div");
+  preview.setAttribute(WORKSPACE_PREVIEW_ATTRIBUTE, "true");
+  preview.hidden = true;
+  (documentNode.body ?? documentNode.documentElement).append(preview);
   let disposed = false;
   let unsubscribe: (() => void) | null = null;
   let subscribedClient: RendererModelClient | null = null;
@@ -217,13 +418,58 @@ export function installRendererWorkspaceBar(
     generations.delete(composer);
     loadedThreadIds.delete(composer);
     lastSnapshot.delete(composer);
+    filesExpanded.delete(composer);
+  };
+
+  const hidePreview = (): void => {
+    preview.hidden = true;
+    preview.replaceChildren();
+  };
+
+  const showPreview = (file: ThreadConversationFile, anchor: DOMRect, chinese: boolean): void => {
+    fillDiffPreview(preview, file.preview, chinese);
+    preview.hidden = false;
+    placePreview(preview, anchor);
+  };
+
+  const highlightTurns = (selection: string | null): void => {
+    for (const turn of documentNode.querySelectorAll(`[${TURN_FILES_ATTRIBUTE}]`)) {
+      turn.removeAttribute(TURN_FILES_ATTRIBUTE);
+    }
+    if (!selection) return;
+    for (const turn of documentNode.querySelectorAll(
+      "[data-turn-key], [data-content-search-turn-key]",
+    )) {
+      const key =
+        turn.getAttribute("data-content-search-turn-key") ??
+        turn.getAttribute("data-turn-key") ??
+        "";
+      if (turnKeyMatches(key, selection) || turnKeyMatches(selection, key)) {
+        turn.setAttribute(TURN_FILES_ATTRIBUTE, "true");
+      }
+    }
+  };
+
+  const openConversationFile = (file: ThreadConversationFile): void => {
+    openNativeWorkspaceDiff(documentNode);
+    const reveal = (): void => {
+      const control = nativeReviewFileControl(documentNode, file.path);
+      control?.scrollIntoView({ block: "center", inline: "nearest" });
+      control?.click();
+    };
+    documentNode.defaultView?.setTimeout(reveal, 50);
   };
 
   const paint = (composer: Element, snapshot: ThreadWorkspaceSnapshot | null): void => {
     lastSnapshot.set(composer, snapshot);
     const threadId = snapshot?.threadId ?? threadIdForComposer(composer);
-    const files = threadId ? (conversationFiles.get(threadId) ?? []) : [];
-    const signature = snapshotSignature(snapshot, files);
+    const selected = threadId ? (selectedTurnKey.get(threadId) ?? null) : null;
+    const turnFiles =
+      threadId && selected
+        ? filesForTurnSelection(filesByTurn.get(threadId) ?? new Map(), selected)
+        : null;
+    const files = turnFiles ?? (threadId ? (conversationFiles.get(threadId) ?? []) : []);
+    const signature = snapshotSignature(snapshot, files, selected);
     if (signatures.get(composer) === signature && bars.get(composer)?.isConnected) {
       const existing = bars.get(composer);
       if (existing) placeBar(existing, composer);
@@ -239,23 +485,48 @@ export function installRendererWorkspaceBar(
     }
     bar.replaceChildren();
     const repositories = snapshot?.repositories ?? [];
-    if (repositories.length === 0 && files.length === 0) {
+    if (repositories.length === 0 && files.length === 0 && turnFiles === null) {
       bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, "empty");
       bar.remove();
       return;
     }
     const chinese = chineseLocale(documentNode);
     for (const repository of repositories) bar.append(renderRow(documentNode, repository, chinese));
-    if (files.length > 0) {
+    if (files.length > 0 || turnFiles !== null) {
+      const expanded = filesExpanded.get(composer) ?? false;
       const list = documentNode.createElement("div");
-      list.setAttribute(WORKSPACE_FILES_ATTRIBUTE, "true");
-      const heading = documentNode.createElement("div");
+      list.setAttribute(WORKSPACE_FILES_ATTRIBUTE, expanded ? "open" : "collapsed");
+      const heading = documentNode.createElement("button");
+      heading.type = "button";
+      heading.className = "codexhost-workspace-files-toggle";
+      heading.setAttribute("aria-expanded", expanded ? "true" : "false");
+      const filtered = turnFiles !== null;
       heading.textContent = chinese
-        ? `本轮 ${files.length} 个文件`
-        : `${files.length} files this conversation`;
-      list.append(heading);
+        ? `${expanded ? "▾" : "▸"} ${filtered ? "本段" : "本轮"} ${files.length} 个文件`
+        : `${expanded ? "▾" : "▸"} ${files.length} files ${filtered ? "this turn" : "this conversation"}`;
+      heading.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (filtered && threadId) {
+          selectedTurnKey.set(threadId, null);
+          highlightTurns(null);
+          documentNode.defaultView?.dispatchEvent(
+            new CustomEvent("codexhost:turn-files-selected", {
+              detail: { threadId, turnKey: null },
+            }),
+          );
+        } else {
+          filesExpanded.set(composer, !(filesExpanded.get(composer) ?? false));
+        }
+        signatures.delete(composer);
+        paint(composer, lastSnapshot.get(composer) ?? snapshot);
+      });
+      const rows = documentNode.createElement("div");
+      rows.className = "codexhost-workspace-files-list";
       for (const file of files) {
-        const row = documentNode.createElement("div");
+        const row = documentNode.createElement("button");
+        row.type = "button";
+        row.setAttribute(WORKSPACE_FILE_ATTRIBUTE, file.path);
         const path = documentNode.createElement("code");
         path.textContent = file.path;
         const stats = documentNode.createElement("span");
@@ -268,8 +539,19 @@ export function installRendererWorkspaceBar(
         deleted.textContent = `-${file.deletedLines.toLocaleString()}`;
         stats.append(added, deleted);
         row.append(path, stats);
-        list.append(row);
+        row.addEventListener("mouseenter", () => {
+          showPreview(file, row.getBoundingClientRect(), chinese);
+        });
+        row.addEventListener("mouseleave", hidePreview);
+        row.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          hidePreview();
+          openConversationFile(file);
+        });
+        rows.append(row);
       }
+      list.append(heading, rows);
       bar.append(list);
     }
     bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, snapshot?.threadId ?? "ready");
@@ -355,6 +637,14 @@ export function installRendererWorkspaceBar(
               update.threadId,
               mergeConversationFiles(conversationFiles.get(update.threadId) ?? [], update.files),
             );
+            if (update.turnId) {
+              const turns = filesByTurn.get(update.threadId) ?? new Map();
+              turns.set(
+                update.turnId,
+                mergeConversationFiles(turns.get(update.turnId) ?? [], update.files),
+              );
+              filesByTurn.set(update.threadId, turns);
+            }
             paintThread(update.threadId, null);
           }),
         );
@@ -377,6 +667,36 @@ export function installRendererWorkspaceBar(
     }, 0);
   };
 
+  const onTurnClick = (event: MouseEvent): void => {
+    if (disposed) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest("button, a, input, textarea, [contenteditable='true']")) return;
+    const turn = target.closest("[data-turn-key], [data-content-search-turn-key]");
+    if (!turn) return;
+    const key =
+      turn.getAttribute("data-content-search-turn-key") ?? turn.getAttribute("data-turn-key");
+    if (!key) return;
+    for (const composer of root.querySelectorAll(CODEX_COMPOSER_SELECTOR)) {
+      if (!composerVisible(composer)) continue;
+      const threadId = threadIdForComposer(composer);
+      if (!threadId) continue;
+      const current = selectedTurnKey.get(threadId) ?? null;
+      const next =
+        current && (turnKeyMatches(current, key) || turnKeyMatches(key, current)) ? null : key;
+      selectedTurnKey.set(threadId, next);
+      highlightTurns(next);
+      if (next) filesExpanded.set(composer, true);
+      signatures.delete(composer);
+      paint(composer, lastSnapshot.get(composer) ?? null);
+      bars.get(composer)?.scrollIntoView({ block: "nearest" });
+      documentNode.defaultView?.dispatchEvent(
+        new CustomEvent("codexhost:turn-files-selected", {
+          detail: { threadId, turnKey: next },
+        }),
+      );
+    }
+  };
+
   const observer = new MutationObserver(scheduleScan);
   observer.observe(documentNode.documentElement ?? documentNode, {
     childList: true,
@@ -389,6 +709,7 @@ export function installRendererWorkspaceBar(
       "data-above-composer-conversation-id",
     ],
   });
+  documentNode.addEventListener("click", onTurnClick, true);
   scan();
 
   return {
@@ -396,7 +717,12 @@ export function installRendererWorkspaceBar(
       signatures.clear();
       loadedThreadIds.clear();
       conversationFiles.clear();
+      filesByTurn.clear();
+      selectedTurnKey.clear();
       lastSnapshot.clear();
+      filesExpanded.clear();
+      highlightTurns(null);
+      hidePreview();
       subscribedClient = null;
       unsubscribe?.();
       unsubscribe = null;
@@ -406,9 +732,13 @@ export function installRendererWorkspaceBar(
       if (disposed) return;
       disposed = true;
       observer.disconnect();
+      documentNode.removeEventListener("click", onTurnClick, true);
       if (scanTimer !== null) clearTimeout(scanTimer);
+      highlightTurns(null);
       unsubscribe?.();
       unsubscribe = null;
+      hidePreview();
+      preview.remove();
       for (const composer of [...bars.keys()]) removeBar(composer);
     },
   };

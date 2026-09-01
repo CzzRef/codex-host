@@ -1,7 +1,13 @@
-import { CODEX_COMPOSER_SELECTOR, EDITOR_SELECTOR } from "./renderer-composer-dom.js";
+import {
+  CODEX_COMPOSER_SELECTOR,
+  EDITOR_SELECTOR,
+  isComposerSubmissionKey,
+  isComposerSubmitButton,
+} from "./renderer-composer-dom.js";
 import { threadIdForComposer } from "./renderer-workspace-bar.js";
 
 export const PROMPT_GHOST_ATTRIBUTE = "data-codexhost-prompt-ghost";
+export const PROMPT_GHOST_ACTIVE_ATTRIBUTE = "data-codexhost-prompt-ghost-active";
 export const PROMPT_REUSE_STORAGE_PREFIX = "codexhost.prompt-reuse:";
 export const PROMPT_REUSE_MAX_LENGTH = 4_000;
 
@@ -40,6 +46,13 @@ function ensureStyle(ownerDocument: Document): void {
       font-size: 10px;
       letter-spacing: 0.04em;
       opacity: 0.45;
+    }
+    [${PROMPT_GHOST_ACTIVE_ATTRIBUTE}] p.placeholder::after,
+    [${PROMPT_GHOST_ACTIVE_ATTRIBUTE}] [data-placeholder]::after,
+    [${PROMPT_GHOST_ACTIVE_ATTRIBUTE}] p.placeholder::before,
+    [${PROMPT_GHOST_ACTIVE_ATTRIBUTE}] [data-placeholder]::before {
+      content: none !important;
+      display: none !important;
     }
   `;
   (ownerDocument.head ?? ownerDocument.documentElement).append(style);
@@ -92,6 +105,49 @@ export function shouldAcceptPromptTab(input: {
     !input.composing &&
     !input.competing
   );
+}
+
+export function isComposerStopLabel(value: string | null | undefined): boolean {
+  const label = (value ?? "").trim().toLowerCase();
+  if (!label) return false;
+  return /^(stop|stop generating|停止|停止生成)$/u.test(label);
+}
+
+export function isComposerTurnBusy(composer: Element): boolean {
+  return [...composer.querySelectorAll("button")].some((button) =>
+    isComposerStopLabel(button.getAttribute("aria-label") ?? button.getAttribute("title")),
+  );
+}
+
+export function shouldRevealPromptGhost(input: {
+  remainder: string | null;
+  turnBusy: boolean;
+}): boolean {
+  return Boolean(input.remainder) && !input.turnBusy;
+}
+
+export function shouldQueueComposerPrompt(input: { turnBusy: boolean; prompt: string }): boolean {
+  return input.turnBusy && input.prompt.length > 0;
+}
+
+export function clearComposerEditor(editor: HTMLElement): void {
+  editor.focus();
+  const selection = editor.ownerDocument.defaultView?.getSelection();
+  selection?.selectAllChildren(editor);
+  try {
+    editor.ownerDocument.execCommand("delete", false);
+  } catch {
+    // ProseMirror may reject execCommand.
+  }
+  if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
+    editor.value = "";
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
+  if (editorPromptText(editor).length > 0) {
+    editor.textContent = "";
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 }
 
 export function promptReuseStorageKey(threadId: string | null): string {
@@ -194,6 +250,7 @@ export function installRendererComposerPromptReuse(
   ensureStyle(documentNode);
   const overlays = new Map<Element, HTMLElement>();
   const dismissed = new Map<Element, string>();
+  const pending = new Map<Element, string>();
   let disposed = false;
 
   const storage = (): Storage | null => windowSessionStorage(documentNode.defaultView);
@@ -201,10 +258,10 @@ export function installRendererComposerPromptReuse(
   const hide = (composer: Element): void => {
     overlays.get(composer)?.remove();
     overlays.delete(composer);
+    composer.removeAttribute(PROMPT_GHOST_ACTIVE_ATTRIBUTE);
   };
 
-  const suggestionFor = (composer: Element): string =>
-    readStoredPrompt(storage(), threadIdForComposer(composer));
+  const suggestionFor = (composer: Element): string => pending.get(composer) ?? "";
 
   const paint = (composer: Element): void => {
     const editor = composer.querySelector<HTMLElement>(EDITOR_SELECTOR);
@@ -212,6 +269,7 @@ export function installRendererComposerPromptReuse(
       hide(composer);
       return;
     }
+    const turnBusy = isComposerTurnBusy(composer);
     const typed = editorPromptText(editor);
     const suggestion = suggestionFor(composer);
     if (dismissed.get(composer) === suggestion && typed.length === 0) {
@@ -220,7 +278,7 @@ export function installRendererComposerPromptReuse(
     }
     if (typed.length > 0 && dismissed.get(composer) === suggestion) dismissed.delete(composer);
     const remainder = reusablePromptRemainder(suggestion, typed);
-    if (!remainder) {
+    if (!shouldRevealPromptGhost({ remainder, turnBusy })) {
       hide(composer);
       return;
     }
@@ -243,6 +301,7 @@ export function installRendererComposerPromptReuse(
     hint.textContent = "Tab";
     overlay.replaceChildren(prefix, suffix, hint);
     copyEditorTypography(overlay, editor);
+    composer.setAttribute(PROMPT_GHOST_ACTIVE_ATTRIBUTE, "true");
     const rect = editor.getBoundingClientRect();
     overlay.style.left = `${Math.round(rect.left)}px`;
     overlay.style.top = `${Math.round(rect.top)}px`;
@@ -250,13 +309,16 @@ export function installRendererComposerPromptReuse(
     overlay.style.height = `${Math.round(rect.height)}px`;
   };
 
-  const capture = (composer: Element): void => {
-    const editor = composer.querySelector<HTMLElement>(EDITOR_SELECTOR);
-    if (!editor) return;
+  const queueNext = (composer: Element, editor: HTMLElement): boolean => {
     const prompt = editorPromptText(editor);
-    if (!prompt) return;
+    if (!shouldQueueComposerPrompt({ turnBusy: isComposerTurnBusy(composer), prompt }))
+      return false;
+    pending.set(composer, prompt);
     writeStoredPrompt(storage(), threadIdForComposer(composer), prompt);
     dismissed.delete(composer);
+    clearComposerEditor(editor);
+    hide(composer);
+    return true;
   };
 
   const accept = (composer: Element): boolean => {
@@ -269,6 +331,12 @@ export function installRendererComposerPromptReuse(
     return inserted;
   };
 
+  const forget = (composer: Element): void => {
+    hide(composer);
+    pending.delete(composer);
+    dismissed.delete(composer);
+  };
+
   const scan = (): void => {
     if (disposed) return;
     const live = new Set<Element>();
@@ -276,8 +344,8 @@ export function installRendererComposerPromptReuse(
       live.add(composer);
       paint(composer);
     }
-    for (const composer of [...overlays.keys()]) {
-      if (!live.has(composer) || !composer.isConnected) hide(composer);
+    for (const composer of [...overlays.keys(), ...pending.keys()]) {
+      if (!live.has(composer) || !composer.isConnected) forget(composer);
     }
   };
 
@@ -286,15 +354,21 @@ export function installRendererComposerPromptReuse(
     const target = event.target instanceof Element ? event.target : null;
     const editor = target?.closest(EDITOR_SELECTOR);
     const composer = editor?.closest(CODEX_COMPOSER_SELECTOR);
-    if (!composer || !editor) return;
+    if (!composer || !(editor instanceof HTMLElement)) return;
     if (event.key === "Escape") {
       const suggestion = suggestionFor(composer);
       if (suggestion) dismissed.set(composer, suggestion);
       hide(composer);
       return;
     }
-    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-      capture(composer);
+    if (isComposerSubmissionKey(event)) {
+      if (queueNext(composer, editor)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      pending.delete(composer);
+      hide(composer);
       return;
     }
     if (event.key !== "Tab") return;
@@ -319,7 +393,34 @@ export function installRendererComposerPromptReuse(
   const onSubmit = (event: Event): void => {
     const target = event.target instanceof Element ? event.target : null;
     const composer = target?.closest(CODEX_COMPOSER_SELECTOR);
-    if (composer) capture(composer);
+    const editor = composer?.querySelector<HTMLElement>(EDITOR_SELECTOR);
+    if (!composer || !editor) return;
+    if (queueNext(composer, editor)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    pending.delete(composer);
+    hide(composer);
+  };
+
+  const onClick = (event: MouseEvent): void => {
+    const target = event.target instanceof Element ? event.target : null;
+    const button = target?.closest("button");
+    if (!button || !isComposerSubmitButton(button)) return;
+    if (isComposerStopLabel(button.getAttribute("aria-label") ?? button.getAttribute("title"))) {
+      return;
+    }
+    const composer = button.closest(CODEX_COMPOSER_SELECTOR);
+    const editor = composer?.querySelector<HTMLElement>(EDITOR_SELECTOR);
+    if (!composer || !editor) return;
+    if (queueNext(composer, editor)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    pending.delete(composer);
+    hide(composer);
   };
 
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -330,7 +431,7 @@ export function installRendererComposerPromptReuse(
       subtree: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["hidden", "aria-hidden", "data-codex-composer-root"],
+      attributeFilter: ["hidden", "aria-hidden", "aria-label", "data-codex-composer-root"],
     });
   };
   const scanWithoutLoop = (): void => {
@@ -351,6 +452,7 @@ export function installRendererComposerPromptReuse(
   observe();
   documentNode.addEventListener("keydown", onKeyDown, true);
   documentNode.addEventListener("submit", onSubmit, true);
+  documentNode.addEventListener("click", onClick, true);
   documentNode.addEventListener("input", schedule, true);
   documentNode.defaultView?.addEventListener("resize", schedule);
   documentNode.defaultView?.addEventListener("scroll", schedule, true);
@@ -365,6 +467,7 @@ export function installRendererComposerPromptReuse(
       if (timer !== null) clearTimeout(timer);
       documentNode.removeEventListener("keydown", onKeyDown, true);
       documentNode.removeEventListener("submit", onSubmit, true);
+      documentNode.removeEventListener("click", onClick, true);
       documentNode.removeEventListener("input", schedule, true);
       documentNode.defaultView?.removeEventListener("resize", schedule);
       documentNode.defaultView?.removeEventListener("scroll", schedule, true);

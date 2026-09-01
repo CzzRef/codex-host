@@ -145,6 +145,7 @@ describe("Renderer fixed Model request client", () => {
       "inspectThreadWorkspace",
       "listThreadOwnership",
       "readUpdateStatus",
+      "rollbackThread",
       "selectThreadModel",
       "selectThreadPermissionMode",
       "selectThreadThinking",

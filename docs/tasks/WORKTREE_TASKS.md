@@ -9,5 +9,5 @@ Markers and timestamps are quick-resume hints. Integration still requires live G
 
 | Repository | Child Branch | Detail | Hub | Source Head | Target Head | Worktree | Milestone | Merge | Push | Marker | State At | Next Action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `codex-host` | `codex/260901-composer-workspace-bar` | `codex-host/openspec/changes/add-composer-workspace-bar/tasks.md` | [hub](../../../codex-host-worktrees/codex) | `05fad7ae145a` | `czz-dev@f21d2b78a258` | dirty | planned | no-changes 0/0 | not-authorized | `29417870eb80` | `2026-09-01T08:15:34Z` | implement and verify the first milestone |
+| `codex-host` | `codex/260901-composer-workspace-bar` | `codex-host/openspec/changes/add-composer-workspace-bar/tasks.md` | [hub](../../../codex-host-worktrees/codex) | `0cd79974dab3` | `czz-dev@3c89c8004702` | clean | complete | integrated 1/1 | observed-upstream-contained | `87ab80acfba8` | `2026-09-01T10:21:31Z` | parked; resume later without removing the worktree |
 <!-- worktree-control-index:260901-composer-workspace-bar:end -->
