@@ -84,3 +84,9 @@ executionPolicy: "default",
 
 - 用户要求卸载产品、中断进行中任务、保留源码。OMP RPC 进程组 31083 已 SIGTERM；删除 `~/.local/bin/omp` 与 `~/.omp`。doctor 回读 `notInstalled`。
 - 更新本任务文档与 `docs/czz-dev.md` 的当前 Harness 状态；历史 U7/U8 安装记录保留。Adapter 源码未删。未提交、未推送。
+
+## U11：外部会话按分区置顶
+
+- 当前 Desktop 置顶主路径是 `thread/section/move`，不是 `thread/metadata/update isPinned`。空回包或 `-32076` 都会让侧栏乐观置顶弹回。
+- `f21d2b7` 持久化 mapping-store `sectionId`/`pinned`、处理 section 列表与 `section_position`，官方线程仍转发。用户确认当前源码 Desktop 置顶保持；Launcher PID 82349；两条 Grok 外部会话已写入 pinned section。
+- 聚焦 176 项测试通过。标题同步、steer、未读未记为同次 UI 验收。未 push。

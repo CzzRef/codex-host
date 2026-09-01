@@ -14,6 +14,8 @@
 | U8 | 用户授权续作：OMP 多订阅路由、默认权限与第二次激活 | 43 模型目录；Codex/Claude/Grok 角色读回；write/0600/live runtime 通过；真实角色委派待验收 |
 | U9 | 用户授权续作：当前代码分批提交 | 十一批代码、配置、文档与格式提交完成；最终文档收口待本文提交，未 push |
 | U10 | 用户授权续作：卸载 Oh My Pi 并中断进行中任务 | 产品已卸载；doctor `notInstalled`；Adapter 源码保留；未 push |
+| U11 | 用户回测：外部会话侧栏置顶 | accepted-local；`thread/section/move` 源码落地且 Desktop 回测通过；未 push |
+| U12 | 用户要求在本轮对话内测标题/steer/未读 | accepted-local（Host CLI）；rename 同轮回读通过；send=`THREAD_BUSY`；CLI read 不消费未读；Desktop steer 未代发 |
 
 ## Material Execution Journal
 
@@ -49,6 +51,8 @@
 - 第二次正常激活后 Launcher PID 29444、Desktop PID 29446、descriptor 0600 与源码命令匹配。自动 OMP 校验早期曾瞬态失败，随后 live refresh 与 doctor 复核通过；回执同时保留初始失败和后续核验证据。未强制终止、清理 descriptor、读取数据库/日志正文或保存原始输出。
 - U9 先将已验收源码分为 Cursor Adapter、Host/协议、Renderer、外部线程、OMP 权限和 Launcher 六批本地提交。并行 Claude Code 在其写集完成后另提交 Cursor 包清单、源码启动配置、首轮文档与预览格式四批；Root 复核后再提交外部会话原生标题同步、后续回合排队与 Steer 拒绝一批。最终 8 个文件、345 项聚焦测试和全量构建通过；远端未 push。
 - U10：用户要求卸载 Oh My Pi、中断进行中任务、保留源码。对 OMP RPC 进程组 31083 SIGTERM 后删除 `~/.local/bin/omp` 与 `~/.omp`。doctor 回读 `notInstalled`；Pi 与本仓 Adapter 源码未动；Desktop 未重启；未提交、未推送。
+- U11：用户确认当前源码 Desktop 上外部会话置顶不再弹回。实现提交 `f21d2b7`（`thread/section/move`、section 列表、mapping-store 成员、不改 recency）。聚焦协议/Store/Host 测试 5 文件 176 项通过。回测时源码 Launcher PID 82349；mapping-store 两条 Grok 外部会话 `pinned=true`、`sectionId=01984de2-8f74-7c91-a3b2-5c5e937cf318`（标题 `260901-Steer立即追加与权限展示`、`260901-整仓分批提交`）。未把标题同步/steer/未读写成同次 UI 验收；未 push。
+- U12：用户要求在本轮对话内直接测标题/steer/未读。当前线程 `589d6365` 先 overlay 写盘再 Host `thread rename`，list 同轮标题为 `260901-标题Steer未读回测`。对自身 `thread send` 得 `THREAD_BUSY`。对已完成未读线程 `880e66ab` 做 `thread read` 后 `hasUnreadTurn` 仍为 true。未从 CLI 代发 Desktop `turn/steer`。
 
 ## 用量
 

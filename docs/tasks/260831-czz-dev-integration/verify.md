@@ -7,11 +7,11 @@
 | 项目 | 证据 | 边界 |
 |---|---|---|
 | Fork 源码 | GitFork/codex-host 完整克隆，基线 dea7498527b47eac4e12e977569588230d065a97 | origin=CzzRef；upstream=BytePioneer-AI |
-| 开发分支 | 当前 czz-dev；十一批代码、配置、文档与格式提交完成 | 未 push；远端默认仍 main；最终收口由本文所在提交完成 |
+| 开发分支 | 当前 czz-dev；本地超前 origin，含置顶分区修复 `f21d2b7` | 未 push；远端默认仍 main |
 | 依赖 | npm ci；新增 Cursor workspace link | 没有升级全局 Agent 或现有依赖版本 |
 | 源码入口 | ~/.local/bin/codexhost 受管可执行 wrapper | 指向本地 Node 和本 fork，不是 npm 上游发行版 |
 | 入口核验 | 已安装入口的 help、inspect、delegate help、doctor 结果就绪 | 指向当前 `czz-dev`，不是 npm 上游包 |
-| 当前 Codex | `/Applications/ChatGPT.app` 26.825.51511 / build 7377，由源码 Launcher PID 29444 启动；Desktop PID 29446 | 没有覆盖或升级应用包；后续版本切换仍须正常退出和单实例门禁 |
+| 当前 Codex | `/Applications/ChatGPT.app` 26.825.51511 / build 7377，由源码 Launcher PID 82349 启动 | 没有覆盖或升级应用包；U11 置顶回测时测得；后续版本切换仍须正常退出和单实例门禁 |
 | A-3 正常重启 | 用户已授权；重启前仅本任务 active；完整重建通过；一次性回执为 `source_launch_verified`；Launcher、Host runtime、controller、descriptor 与源码匹配 | 用户确认已经接入；Agent 选择、审批 UI 与真实委派仍为独立验收项 |
 
 ## 本地提交回执
@@ -29,6 +29,7 @@
 | `3123d61` | Cursor 接入、OpenSpec 与任务首轮文档 |
 | `0b67c08` | Windows update 预览页格式收口 |
 | `773290cf6d519dd5d1b0e07053d7567a29d4a2cf` | 原生标题同步、后续回合排队与 Steer 边界 |
+| `f21d2b7` | 外部线程按分区置顶：`thread/section/move`、`sectionId` 列表、mapping-store 成员 |
 
 Root 创建的七个代码批次均在提交前核对暂存路径、`diff --check`、统计和提交后回读。并行 Claude Code 在自身写集稳定后创建四个配置、文档与格式提交；Root 重新盘点并复核其提交内容，没有修改历史。所有提交均未 push。
 
@@ -93,6 +94,30 @@ Claude 初次 plan 模式虽到达原生 terminal，但没有返回预期校验�
 - `codexhost doctor`：OMP `status=notInstalled`，`errorCode=notInstalled`，`message=spawn omp ENOENT`。Pi 仍 `ready`、11 个模型；Desktop `running=true`。未重启 Host。
 - GitFork `packages/adapters/omp` 与 CodeNote 研究档案保留。本机未发现独立 `can1357/oh-my-pi` git clone。
 
+## U11 外部会话置顶回测
+
+用户于 2026-09-01 确认当前源码 Desktop 上外部会话置顶不再闪顶弹回。
+
+| 检查 | 结果 | 边界 |
+|---|---|---|
+| 协议路径 | Desktop 置顶发 `thread/section/move` 到内置 section `01984de2-8f74-7c91-a3b2-5c5e937cf318`；Host 回 `{}` 并持久化成员 | 不是旧的 `thread/metadata/update isPinned` 主路径；后者仅兼容写入 |
+| 源码提交 | `f21d2b7` | 本地 `czz-dev`，未 push |
+| 聚焦回归 | `tsc -b` 通过；protocol-core / mapping-store / host-runtime 相关 5 个 Vitest 文件 176 项通过 | 不是全仓 `npm run check` |
+| 运行态 | 源码 Launcher PID 82349；用户确认侧栏置顶保持 | 未单独记录 ChatGPT 子进程 PID |
+| 持久化 | mapping-store 两条 Grok 外部会话 `pinned=true` 且 `sectionId` 为上述 pinned section：`260901-Steer立即追加与权限展示`、`260901-整仓分批提交` | 只证明当前这两条外部会话；自定义分组显示名未验收 |
+
+## D-2 本轮对话内 Host CLI 回测（标题 / send-busy / 未读）
+
+在当前 Grok 外部会话 `589d6365-9a78-4886-aa3f-e00802091132` 内实测，不另开 Desktop 操作。
+
+| 检查 | 结果 | 边界 |
+|---|---|---|
+| 磁盘 overlay 标题 | `grok_set_session_title.py` 写入 `260901-标题Steer未读回测`，`grok sessions list` 同轮读回 | Host list 在 CLI rename 前仍显示上一轮 `260901-置顶回测文档同步`（Grok overlay 在 turn end 才同步） |
+| Host CLI rename | `codexhost thread rename --name 260901-标题Steer未读回测` 返回同标题；随后 `thread list --all true` 同轮标题已是新值 | 证明 Host CLI 改名可同轮覆盖 overlay 滞后 |
+| send 对运行中本线程 | `thread send` 退出码 1，`error.code=THREAD_BUSY`，`Thread already has an active Turn` | CLI send 不会排队或并发开 Turn；Desktop Composer 的 `turn/steer` 本轮无法从 CLI 代发 |
+| 未读不消费 | 空闲 Grok `880e66ab`（`260901-完成未读感知`）list `hasUnreadTurn=true`；`thread read` 后 list 仍为 true | 符合 CLI read/wait 不消费；Desktop `thread/resume` 或 `includeTurns` 的 read 才清除。原生 Codex 行省略 `hasUnreadTurn` |
+| 本线程状态 | `thread read` `status=running`；list `hasUnreadTurn=true` | 运行中行也可以带未读标记；本轮结束后 Desktop 是否显示未读点需侧栏目视 |
+
 ## 剩余运行态验收项
 
-第二次源码启动、进程身份与 descriptor 0600 已经通过。OMP 产品已卸载，不再作为本机可运行 Harness。后续按需检查其余 Agent 选择、显式审批、真实跨 Agent 委派，以及 Cursor live-only 与重启后明确失败的行为。
+第二次源码启动、进程身份、descriptor 0600、外部会话置顶、Host CLI 改名同轮回读、CLI read 不消费未读、运行中 send=`THREAD_BUSY` 已经通过。OMP 产品已卸载。Desktop Composer 中途第二段此前被 Host 持有到第一段结束；源码已改为 steerable Session 上的 `turn/start`/`turn/steer` 都注入当前 Turn（Grok 走 `x.ai/interject`）。**须重启源码 Desktop 后再打一条运行中 follow-up 目视**。标题 overlay 的 turn-end 同步也要等本轮结束后看侧栏。后续按需检查其余 Agent 选择、显式审批、真实跨 Agent 委派，以及 Cursor live-only。
