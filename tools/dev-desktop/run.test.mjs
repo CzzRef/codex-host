@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -13,6 +13,7 @@ import {
   parseArguments,
   runDevelopmentDesktop,
   runningDesktopCleanupInvocation,
+  staleRendererBundle,
   usage,
   validateDevelopmentArtifacts,
 } from "./run.mjs";
@@ -96,6 +97,43 @@ describe("development Desktop start", () => {
     expect(() => validateDevelopmentArtifacts(artifacts)).toThrow(
       "renderer artifact is unavailable",
     );
+  });
+
+  it("detects a Renderer bundle older than the sources it inlines", () => {
+    const root = temporaryDirectory();
+    const artifacts = materializeArtifacts(root, "linux", path.join(root, "runtime", "node"));
+    const rendererSource = path.join(root, "packages", "renderer-extension", "src", "index.ts");
+    const contractSource = path.join(root, "packages", "shared-contracts", "src", "contracts.ts");
+    const unbundledSource = path.join(root, "packages", "host-runtime", "src", "main.ts");
+    const emittedSource = path.join(root, "packages", "shared-contracts", "dist", "contracts.ts");
+    for (const filePath of [rendererSource, contractSource, unbundledSource, emittedSource]) {
+      mkdirSync(path.dirname(filePath), { recursive: true });
+      writeFileSync(filePath, "fixture\n");
+    }
+
+    const authored = new Date(1_000);
+    for (const filePath of [rendererSource, contractSource]) {
+      utimesSync(filePath, authored, authored);
+    }
+    const bundled = new Date(2_000);
+    utimesSync(artifacts.renderer, bundled, bundled);
+    expect(staleRendererBundle(root, artifacts)).toBe(false);
+
+    const edited = new Date(3_000);
+    utimesSync(contractSource, edited, edited);
+    expect(staleRendererBundle(root, artifacts)).toBe(true);
+
+    const rebuilt = new Date(4_000);
+    utimesSync(artifacts.renderer, rebuilt, rebuilt);
+    expect(staleRendererBundle(root, artifacts)).toBe(false);
+
+    const later = new Date(5_000);
+    utimesSync(unbundledSource, later, later);
+    utimesSync(emittedSource, later, later);
+    expect(staleRendererBundle(root, artifacts)).toBe(false);
+
+    utimesSync(rendererSource, later, later);
+    expect(staleRendererBundle(root, artifacts)).toBe(true);
   });
 
   it("finds Pi from PATH using platform executable rules", () => {
