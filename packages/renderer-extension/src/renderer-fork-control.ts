@@ -211,11 +211,12 @@ export function installRendererForkControl(options: {
           dom.replay(target);
           return;
         }
-        const result = await client.forkThread({
+        await client.forkThread({
           threadId: target.threadId,
           lastTurnId: target.turnId,
         });
-        if (!disposed) await dom.openThread(result.threadId);
+        // Stay on the source Thread. Opening the derived id would show a
+        // projectless child conversation with no parent affiliation.
       })
       .catch((error: unknown) => options.reportError?.(error))
       .finally(() => pending.delete(key));
