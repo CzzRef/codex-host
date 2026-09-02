@@ -59,7 +59,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 
 - Gate: `app-server-host.ts` mixes Redo, unread fallback, and workspace `extraRoots` hunks; `renderer-turn-actions.ts` mixes Host-first Redo with overlay layout
 - Blocking condition: resolved 2026-09-02 by patch-staged batches `3b0275d` / `18cfa10` / `43b6ca0`; overlay `2f3a53b` is the rollback point for the Turn-action redesign
-- Worktree control: `codex/260901-composer-workspace-bar` remains parked/contained; `codex/260902-worktree-checkbox-routing` is contained by `czz-dev` via merge `c9ee09b` (child HEAD `142fcfb`). `codex/260902-cursor-native-history` is contained by merge `467d491` (child HEAD `d9809a5`).
+- Worktree control: `codex/260901-composer-workspace-bar` worktree removed, branch `0cd7997` kept and contained by `czz-dev`/`origin/czz-dev`; `codex/260902-worktree-checkbox-routing` is contained by `czz-dev` via merge `c9ee09b` (child HEAD `142fcfb`). `codex/260902-cursor-native-history` is contained by merge `467d491` (child HEAD `d9809a5`).
 - Rollback note: Redo is additive (`historyRedo` optional, Host method, Renderer Host-first with official click fallback)
 
 ## Governance Baseline
