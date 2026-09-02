@@ -58,7 +58,7 @@ The product requirement delta belongs to the active [Composer workspace surface 
       "base_sha": "40e890fd18d44d8577fcf9c90833abb600d54040",
       "worktree_branch": "codex/260902-worktree-checkbox-routing",
       "task_owner": "vibe/specs/260902/1340-worktree-checkbox-routing/task-card.md",
-      "head": "5708bdc39dcfc19b72e508958ecdd78e20b1c5ba",
+      "head": "7d6ac8e6b0187ff2c2350f90baf2592cb0182e06",
       "upstream": null
     }
   ],
@@ -67,7 +67,7 @@ The product requirement delta belongs to the active [Composer workspace surface 
   "verification_state": "verified-commit",
   "push_state": "not-authorized",
   "integration_state": "not-started",
-  "next_action": "commit the verified right-side changed-file disclosure milestone"
+  "next_action": "record the verified lifecycle-mode error memory, then return the branch for main review"
 }
 ```
 
@@ -123,6 +123,7 @@ The product requirement delta belongs to the active [Composer workspace surface 
 - Full root TypeScript typecheck, Renderer production bundle, focused ESLint, package-boundary check, Prettier, and `git diff --check` passed.
 - OpenSpec `add-composer-workspace-bar --strict` passed.
 - ego-browser visual QA confirmed Worktree/branch first, summary last, right-edge list alignment, upward expansion, left-side hover preview, and clickable file behavior.
+- The first lifecycle receipt attempt was blocked with `task_contract_identity` because the task owner manually changed `verification_state` away from the canonical `verified-commit` mode. Restoring that mode made the same receipt and commit gates pass; the reusable contract trap is recorded below.
 
 ## Verification evidence
 
@@ -140,4 +141,4 @@ The product requirement delta belongs to the active [Composer workspace surface 
 ## Documentation impact
 
 - `doc_drift: resolved` — OpenSpec requirement, design, tasks, implementation, unit tests, and E2E now agree.
-- Memory routing: retained the build trap in [Root `node_modules` symlink misses workspace-local dependencies](../../../knowledge/error-memory/worktree-root-node-modules-symlink-misses-workspace-nested-deps.md) and the command-lane trap in [Managed-worktree Bash can default to the control checkout](../../../knowledge/error-memory/managed-worktree-bash-defaults-to-control-checkout.md); this follow-up introduced no new reusable failure, so no additional memory or ADR was needed.
+- Memory routing: retained the build trap in [Root `node_modules` symlink misses workspace-local dependencies](../../../knowledge/error-memory/worktree-root-node-modules-symlink-misses-workspace-nested-deps.md) and the command-lane trap in [Managed-worktree Bash can default to the control checkout](../../../knowledge/error-memory/managed-worktree-bash-defaults-to-control-checkout.md); captured the follow-up receipt trap in [`mark-verified` rejects lifecycle-mode drift](../../../knowledge/error-memory/managed-worktree-mark-verified-rejects-lifecycle-mode-drift.md). No ADR was needed.
