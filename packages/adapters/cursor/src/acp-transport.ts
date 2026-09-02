@@ -8,6 +8,7 @@ import {
   RequestError,
   ndJsonStream,
   type InitializeResponse,
+  type LoadSessionResponse,
   type NewSessionResponse,
   type PromptResponse,
   type RequestPermissionRequest,
@@ -19,6 +20,12 @@ import { commandInvocation } from "@codexhost/harness-discovery";
 import type { HarnessError } from "@codexhost/harness-adapter";
 
 import { CursorExecutableError, resolveCursorExecutable } from "./command.js";
+import {
+  cursorSessionDirectory,
+  locateCursorSession,
+  readCursorNativeMessages,
+  type CursorNativeMessage,
+} from "./cursor-history.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,13 +43,17 @@ export interface CursorTurnCallbacks {
   extension(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
+export type CursorOpenInput = { kind: "create" } | { kind: "resume"; sessionId: string };
+
 export interface CursorTransport {
   inspect(): Promise<InitializeResponse>;
-  open(): Promise<NewSessionResponse>;
+  open(input?: CursorOpenInput): Promise<NewSessionResponse | LoadSessionResponse>;
   runTurn(text: string, callbacks: CursorTurnCallbacks): Promise<PromptResponse>;
   configure(id: "model" | "mode", value: string): Promise<SetSessionConfigOptionResponse>;
   cancel(): Promise<void>;
   close(): Promise<void>;
+  readHistory(sessionId: string): Promise<CursorNativeMessage[]>;
+  sessionDirectory(sessionId: string): string;
 }
 
 export class CursorTransportError extends Error {
@@ -221,10 +232,57 @@ export class CursorAcpTransport implements CursorTransport {
     return this.#initialized;
   }
 
-  async open(): Promise<NewSessionResponse> {
-    await this.inspect();
+  sessionDirectory(sessionId: string): string {
+    return cursorSessionDirectory(sessionId, { ...process.env, ...this.#options.environment });
+  }
+
+  async readHistory(sessionId: string): Promise<CursorNativeMessage[]> {
+    const environment = { ...process.env, ...this.#options.environment };
+    const located = await locateCursorSession(sessionId, environment);
+    if (!located) return [];
+    return readCursorNativeMessages(located.directory);
+  }
+
+  async open(
+    input: CursorOpenInput = { kind: "create" },
+  ): Promise<NewSessionResponse | LoadSessionResponse> {
+    const initialize = await this.inspect();
     const connection = this.#connection;
     if (!connection) throw new Error("Cursor initialization did not establish a connection");
+    if (input.kind === "resume") {
+      const capabilities = initialize.agentCapabilities;
+      try {
+        if (capabilities?.loadSession !== false) {
+          const loaded = await this.#request(
+            connection.loadSession({
+              cwd: this.#options.cwd,
+              mcpServers: [],
+              sessionId: input.sessionId,
+            }),
+          );
+          this.#sessionId = input.sessionId;
+          return loaded;
+        }
+      } catch (error) {
+        if (!(error instanceof RequestError) || error.code !== -32601) throw error;
+      }
+      if (capabilities?.sessionCapabilities?.resume) {
+        const resumed = await this.#request(
+          connection.resumeSession({
+            cwd: this.#options.cwd,
+            mcpServers: [],
+            sessionId: input.sessionId,
+          }),
+        );
+        this.#sessionId = input.sessionId;
+        return resumed;
+      }
+      throw new CursorTransportError({
+        code: "unsupported",
+        message: "Cursor ACP does not advertise session load or resume",
+        retryable: false,
+      });
+    }
     // newSession reuses Cursor's local login. authenticate can open a browser and must not run here.
     const response = await this.#request(
       connection.newSession({ cwd: this.#options.cwd, mcpServers: [] }),

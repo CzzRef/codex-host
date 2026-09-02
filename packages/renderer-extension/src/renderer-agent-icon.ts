@@ -10,7 +10,7 @@ export const RENDERER_AGENT_LABELS: Record<RendererAgent, string> = {
   "deepseek-harness": "DeepSeek Harness",
   grok: "Grok",
   omp: "Oh My Pi",
-  cursor: "Cursor (live only)",
+  cursor: "Cursor",
 };
 
 const PI_PATHS = [

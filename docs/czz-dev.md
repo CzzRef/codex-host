@@ -26,7 +26,7 @@
 |---|---|---|
 | Claude Code | `~/.nvm/versions/node/v24.14.0/bin/claude` | 检出 5 个模型；Haiku/default 权限模式真实返回校验文本；原生 Turn identity、历史读取与恢复通过。 |
 | Grok | `~/.grok/bin/grok` | 检出 2 个模型；ask 模式真实返回校验文本；原生 Turn identity、历史读取与恢复通过。 |
-| Cursor | `~/.local/bin/cursor-agent` | 新增 ACP Adapter；ask 模式、GPT-5.4 Mini 真实返回校验文本；仅当前 Host 进程保留可读历史。 |
+| Cursor | `~/.local/bin/cursor-agent` | ACP + `~/.cursor/acp-sessions` 原生历史；create/resume/snapshot 与 NativeTurnRef 对齐 Grok CLI 形式。Fork / rollback 仍不支持。 |
 | DeepSeek Harness | 本机现有 `dsh` / Host | 检出 10 个模型；本次只验证发现与 inspection，未发送模型任务。 |
 | Pi | 本机现有 `pi` | 0.84.3；Codex/Grok 独立订阅 OAuth 均已接入，gpt-5.6-sol 与 grok-4.6 原生 CLI 实测通过；默认仍为 `openai-codex/gpt-5.6-sol`，doctor 为 ready、11 个模型。Claude 额外付费未启用。 |
 | OMP | 已卸载 | 2026-09-01 用户要求卸载：`~/.local/bin/omp` 与 `~/.omp` 已删除；doctor `notInstalled` / `spawn omp ENOENT`。GitFork OMP Adapter 源码保留。历史 18.0.11 安装与角色路由见下文，不再表示本机仍可启动 `omp`。 |
@@ -71,7 +71,7 @@ Codex Desktop 的 side chat 在协议层是「`thread/fork`（带 `ephemeral`、
 
 2026-09-01 修复：`thread/inject_items` 进入显式集合，外部线程校验 `items` 为数组后以空结果确认。外部 Fork 派生的原生 Session 本就携带完整父上下文，注入的 Codex 边界条目没有原生表示，因此不投影进外部历史、不转发官方 app-server、不发给 Harness；契约见 [external-thread-fork-routing](../openspec/specs/external-thread-fork-routing/spec.md)。该修复需要在下一次正常退出后经 `codexhost launch` 重启 Desktop 才生效。
 
-已知边界：Cursor 会话仍无法打开 side chat——其历史为 `live-only` 且 `fork: false`，fork 会先被 `-32076` 拒绝，这是 Cursor 缺稳定 checkpoint API 的既有能力限制，不是本次回归。若外部会话最后一轮缺 `nativeCheckpointRef`（如 mapping-store 写入失败），fork 仍会以 `-32080` 显式失败。
+已知边界：Cursor 会话仍无法打开 side chat——历史已是 native transcript，但 `fork: false`，fork 会先被 `-32076` 拒绝，这是 Cursor 缺稳定 checkpoint API 的既有能力限制。若外部会话最后一轮缺 `nativeCheckpointRef`（如 mapping-store 写入失败），fork 仍会以 `-32080` 显式失败。
 
 ## 外部会话的 Pin、标题同步与排队消息（2026-09-01）
 
@@ -121,13 +121,13 @@ codexhost launch
 
 ## Cursor 的明确能力边界
 
-本机 Cursor CLI 版本为 `2026.05.05-84a231c`。公开 ACP 的 initialize、newSession、prompt、cancel、set_config_option 可用；原生 `session/load` 能载入上下文，但实测没有回放历史，也没有返回稳定的 NativeTurn identity。因此没有解析私有 `store.db`、没有复制转录，更没有用随机 ID 冒充原生 Turn。
+本机 Cursor Agent 为 `2026.08.31-4057e58`。接入方式对齐 Grok：`cursor-agent acp` 负责实时 Session，`~/.cursor/acp-sessions/<id>/store.db` 提供可回放的原生 transcript。公开 ACP 的 initialize、newSession、prompt、cancel、set_config_option 可用；resume 走 `session/load`，若 Agent 只广告 `session/resume` 则回退到该方法。历史不依赖 ACP 是否回放通知。
 
-本分支新增 `capabilities.history.transcript`：省略或 `native` 保留原有严格历史合同；Cursor 显式报告 `live-only`。
+`capabilities.history.transcript` 为 `native`。live-only 仍是公共合同里给其他 Adapter 的可选项，Cursor 不再使用。
 
 - 当前 Host 运行期间可连续对话、流式显示文本/推理/工具、处理审批与问题、读取当前任务投影。
-- Host 退出后，原记录仍保留外部归属，但恢复明确返回 unsupported；不回退到 Codex，不创建空会话冒充恢复。
-- Cursor 不支持本分支里的 Fork、Rollback、持久化历史回放、独立 Thinking 选项或 Usage 计量。
+- Host 退出后，可按同一 Native Session ID 恢复；快照来自 ACP session store，NativeTurnRef 使用 assistant message id 或 blob hash。
+- Cursor 仍不支持 Fork、Rollback、独立 Thinking 选项或 Usage 计量。Side chat 继续因 `fork: false` 不可用。
 - Cursor 第一个真实 Session 创建后，才从原生 configOptions 得到当前账号的模型/模式目录；初次选择时先使用 Cursor 原生默认模型。原生模型里的 reasoning/effort 参数作为完整模型 ID 保留。
 - 使用专用 `cursor-agent`，绝不把通用 `agent` 当作 Cursor：本机该名称实际属于 Grok。
 - 不自动调用 authenticate 或打开登录浏览器；登录缺失时提示用户通过 Cursor CLI 登录。

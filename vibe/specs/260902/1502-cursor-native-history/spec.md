@@ -66,7 +66,7 @@ Canonical target: [harness-adapter-text-session](../../../../openspec/specs/harn
       "base_sha": "c9ee09b3d5070ff308adb0a4d0a515e58bc576b7",
       "worktree_branch": "codex/260902-cursor-native-history",
       "task_owner": "vibe/specs/260902/1502-cursor-native-history/spec.md",
-      "head": "c9ee09b3d5070ff308adb0a4d0a515e58bc576b7",
+      "head": "df0176458caf75bc7f87c23f8a6cded77bae8284",
       "upstream": null
     }
   ],
@@ -75,7 +75,7 @@ Canonical target: [harness-adapter-text-session](../../../../openspec/specs/harn
   "verification_state": "planned",
   "push_state": "not-authorized",
   "integration_state": "not-started",
-  "next_action": "implement Cursor native history and resume like Grok"
+  "next_action": "verified commit then integrate into czz-dev"
 }
 ```
 
@@ -148,7 +148,7 @@ Acceptance:
 - Provisional trace completed before verification commands: `yes`
 - Verification-command provenance: `impact-trace`
 - Affected modules: `packages/adapters/cursor`, renderer agent label, czz-dev docs
-- Checked: pending
+- Checked: `tsc -b packages/adapters/cursor`; `tsc -b packages/renderer-extension`; vitest cursor-history + cursor-adapter 9 pass
 - Skipped: full `npm test`; `gate:*`; live Desktop until Keychain-capable Host process
 - Full-suite escalation: `none`
 - Owner: this Spec
@@ -158,17 +158,17 @@ Acceptance:
 
 | Changed surface / claim | Direct consumers | Material transitive or failure boundary | Selected evidence | Skipped suites / reason | Outcome / residual |
 | --- | --- | --- | --- | --- | --- |
-| Native store parse | `readSnapshot` / resume settle | WAL / missing db / system blobs | cursor-history vitest with synthetic sqlite | live Keychain ACP | pending |
-| `open(resume)` | Host restart | ACP load vs resume capability | cursor-adapter vitest | live Desktop | pending |
-| Successful Turn NativeTurnRef | Host persist | missing assistant id | adapter settle test | Host full suite | pending |
-| Renderer label | Agent picker / Connections | stale "live only" copy | icon label assertion | Playwright | pending |
+| Native store parse | `readSnapshot` / resume settle | WAL / missing db / system blobs | cursor-history vitest with synthetic sqlite | live Keychain ACP | pass |
+| `open(resume)` | Host restart | ACP load vs resume capability | cursor-adapter vitest | live Desktop | pass (unit) |
+| Successful Turn NativeTurnRef | Host persist | missing assistant id | adapter settle test | Host full suite | pass (unit) |
+| Renderer label | Agent picker / Connections | stale "live only" copy | `RENDERER_AGENT_LABELS.cursor === "Cursor"` | Playwright | pass (source) |
 | Host live-only path | other adapters | must not delete generic support | existing host-runtime live-only test unchanged | none | keep |
 
 ## Documentation Impact
 
 - Classification: `project-current` (czz-dev / ACP follow-up / add-harness Cursor note) plus this Spec
 - Central Rule Task admission: `project-local / no central row`
-- `doc_drift`: czz-dev and add-harness still say Cursor is live-only
+- `doc_drift`: synchronized this round for czz-dev, ACP follow-up, add-harness Cursor note, and in-flight OpenSpec Cursor live-only mentions
 - Affected authoritative documents: this folder, PROJECT_STATUS, czz-dev, acp-layer-follow-up, thread-lifecycle-and-history, renderer label
 - Root acceptance gate: focused cursor tests green
 
@@ -177,6 +177,7 @@ Acceptance:
 | Event ID | Local Time | Work Unit / Attempt | Actor / Surface | Event | Prior -> Resulting State | Trigger / Evidence | Root Decision / Next Action |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | E1 | 2026-09-02 15:02 +08:00 | plan | dsh | classify Standard requirement + worktree | Q&A -> confirmed spec | user: live 没用, 改成 Grok CLI 形式 | isolate on dirty czz-dev and implement native history |
+| E2 | 2026-09-02 15:22 +08:00 | implement | dsh | Cursor ACP + acp-sessions history | live-only -> native resume/snapshot | vitest 9 pass; tsc cursor+renderer | uncommitted on `codex/260902-cursor-native-history`; live Keychain residual |
 
 ## Efficiency / Token Evidence
 

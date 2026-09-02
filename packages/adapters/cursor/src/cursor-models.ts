@@ -71,7 +71,7 @@ export function cursorConfiguration(response: Pick<NewSessionResponse, "configOp
 }
 
 export const cursorHistory = {
-  transcript: "live-only",
+  transcript: "native",
   fork: false,
   forkAcrossCwd: false,
   rollbackLastTurn: false,
