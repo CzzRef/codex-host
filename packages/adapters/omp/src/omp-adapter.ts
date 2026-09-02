@@ -134,6 +134,8 @@ export interface OmpTurnTransport {
     onEvent: (event: OmpTurnEvent) => void,
   ): Promise<OmpCompactResult>;
   runTurn(text: string, onEvent: (event: OmpTurnEvent) => void): Promise<OmpTurnResult>;
+  /** Native `steer` (Pi RPC family): queued while the agent runs, delivered before its next LLM call. */
+  steer(text: string): Promise<void>;
   abort(): Promise<void>;
   close(): Promise<void>;
 }
@@ -158,6 +160,8 @@ interface ActiveTurn {
   tools: Map<string, ActiveTool>;
   subagents: OmpSubagentLifecycle;
   cancellationRequested: boolean;
+  /** Steers OMP accepted natively during this Turn; each persists its own User Entry. */
+  deliveredSteers: number;
   beforeNativeTurnKeys: Set<string>;
   completion: Promise<void>;
   resolveCompletion(): void;
@@ -438,6 +442,7 @@ class OmpHarnessSession implements HarnessSession {
       },
       history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
       subagents: { observe: true, readTranscript: true },
+      turns: { steer: true },
     };
     this.commands = {
       list: async () => ({ ok: true, value: ompCommandCatalog }),
@@ -693,16 +698,7 @@ class OmpHarnessSession implements HarnessSession {
       return { ok: false, error: invalidState("Omp Session is not open") };
     }
     if (command.type === "turn.cancel") return this.#cancel(command);
-    if (command.type === "turn.steer") {
-      return {
-        ok: false,
-        error: {
-          code: "unsupported",
-          message: "Omp does not support mid-Turn steer",
-          retryable: false,
-        },
-      };
-    }
+    if (command.type === "turn.steer") return this.#steer(command);
     if (command.type === "interaction.respond") {
       return {
         ok: false,
@@ -792,6 +788,7 @@ class OmpHarnessSession implements HarnessSession {
           emit: (event) => this.#event(event),
         }),
         cancellationRequested: false,
+        deliveredSteers: 0,
         beforeNativeTurnKeys: new Set(
           beforeHistory.turns.map((turn) => turn.nativeTurnRef.nativeTurnKey),
         ),
@@ -1192,6 +1189,7 @@ class OmpHarnessSession implements HarnessSession {
           emit: (event) => this.#event(event),
         }),
         cancellationRequested: false,
+        deliveredSteers: 0,
         beforeNativeTurnKeys: new Set(),
         completion,
         resolveCompletion,
@@ -1632,6 +1630,32 @@ class OmpHarnessSession implements HarnessSession {
     });
   }
 
+  async #steer(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>> {
+    const active = this.#active;
+    const transport = this.#transport;
+    if (!active || active.command.turnId !== command.turnId || !transport) {
+      return { ok: false, error: invalidState("Omp Turn steer must reference the active Turn") };
+    }
+    const text = command.input.map((input) => input.text).join("\n");
+    if (text.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: "invalidRequest",
+          message: "Omp steer input must not be empty",
+          retryable: false,
+        },
+      };
+    }
+    try {
+      await transport.steer(text);
+    } catch (error) {
+      return { ok: false, error: normalizedError(error, "nativeFailure") };
+    }
+    if (this.#active === active) active.deliveredSteers += 1;
+    return { ok: true, value: { accepted: true } };
+  }
+
   async #completedTurnIdentity(
     active: ActiveTurn,
     transport: OmpTurnTransport,
@@ -1645,9 +1669,13 @@ class OmpHarnessSession implements HarnessSession {
     const created = snapshot.turns.filter(
       (turn) => !active.beforeNativeTurnKeys.has(turn.nativeTurnRef.nativeTurnKey),
     );
-    if (created.length !== 1) {
+    // A natively delivered steer is persisted as its own User Entry, so one
+    // Host Turn spans the prompt's Entry plus up to one per delivered steer.
+    // The prompt's Entry keeps the Host Turn identity and checkpoint.
+    const maxExpected = 1 + active.deliveredSteers;
+    if (created.length < 1 || created.length > maxExpected) {
       throw new Error(
-        `Omp Turn persisted ${created.length} new User Entries; exactly one is required`,
+        `Omp Turn persisted ${created.length} new User Entries; expected 1 to ${maxExpected} (${active.deliveredSteers} steer(s) delivered)`,
       );
     }
     const turn = created[0];
@@ -1877,6 +1905,7 @@ export class OmpAdapter implements HarnessAdapter {
           },
           history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
           subagents: { observe: true, readTranscript: true },
+          turns: { steer: true },
         },
       };
     } catch (error) {

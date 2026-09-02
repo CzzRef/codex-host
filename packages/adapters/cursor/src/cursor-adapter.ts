@@ -138,9 +138,7 @@ class CursorSession implements HarnessSession {
         failure("invalidState", "Cursor has no active interaction")
       );
     }
-    if (command.type === "turn.steer") {
-      return failure("unsupported", "Cursor does not support mid-Turn steer");
-    }
+    if (command.type === "turn.steer") return this.#steer(command);
     if (command.type === "turn.cancel") {
       if (!this.#active || this.#active.turnId !== command.turnId)
         return failure("invalidState", "Cursor turn is not active");
@@ -196,13 +194,55 @@ class CursorSession implements HarnessSession {
     return { ok: true, value: { turnId: command.turnId } };
   }
 
+  /**
+   * Cursor's ACP has no mid-prompt injection. A steer therefore interrupts the
+   * running prompt and, once that prompt settles as cancelled, re-prompts the
+   * same session with the new text — the conversation context is retained and
+   * the Host Turn stays open, so Desktop sees one Turn that changed course.
+   */
+  async #steer(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>> {
+    const turn = this.#active;
+    if (!turn || turn.turnId !== command.turnId) {
+      return failure("invalidState", "Cursor steer must reference the active Turn");
+    }
+    if (turn.cancellationRequested) {
+      return failure("invalidState", "Cursor Turn is already being cancelled");
+    }
+    const text = command.input.map((part) => part.text).join("\n");
+    if (!text.trim()) return failure("invalidRequest", "Cursor steer requires non-empty text");
+    turn.pendingSteer = turn.pendingSteer ? `${turn.pendingSteer}\n${text}` : text;
+    try {
+      await this.transport.cancel();
+      return { ok: true, value: { accepted: true } };
+    } catch (error) {
+      turn.pendingSteer = undefined;
+      return { ok: false, error: cursorError(error) };
+    }
+  }
+
   async #run(turn: CursorTurn, text: string): Promise<void> {
     try {
-      const response = await this.transport.runTurn(text, {
+      let response = await this.transport.runTurn(text, {
         update: (update) => turn.update(update),
         permission: (request) => turn.interactions.permission(request),
         extension: (method, params) => turn.interactions.extension(method, params),
       });
+      // An interrupt that carried a steer re-prompts inside this Host Turn;
+      // a user cancel wins over any steer that raced it.
+      while (
+        this.#active === turn &&
+        response.stopReason === "cancelled" &&
+        turn.pendingSteer !== undefined &&
+        !turn.cancellationRequested
+      ) {
+        const steerText = turn.pendingSteer;
+        turn.pendingSteer = undefined;
+        response = await this.transport.runTurn(steerText, {
+          update: (update) => turn.update(update),
+          permission: (request) => turn.interactions.permission(request),
+          extension: (method, params) => turn.interactions.extension(method, params),
+        });
+      }
       if (this.#active !== turn) return;
       const reason = response.stopReason;
       turn.finish(

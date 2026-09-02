@@ -238,6 +238,49 @@ describe("Cursor live-only Adapter", () => {
     await observed.done;
   });
 
+  it("steers by interrupting the prompt and re-prompting the same session inside one Turn", async () => {
+    const f = fixture();
+    const session = await open(f);
+    expect(session.capabilities.turns).toEqual({ steer: true });
+    const observed = observe(session);
+    await session.execute({ type: "turn.start", turnId, input: [{ type: "text", text: "first" }] });
+    f.callbacks.update({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "partial" },
+    });
+
+    await expect(
+      session.execute({ type: "turn.steer", turnId, input: [{ type: "text", text: "second" }] }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+    expect(f.transport.cancel).toHaveBeenCalledOnce();
+    expect(f.transport.runTurn).toHaveBeenCalledTimes(1);
+
+    // The interrupted prompt settles as cancelled; the steer re-prompts the
+    // same session instead of finishing the Host Turn.
+    f.finish({ stopReason: "cancelled" });
+    await vi.waitFor(() => expect(f.transport.runTurn).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(f.transport.runTurn).mock.calls[1]?.[0]).toBe("second");
+    expect(
+      observed.outputs.some(
+        (output) => output.kind === "event" && output.event.type === "turn.completed",
+      ),
+    ).toBe(false);
+
+    f.callbacks.update({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "answer" },
+    });
+    f.finish({ stopReason: "end_turn" });
+    await f.adapter.close();
+    await observed.done;
+    const completed = observed.outputs.find(
+      (output) => output.kind === "event" && output.event.type === "turn.completed",
+    );
+    expect(completed).toMatchObject({
+      event: { type: "turn.completed", turnId, outcome: { status: "succeeded" } },
+    });
+  });
+
   it("uses the native terminal result when cancellation races with normal completion", async () => {
     const f = fixture();
     const session = await open(f);

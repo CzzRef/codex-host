@@ -85,5 +85,8 @@ export function cursorCapabilities(configuration: ReturnType<typeof cursorConfig
       selectPermissionMode: Boolean(configuration.permissionModes),
     },
     history: cursorHistory,
+    // Cursor has no mid-prompt injection; steer is interrupt-then-re-prompt in
+    // the same ACP session and the same Host Turn (see CursorAdapter #run).
+    turns: { steer: true },
   };
 }

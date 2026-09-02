@@ -43,6 +43,12 @@ class FakePiTransport implements PiTurnTransport {
     contextUsage: { contextUsedTokens: 40, contextWindowTokens: 200 },
   };
   readonly abort = vi.fn(async () => undefined);
+  /** Steers Pi accepted natively; each persists its own User Entry when the Turn settles. */
+  readonly steered: string[] = [];
+  readonly steer = vi.fn(async (text: string) => {
+    if (this.text === null) throw new Error("No active fake Pi Turn to steer");
+    this.steered.push(text);
+  });
   readonly respondToInteraction = vi.fn(async (response: PiInteractionResponse) => {
     this.event({
       type: "interaction.closed",
@@ -191,6 +197,33 @@ class FakePiTransport implements PiTurnTransport {
       },
     );
     this.history.leafId = assistantId;
+    // Live Pi delivers a steer as a regular user message: agent-session
+    // `_queueSteer` → `agent.steer({ role: "user" })`, drained before the next
+    // LLM call and persisted as its own User Entry inside the same Host Turn.
+    this.steered.splice(0).forEach((steerText, offset) => {
+      const steerOrdinal = ordinal + 2 + offset;
+      const steerUserId = `synthetic-user-${steerOrdinal}`;
+      const steerAssistantId = `synthetic-assistant-${steerOrdinal}`;
+      this.history.entries.push(
+        {
+          id: steerUserId,
+          parentId: this.history.leafId,
+          type: "message",
+          message: { role: "user", content: [{ type: "text", text: steerText }] },
+        },
+        {
+          id: steerAssistantId,
+          parentId: steerUserId,
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: `${steerText} answer` }],
+            stopReason: "stop",
+          },
+        },
+      );
+      this.history.leafId = steerAssistantId;
+    });
     this.resolveTurn({ text, cancelled });
     this.resetTurn();
   }
@@ -325,6 +358,55 @@ async function nextInteraction(
 }
 
 describe("Pi HarnessAdapter Session", () => {
+  it("steers the active Turn natively and keeps the prompt Entry as the Host Turn identity", async () => {
+    const { adapter, transports } = fixture();
+    const session = await openSession(adapter);
+    expect(session.capabilities.turns).toEqual({ steer: true });
+    const iterator = session.outputs[Symbol.asyncIterator]();
+
+    await expect(session.execute(textTurn("steer-turn"))).resolves.toEqual({
+      ok: true,
+      value: { turnId: "steer-turn" },
+    });
+    const transport = transports[0];
+    if (!transport) throw new Error("Missing fake Pi transport");
+    for (let step = 0; step < 6; step += 1) {
+      if ((await nextEvent(iterator)).type === "item.started") break;
+    }
+
+    await expect(
+      session.execute({
+        type: "turn.steer",
+        turnId: hostTurnIdSchema.parse("steer-turn"),
+        input: [{ type: "text", text: "second" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+    expect(transport.steer).toHaveBeenCalledWith("second");
+    expect(transport.abort).not.toHaveBeenCalled();
+
+    transport.succeed("done");
+    let completed: Awaited<ReturnType<typeof nextEvent>> | null = null;
+    for (let step = 0; step < 8 && !completed; step += 1) {
+      const event = await nextEvent(iterator);
+      if (event.type === "turn.completed") completed = event;
+    }
+    // The steer persisted a second User Entry; the Host Turn still succeeds
+    // and its identity/checkpoint stay on the prompt's Entry.
+    expect(completed).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+      nativeTurnRef: { nativeTurnKey: "synthetic-user-1" },
+    });
+    expect(
+      transport.history.entries.filter(
+        (entry) =>
+          entry.type === "message" &&
+          (entry.message as { role?: unknown } | undefined)?.role === "user",
+      ),
+    ).toHaveLength(2);
+    await adapter.close();
+  });
+
   it("reports a missing executable as not installed", async () => {
     const { adapter, dependencies, transports } = fixture();
     vi.mocked(dependencies.createTransport).mockImplementationOnce((options) => {

@@ -507,6 +507,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
         selectPermissionMode: input.permissionModes !== null,
       },
       history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: false },
+      turns: { steer: true },
     };
     this.initialState = this.#configurationState();
     this.outputs = this.#channel.outputs;
@@ -666,16 +667,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
     if (this.#closed)
       return { ok: false, error: invalidState("DeepSeek Harness Session is closed") };
     if (command.type === "turn.cancel") return this.#cancel(command);
-    if (command.type === "turn.steer") {
-      return {
-        ok: false,
-        error: {
-          code: "unsupported",
-          message: "DeepSeek Harness does not support mid-Turn steer",
-          retryable: false,
-        },
-      };
-    }
+    if (command.type === "turn.steer") return this.#steer(command);
     if (command.type === "interaction.respond") return this.#respond(command);
     if (command.type === "model.select") return this.#selectModel(command);
     if (command.type === "thinking.select") return this.#selectThinking(command);
@@ -1219,6 +1211,42 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
       );
       active.cancellationRequested = true;
       return { ok: true, value: { cancellationRequested: true } };
+    } catch (error) {
+      return { ok: false, error: normalizedError(error, "nativeFailure") };
+    }
+  }
+
+  async #steer(command: TurnSteerCommand): Promise<HarnessResult<TurnSteerAccepted>> {
+    const active = this.#active;
+    if (!active || active.command.turnId !== command.turnId) {
+      return {
+        ok: false,
+        error: invalidState("DeepSeek Harness steer requires the active Turn"),
+      };
+    }
+    const text = command.input.map((input) => input.text).join("\n");
+    if (text.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: "invalidRequest",
+          message: "DeepSeek Harness steer input must not be empty",
+          retryable: false,
+        },
+      };
+    }
+    try {
+      // `mode: "steer"` injects into the running native Turn; the Host keeps
+      // the same Host Turn instead of queueing a follow-up.
+      unwrapRpc(
+        await this.#client.sessions.prompt({
+          sessionId: this.#nativeRef.nativeSessionId as SessionId,
+          mode: "steer",
+          content: [{ type: "text", text }],
+        }),
+        "session.prompt",
+      );
+      return { ok: true, value: { accepted: true } };
     } catch (error) {
       return { ok: false, error: normalizedError(error, "nativeFailure") };
     }
@@ -1813,6 +1841,7 @@ export class DeepSeekHarnessAdapter implements HarnessAdapter {
             selectPermissionMode: permissionModes !== null,
           },
           history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: false },
+          turns: { steer: true },
         },
       };
     } catch (error) {

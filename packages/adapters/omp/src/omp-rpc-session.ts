@@ -822,6 +822,13 @@ export class OmpRpcSession {
     return settled;
   }
 
+  async steer(text: string): Promise<void> {
+    if (!this.#activeTurn || this.#closed || this.#failed) {
+      throw new Error("Omp RPC Session has no active Turn to steer");
+    }
+    await this.#send("steer", { message: text });
+  }
+
   abort(): Promise<void> {
     const active = this.#activeTurn;
     if (!active || this.#closed || this.#failed) {

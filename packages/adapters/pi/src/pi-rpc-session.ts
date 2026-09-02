@@ -729,6 +729,13 @@ export class PiRpcSession {
     return settled;
   }
 
+  async steer(text: string): Promise<void> {
+    if (!this.#activeTurn || this.#closed || this.#failed) {
+      throw new Error("Pi RPC Session has no active Turn to steer");
+    }
+    await this.#send("steer", { message: text });
+  }
+
   respondToInteraction(response: PiInteractionResponse): Promise<void> {
     return this.#resolveInteraction(response, "cancelled" in response ? "cancelled" : "responded");
   }
