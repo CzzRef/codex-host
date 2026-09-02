@@ -121,6 +121,16 @@ function projectItem(
         phase: null,
         memoryCitation: null,
       };
+    case "userMessage":
+      // A steer / interjection the Harness accepted mid-Turn. The Turn's own
+      // prompt keeps the `${turnId}-user` item; this one keeps its Host id so
+      // live and historical projection agree on identity and position.
+      return {
+        id: item.itemId,
+        type: "userMessage",
+        clientId: null,
+        content: [{ type: "text", text: item.text }],
+      };
     case "reasoning":
       return {
         id: reasoningPreviewItemId(item.itemId),

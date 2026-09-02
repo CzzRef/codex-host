@@ -290,6 +290,18 @@ export interface HostAgentMessageItem {
   text: string;
 }
 
+/**
+ * User input the native Harness accepted into a Turn after it started (a
+ * steer / interjection). The Turn's initial prompt stays in the Turn input and
+ * is never duplicated as an item; `text` carries the user's own words without
+ * any Harness wrapper template.
+ */
+export interface HostUserMessageItem {
+  type: "userMessage";
+  itemId: HostItemId;
+  text: string;
+}
+
 export interface HostReasoningItem {
   type: "reasoning";
   itemId: HostItemId;
@@ -363,6 +375,7 @@ export interface HostSubagentDelegationItem {
 
 export type HostItem =
   | HostAgentMessageItem
+  | HostUserMessageItem
   | HostReasoningItem
   | HostContextCompactionItem
   | HostCommandExecutionItem

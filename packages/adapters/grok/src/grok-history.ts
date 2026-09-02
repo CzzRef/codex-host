@@ -16,6 +16,7 @@ import {
 } from "@codexhost/shared-contracts";
 
 import type { GrokTransportEvent } from "./acp-transport.js";
+import { unwrapGrokInterjection } from "./grok-interject.js";
 import { projectGrokFileChanges } from "./grok-file-change.js";
 import {
   applyGrokToolProjection,
@@ -239,7 +240,19 @@ export function mapGrokReplay(
         continue;
       }
       if (input.length > 0) {
-        input += event.text;
+        // A user message inside a running prompt is a delivered interjection
+        // (steer). It stays in this Turn as a user item at its delivered
+        // position; the Turn input keeps only the initial prompt.
+        completeReasoning();
+        completeAgent();
+        items.push({
+          item: {
+            type: "userMessage",
+            itemId: stableId("user", turnIndex, ++messageIndex),
+            text: unwrapGrokInterjection(event.text),
+          },
+          outcome: { status: "succeeded" },
+        });
         continue;
       }
       currentPromptIndex = explicitPromptIndex(event) ?? nativePromptIndex;

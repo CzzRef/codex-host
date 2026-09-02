@@ -54,6 +54,7 @@ import type {
   HostToolExecutionItem,
   HostToolOutput,
   HostTurnSnapshot,
+  HostUserMessageItem,
   InteractionRespondAccepted,
   InteractionRespondCommand,
   ModelSelectCommand,
@@ -575,6 +576,18 @@ export class FakeHarnessSession implements HarnessSession {
       turnId: active.command.turnId,
       snapshot,
     });
+  }
+
+  emitUserMessage(text: string): HostItemId {
+    if (text.length === 0) throw new Error("Fake user message must be non-empty");
+    const item: HostUserMessageItem = {
+      type: "userMessage",
+      itemId: this.#nextItemId(),
+      text,
+    };
+    this.#startItem(item);
+    this.completeItem(item.itemId, { status: "succeeded" });
+    return item.itemId;
   }
 
   emitFileChange(changes: HostFileChange[]): HostItemId {

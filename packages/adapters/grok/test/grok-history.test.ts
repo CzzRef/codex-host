@@ -49,6 +49,45 @@ describe("Grok history Fork mapping", () => {
     expect(resolveGrokLastTurnPromptIndex({ turns: [] })).toBeNull();
   });
 
+  it("folds a delivered interjection into its Turn as an unwrapped user item", () => {
+    const wrapped =
+      "The user sent a message while you were working:\n<user_query>\nactually check tests\n</user_query>";
+    const snapshot = mapGrokReplay(
+      [
+        { type: "user.text", text: "first", metadata: { eventId: "user-1" } },
+        { type: "agent.text", text: "working" },
+        { type: "user.text", text: wrapped },
+        { type: "agent.text", text: "done" },
+        { type: "turn.completed", nativeTurnKey: "prompt-1", stopReason: "end_turn" },
+        { type: "user.text", text: "next", metadata: { eventId: "user-2" } },
+        { type: "user.text", text: "<no-template>raw</no-template>" },
+        { type: "turn.completed", nativeTurnKey: "prompt-2", stopReason: "end_turn" },
+      ],
+      grokHarnessId,
+      "session-1",
+      "/workspace",
+    );
+
+    expect(snapshot.turns).toHaveLength(2);
+    // The interjection stays inside Turn 1 at its delivered position and the
+    // Turn input keeps only the prompt.
+    expect(snapshot.turns[0]).toMatchObject({
+      nativeTurnRef: { nativeTurnKey: "prompt-1" },
+      input: [{ text: "first" }],
+    });
+    expect(
+      snapshot.turns[0]?.items.map(({ item }) => [item.type, "text" in item ? item.text : ""]),
+    ).toEqual([
+      ["agentMessage", "working"],
+      ["userMessage", "actually check tests"],
+      ["agentMessage", "done"],
+    ]);
+    // An unrecognized wrapper is kept verbatim rather than dropped.
+    expect(
+      snapshot.turns[1]?.items.map(({ item }) => [item.type, "text" in item ? item.text : ""]),
+    ).toEqual([["userMessage", "<no-template>raw</no-template>"]]);
+  });
+
   it("applies rewind_marker by dropping the target Prompt Index and later Turns", () => {
     const snapshot = mapGrokReplay(
       [
