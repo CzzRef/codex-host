@@ -17,3 +17,9 @@ Markers and timestamps are quick-resume hints. Integration still requires live G
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `260902-worktree-checkbox-routing` | `codex-host` | `codex/260902-worktree-checkbox-routing` | [task owner](../../vibe/specs/260902/1340-worktree-checkbox-routing/task-card.md#L1) | `142fcfbd9cc3` | `czz-dev@df0176458caf` | clean | complete | integrated 9/9 | not-authorized | `2a5df4185ede` | `2026-09-02T07:10:33Z` | parked; resume later without removing the worktree |
 <!-- worktree-task-index:260902-worktree-checkbox-routing:end -->
+
+<!-- worktree-task-index:260902-cursor-native-history:start -->
+| Task ID | Repository | Child Branch | Detail | Source Head | Target Head | Worktree | Milestone | Merge | Push | Marker | State At | Next Action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `260902-cursor-native-history` | `codex-host` | `codex/260902-cursor-native-history` | [task owner](../../vibe/specs/260902/1502-cursor-native-history/spec.md#L1) | `df0176458caf` | `czz-dev@df0176458caf` | dirty | in-progress | unmerged 0/0 | not-authorized | `2044820d4bc6` | `2026-09-02T07:09:13Z` | isolated implementation still uncommitted; do not merge into czz-dev |
+<!-- worktree-task-index:260902-cursor-native-history:end -->
