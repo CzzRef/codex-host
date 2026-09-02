@@ -12,6 +12,12 @@ import {
   type ThreadConversationFile,
 } from "./renderer-conversation-files.js";
 import { CODEX_COMPOSER_SELECTOR } from "./renderer-composer-dom.js";
+import {
+  CONVERSATION_GUTTER_ATTRIBUTE,
+  clampFixedBox,
+  ensureOverlayChromeStyle,
+  overlayTopAboveComposer,
+} from "./renderer-overlay-layout.js";
 import type { RendererModelClient } from "./renderer-model-client.js";
 import {
   findComposerModelTarget,
@@ -40,30 +46,46 @@ export interface RendererWorkspaceBarOptions {
 }
 
 function ensureStyle(ownerDocument: Document): void {
-  if (ownerDocument.querySelector(`style[${STYLE_ATTRIBUTE}]`)) return;
+  ensureOverlayChromeStyle(ownerDocument);
+  ownerDocument.querySelector(`style[${STYLE_ATTRIBUTE}]`)?.remove();
   const style = ownerDocument.createElement("style");
   style.setAttribute(STYLE_ATTRIBUTE, "true");
   style.textContent = `
     .${BAR_CLASS} {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 8px;
+      width: 100%;
       min-width: 0;
       pointer-events: auto;
+      position: relative;
+      z-index: 12;
+      margin: 0;
+      padding: 8px;
+      border: 1px solid rgb(255 255 255 / 10%);
+      border-radius: 14px;
+      background: rgb(17 17 17 / 92%);
+      backdrop-filter: blur(16px);
     }
     .${BAR_CLASS}[${WORKSPACE_BAR_ATTRIBUTE}="empty"] {
       display: none;
     }
-    .${BAR_CLASS} [${WORKSPACE_ROW_ATTRIBUTE}] {
+    .${BAR_CLASS} .codexhost-workspace-chips {
       display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .${BAR_CLASS} [${WORKSPACE_ROW_ATTRIBUTE}] {
+      display: inline-flex;
       align-items: center;
       gap: 8px;
       min-width: 0;
-      height: 28px;
+      max-width: 100%;
+      min-height: 30px;
       padding: 0 10px;
-      border: 1px solid rgba(127, 127, 127, 0.22);
-      border-radius: 10px;
-      background: rgba(127, 127, 127, 0.08);
+      border: 1px solid rgb(255 255 255 / 10%);
+      border-radius: 999px;
+      background: rgb(255 255 255 / 4%);
       color: inherit;
       font-size: 12px;
       line-height: 16px;
@@ -75,16 +97,14 @@ function ensureStyle(ownerDocument: Document): void {
       white-space: nowrap;
     }
     .${BAR_CLASS} .codexhost-workspace-name {
-      font-weight: 600;
+      font-weight: 650;
     }
-    .${BAR_CLASS} .codexhost-workspace-branch {
-      opacity: 0.78;
-    }
+    .${BAR_CLASS} .codexhost-workspace-branch,
     .${BAR_CLASS} .codexhost-workspace-tree {
-      opacity: 0.78;
+      color: rgb(255 255 255 / 62%);
     }
     .${BAR_CLASS} .codexhost-workspace-stats {
-      margin-left: auto;
+      position: relative;
       display: inline-flex;
       gap: 6px;
       font-variant-numeric: tabular-nums;
@@ -100,6 +120,10 @@ function ensureStyle(ownerDocument: Document): void {
       text-decoration: underline;
       text-underline-offset: 2px;
     }
+    .${BAR_CLASS} .codexhost-workspace-stats:focus-visible {
+      outline: 2px solid #339cff;
+      outline-offset: 2px;
+    }
     .${BAR_CLASS} .codexhost-workspace-added {
       color: var(--color-codex-git-added, #3fb950);
     }
@@ -110,9 +134,8 @@ function ensureStyle(ownerDocument: Document): void {
       display: flex;
       flex-direction: column;
       gap: 2px;
-      padding: 4px 8px 6px;
-      border: 1px solid rgba(127, 127, 127, 0.18);
-      border-radius: 10px;
+      padding: 6px 2px 2px;
+      border-top: 1px solid rgb(255 255 255 / 8%);
       font-size: 11px;
       line-height: 16px;
     }
@@ -123,12 +146,17 @@ function ensureStyle(ownerDocument: Document): void {
       width: 100%;
       appearance: none;
       border: 0;
+      border-radius: 8px;
       background: transparent;
-      color: inherit;
+      color: rgb(255 255 255 / 62%);
       cursor: pointer;
-      padding: 2px 2px 4px;
+      padding: 4px 6px;
       font: inherit;
       text-align: left;
+    }
+    .${BAR_CLASS} .codexhost-workspace-files-toggle:hover {
+      background: rgb(255 255 255 / 7%);
+      color: inherit;
     }
     .${BAR_CLASS} .codexhost-workspace-files-list {
       display: flex;
@@ -156,13 +184,20 @@ function ensureStyle(ownerDocument: Document): void {
       text-align: left;
     }
     .${BAR_CLASS} [${WORKSPACE_FILE_ATTRIBUTE}]:hover {
-      background: rgba(127, 127, 127, 0.16);
+      background: rgb(255 255 255 / 7%);
+    }
+    .${BAR_CLASS} [${WORKSPACE_FILE_ATTRIBUTE}]:active {
+      background: rgb(255 255 255 / 12%);
     }
     .${BAR_CLASS} [${WORKSPACE_FILE_ATTRIBUTE}] code {
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    [${CONVERSATION_GUTTER_ATTRIBUTE}] {
+      pointer-events: none;
+      flex-shrink: 0;
     }
     [${WORKSPACE_PREVIEW_ATTRIBUTE}] {
       position: fixed;
@@ -225,8 +260,31 @@ function chineseLocale(ownerDocument: Document): boolean {
   return (ownerDocument.documentElement.lang || "").toLowerCase().startsWith("zh");
 }
 
+function pathBaseName(path: string): string {
+  const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
+export function repositoryDisplayName(repository: ThreadWorkspaceRepository): string {
+  if (
+    (repository.kind === "worktree" || repository.isWorktree) &&
+    repository.primaryRoot &&
+    repository.primaryRoot !== repository.root
+  ) {
+    return pathBaseName(repository.primaryRoot);
+  }
+  return repository.name;
+}
+
 export function worktreeLabel(repository: ThreadWorkspaceRepository, chinese: boolean): string {
   if (!repository.isWorktree || !repository.worktreeName) return "";
+  const display = repositoryDisplayName(repository);
+  if (
+    repository.worktreeName === display ||
+    repository.worktreeName === (repository.branch ?? "")
+  ) {
+    return "";
+  }
   return chinese ? `工作树 ${repository.worktreeName}` : `wt ${repository.worktreeName}`;
 }
 
@@ -314,7 +372,7 @@ function renderRow(
   row.setAttribute(WORKSPACE_ROW_ATTRIBUTE, repository.kind);
   const name = ownerDocument.createElement("span");
   name.className = "codexhost-workspace-name";
-  name.textContent = repository.name;
+  name.textContent = repositoryDisplayName(repository);
   const branch = ownerDocument.createElement("span");
   branch.className = "codexhost-workspace-branch";
   branch.textContent = repository.branch ?? repository.headSha;
@@ -330,6 +388,11 @@ function renderRow(
   stats.type = "button";
   stats.className = "codexhost-workspace-stats";
   stats.setAttribute("aria-label", chinese ? "打开变更" : "Open review");
+  const tooltip = ownerDocument.createElement("span");
+  tooltip.className = "codexhost-overlay-tooltip";
+  tooltip.setAttribute("aria-hidden", "true");
+  tooltip.textContent = chinese ? "打开官方审查，查看工作区 diff" : "Open the official review diff";
+  stats.append(tooltip);
   stats.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -367,24 +430,56 @@ function fillDiffPreview(host: HTMLElement, preview: string, chinese: boolean): 
   }
 }
 
-function placePreview(host: HTMLElement, anchor: DOMRect): void {
-  const width = Math.min(
-    420,
-    Math.max(240, host.ownerDocument.defaultView?.innerWidth ?? 420) - 24,
-  );
-  const maxLeft = (host.ownerDocument.defaultView?.innerWidth ?? width) - width - 8;
-  const left = Math.max(8, Math.min(Math.round(anchor.right + 8), maxLeft));
-  const top = Math.max(8, Math.round(anchor.top));
+function placePreview(host: HTMLElement, anchor: DOMRect, composer: Element | null): void {
+  const view = host.ownerDocument.defaultView;
+  const width = Math.min(420, Math.max(240, view?.innerWidth ?? 420) - 24);
+  const height = host.offsetHeight || 160;
+  const composerTop = composer?.getBoundingClientRect().top ?? view?.innerHeight ?? 800;
+  const origin = clampFixedBox({
+    left: anchor.left - width - 8,
+    top: anchor.top,
+    width,
+    height,
+    viewportWidth: view?.innerWidth ?? width,
+    maxBottom: composerTop,
+  });
   host.style.width = `${width}px`;
-  host.style.left = `${left}px`;
-  host.style.top = `${top}px`;
+  host.style.left = `${origin.left}px`;
+  host.style.top = `${origin.top}px`;
 }
 
 function placeBar(bar: HTMLElement, composer: Element): void {
   const parent = composer.parentElement;
-  if (!parent || typeof parent.insertBefore !== "function") return;
-  if (bar.parentElement === parent && bar.nextElementSibling === composer) return;
-  parent.insertBefore(bar, composer);
+  if (parent) {
+    if (bar.parentElement !== parent || bar.nextElementSibling !== composer) {
+      parent.insertBefore(bar, composer);
+    }
+    bar.style.position = "relative";
+    bar.style.left = "";
+    bar.style.top = "";
+    bar.style.width = "100%";
+    bar.style.maxHeight = "min(240px, 42vh)";
+    bar.style.overflowY = "auto";
+    bar.style.zIndex = "12";
+    return;
+  }
+  const ownerDocument = bar.ownerDocument;
+  (ownerDocument.body ?? ownerDocument.documentElement).append(bar);
+  const rect = composer.getBoundingClientRect();
+  const height = bar.offsetHeight || 72;
+  bar.style.position = "fixed";
+  bar.style.zIndex = "12";
+  bar.style.left = `${Math.round(rect.left)}px`;
+  bar.style.width = `${Math.round(rect.width)}px`;
+  bar.style.top = `${overlayTopAboveComposer(rect.top, height, 8)}px`;
+  bar.style.maxHeight = "min(240px, 42vh)";
+  bar.style.overflowY = "auto";
+}
+
+function clearConversationGutter(root: ParentNode): void {
+  const ownerDocument =
+    root instanceof Document ? root : ((root as Element).ownerDocument ?? document);
+  ownerDocument.querySelector(`[${CONVERSATION_GUTTER_ATTRIBUTE}]`)?.remove();
 }
 
 export function installRendererWorkspaceBar(
@@ -419,6 +514,7 @@ export function installRendererWorkspaceBar(
     loadedThreadIds.delete(composer);
     lastSnapshot.delete(composer);
     filesExpanded.delete(composer);
+    clearConversationGutter(root);
   };
 
   const hidePreview = (): void => {
@@ -426,10 +522,15 @@ export function installRendererWorkspaceBar(
     preview.replaceChildren();
   };
 
+  const visibleComposer = (): Element | null =>
+    [...root.querySelectorAll(CODEX_COMPOSER_SELECTOR)].find((composer) =>
+      composerVisible(composer),
+    ) ?? null;
+
   const showPreview = (file: ThreadConversationFile, anchor: DOMRect, chinese: boolean): void => {
     fillDiffPreview(preview, file.preview, chinese);
     preview.hidden = false;
-    placePreview(preview, anchor);
+    placePreview(preview, anchor, visibleComposer());
   };
 
   const highlightTurns = (selection: string | null): void => {
@@ -488,10 +589,18 @@ export function installRendererWorkspaceBar(
     if (repositories.length === 0 && files.length === 0 && turnFiles === null) {
       bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, "empty");
       bar.remove();
+      clearConversationGutter(root);
       return;
     }
     const chinese = chineseLocale(documentNode);
-    for (const repository of repositories) bar.append(renderRow(documentNode, repository, chinese));
+    if (repositories.length > 0) {
+      const chips = documentNode.createElement("div");
+      chips.className = "codexhost-workspace-chips";
+      for (const repository of repositories) {
+        chips.append(renderRow(documentNode, repository, chinese));
+      }
+      bar.append(chips);
+    }
     if (files.length > 0 || turnFiles !== null) {
       const expanded = filesExpanded.get(composer) ?? false;
       const list = documentNode.createElement("div");
@@ -556,6 +665,7 @@ export function installRendererWorkspaceBar(
     }
     bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, snapshot?.threadId ?? "ready");
     placeBar(bar, composer);
+    clearConversationGutter(root);
   };
 
   const load = (composer: Element, threadId: string): void => {
@@ -664,7 +774,14 @@ export function installRendererWorkspaceBar(
     scanTimer = setTimeout(() => {
       scanTimer = null;
       scan();
-    }, 0);
+    }, 200);
+  };
+
+  const reposition = (): void => {
+    for (const [composer, bar] of bars) {
+      if (composer.isConnected) placeBar(bar, composer);
+    }
+    clearConversationGutter(root);
   };
 
   const onTurnClick = (event: MouseEvent): void => {
@@ -688,7 +805,6 @@ export function installRendererWorkspaceBar(
       if (next) filesExpanded.set(composer, true);
       signatures.delete(composer);
       paint(composer, lastSnapshot.get(composer) ?? null);
-      bars.get(composer)?.scrollIntoView({ block: "nearest" });
       documentNode.defaultView?.dispatchEvent(
         new CustomEvent("codexhost:turn-files-selected", {
           detail: { threadId, turnKey: next },
@@ -697,7 +813,17 @@ export function installRendererWorkspaceBar(
     }
   };
 
-  const observer = new MutationObserver(scheduleScan);
+  const observer = new MutationObserver((mutations) => {
+    const ours = (node: Node): boolean =>
+      node instanceof Element &&
+      Boolean(
+        node.closest(
+          "[data-codexhost-workspace-bar], [data-codexhost-turn-actions], [data-codexhost-turn-rail], [data-codexhost-workspace-preview], [data-codexhost-prompt-ghost]",
+        ),
+      );
+    if (mutations.every((mutation) => ours(mutation.target))) return;
+    scheduleScan();
+  });
   observer.observe(documentNode.documentElement ?? documentNode, {
     childList: true,
     subtree: true,
@@ -710,6 +836,8 @@ export function installRendererWorkspaceBar(
     ],
   });
   documentNode.addEventListener("click", onTurnClick, true);
+  documentNode.defaultView?.addEventListener("scroll", reposition, true);
+  documentNode.defaultView?.addEventListener("resize", reposition);
   scan();
 
   return {
@@ -733,12 +861,15 @@ export function installRendererWorkspaceBar(
       disposed = true;
       observer.disconnect();
       documentNode.removeEventListener("click", onTurnClick, true);
+      documentNode.defaultView?.removeEventListener("scroll", reposition, true);
+      documentNode.defaultView?.removeEventListener("resize", reposition);
       if (scanTimer !== null) clearTimeout(scanTimer);
       highlightTurns(null);
       unsubscribe?.();
       unsubscribe = null;
       hidePreview();
       preview.remove();
+      documentNode.querySelector(`[${CONVERSATION_GUTTER_ATTRIBUTE}]`)?.remove();
       for (const composer of [...bars.keys()]) removeBar(composer);
     },
   };

@@ -1,0 +1,1065 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>codexhost Composer 浮层预览</title>
+    <style>
+      :root {
+        --bg: #0c0c0c;
+        --panel: #111111;
+        --card: #161616;
+        --composer: #1a1a1a;
+        --text: #ececec;
+        --muted: #9a9a9a;
+        --faint: #6d6d6d;
+        --border: rgb(255 255 255 / 10%);
+        --hover: rgb(255 255 255 / 7%);
+        --press: rgb(255 255 255 / 14%);
+        --green: #3fb950;
+        --red: #f85149;
+        --accent: #339cff;
+        --shadow: 0 16px 40px rgb(0 0 0 / 45%);
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          13px/1.45 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+
+      button {
+        appearance: none;
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .brief {
+        padding: 28px 24px 40px;
+        border-right: 1px solid var(--border);
+        background: #0f0f0f;
+        overflow: auto;
+      }
+
+      .brief h1 {
+        margin: 0 0 6px;
+        font-size: 20px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+      }
+
+      .brief .lede {
+        margin: 0 0 22px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .brief h2 {
+        margin: 22px 0 8px;
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+
+      .brief ol,
+      .brief ul {
+        margin: 0;
+        padding-left: 18px;
+        color: #d4d4d4;
+      }
+
+      .brief li + li {
+        margin-top: 8px;
+      }
+
+      .brief code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: #d6e8ff;
+      }
+
+      .mode-switch {
+        display: flex;
+        gap: 6px;
+        margin: 18px 0 8px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #171717;
+      }
+
+      .mode-switch button {
+        flex: 1;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+
+      .mode-switch button[aria-pressed="true"] {
+        background: rgb(51 156 255 / 16%);
+        color: #d7ebff;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .stage {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        padding: 20px 24px 24px;
+      }
+
+      .desktop {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 720px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+        background: #0d0d0d;
+        box-shadow: var(--shadow);
+      }
+
+      .titlebar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 44px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--border);
+        color: #d0d0d0;
+      }
+
+      .titlebar .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #3d3d3d;
+      }
+
+      .titlebar .title {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .share {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        cursor: default;
+      }
+
+      .thread {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        position: relative;
+      }
+
+      .transcript {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 18px 28px 16px;
+      }
+
+      .turn {
+        position: relative;
+        max-width: 760px;
+        margin: 0 auto 18px;
+        padding: 12px 14px 14px;
+        border: 1px solid transparent;
+        border-radius: 14px;
+        cursor: pointer;
+      }
+
+      .turn[data-role="user"] {
+        color: #d9d9d9;
+      }
+
+      .turn[data-role="assistant"] {
+        background: linear-gradient(180deg, rgb(255 255 255 / 3%), transparent 42%);
+        border-color: rgb(255 255 255 / 5%);
+      }
+
+      .turn[data-selected="true"] {
+        border-color: rgb(63 185 80 / 45%);
+        box-shadow: inset 3px 0 0 var(--green);
+        background: rgb(63 185 80 / 5%);
+      }
+
+      .turn-kicker {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .turn p {
+        margin: 0 0 10px;
+        color: #dedede;
+      }
+
+      .turn p:last-child {
+        margin-bottom: 0;
+      }
+
+      .native-commit {
+        display: inline-flex;
+        align-items: center;
+        margin-top: 10px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgb(255 255 255 / 4%);
+        color: #d8d8d8;
+        font-size: 12px;
+      }
+
+      .turn-actions {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+      }
+
+      .action {
+        position: relative;
+        display: inline-flex;
+      }
+
+      body[data-mode="target"] .turn[data-selected="true"] .turn-actions {
+        display: inline-flex;
+      }
+
+      .chip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgb(255 255 255 / 12%);
+        border-radius: 8px;
+        background: rgb(20 20 20 / 88%);
+        color: var(--text);
+        cursor: pointer;
+        transition:
+          background 120ms ease,
+          border-color 120ms ease,
+          transform 80ms ease,
+          box-shadow 120ms ease;
+      }
+
+      .chip:hover:not(:disabled) {
+        background: rgb(255 255 255 / 8%);
+        border-color: rgb(255 255 255 / 22%);
+      }
+
+      .chip:active:not(:disabled) {
+        transform: translateY(1px) scale(0.97);
+        background: var(--press);
+      }
+
+      .chip:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .chip:disabled {
+        opacity: 0.38;
+        cursor: not-allowed;
+      }
+
+      .chip[data-tone="danger"]:hover:not(:disabled) {
+        border-color: rgb(248 81 73 / 45%);
+        background: rgb(248 81 73 / 10%);
+      }
+
+      .chip[data-busy="true"] {
+        box-shadow: inset 0 0 0 1px rgb(51 156 255 / 45%);
+      }
+
+      .tooltip {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 8px);
+        z-index: 5;
+        width: max-content;
+        max-width: 280px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #111;
+        color: #e7e7e7;
+        font-size: 11px;
+        line-height: 16px;
+        text-align: left;
+        box-shadow: var(--shadow);
+        pointer-events: none;
+        opacity: 0;
+        translate: 0 4px;
+        transition:
+          opacity 120ms ease,
+          translate 120ms ease;
+      }
+
+      .action:has(.confirm) .tooltip {
+        display: none;
+      }
+
+      .chip:hover .tooltip,
+      .chip:focus-visible .tooltip,
+      .stat:hover .tooltip,
+      .stat:focus-visible .tooltip {
+        opacity: 1;
+        translate: 0 0;
+      }
+
+      .confirm {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        z-index: 6;
+        width: 304px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #151515;
+        box-shadow: var(--shadow);
+        text-align: left;
+      }
+
+      .confirm p {
+        margin: 0 0 10px;
+        color: #dcdcdc;
+        font-size: 12px;
+        line-height: 17px;
+      }
+
+      .confirm-row {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+
+      .ghost {
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .ghost:hover {
+        background: var(--hover);
+      }
+
+      .primary {
+        min-height: 28px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 8px;
+        background: #2f6fed;
+        cursor: pointer;
+      }
+
+      .primary:hover {
+        background: #3b7bff;
+      }
+
+      .primary:active {
+        transform: translateY(1px);
+      }
+
+      .primary.danger {
+        background: #c93832;
+      }
+
+      .primary.danger:hover {
+        background: #e0443d;
+      }
+
+      .footer {
+        position: relative;
+        padding: 0 18px 14px;
+      }
+
+      .mask {
+        display: none;
+        flex-direction: column;
+        gap: 8px;
+        width: min(760px, 100%);
+        margin: 0 auto 8px;
+        padding: 8px;
+        border: 1px solid rgb(255 255 255 / 10%);
+        border-radius: 14px;
+        background: rgb(17 17 17 / 92%);
+        backdrop-filter: blur(16px);
+      }
+
+      body[data-mode="target"] .mask {
+        display: flex;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .repo {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 10px;
+        border: 1px solid rgb(255 255 255 / 10%);
+        border-radius: 999px;
+        background: rgb(255 255 255 / 4%);
+        font-size: 12px;
+      }
+
+      .repo b {
+        font-weight: 650;
+      }
+
+      .repo .branch,
+      .repo .tree {
+        color: var(--muted);
+      }
+
+      .stat {
+        position: relative;
+        margin-left: 2px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .stat:hover {
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .add {
+        color: var(--green);
+      }
+
+      .del {
+        color: var(--red);
+      }
+
+      .files {
+        border-top: 1px solid rgb(255 255 255 / 8%);
+        padding-top: 6px;
+      }
+
+      .files-toggle {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+        color: var(--muted);
+        text-align: left;
+      }
+
+      .files-toggle:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+
+      .file-list {
+        display: none;
+        max-height: 132px;
+        overflow: auto;
+        padding: 2px 0 4px;
+      }
+
+      .files[data-open="true"] .file-list {
+        display: block;
+      }
+
+      .file {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 6px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .file:hover {
+        background: var(--hover);
+      }
+
+      .file code {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #d5d5d5;
+        font-size: 11px;
+      }
+
+      .composer {
+        width: min(760px, 100%);
+        margin: 0 auto;
+        padding: 10px 12px 8px;
+        border: 1px solid rgb(255 255 255 / 10%);
+        border-radius: 16px;
+        background: var(--composer);
+      }
+
+      .composer .placeholder {
+        min-height: 36px;
+        color: #8a8a8a;
+        padding: 6px 4px 10px;
+      }
+
+      .composer-meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: rgb(255 255 255 / 6%);
+      }
+
+      .legacy {
+        display: none;
+        position: absolute;
+        z-index: 4;
+        width: 248px;
+        padding: 6px;
+        border-radius: 12px;
+        background: rgb(20 20 20 / 86%);
+        box-shadow: var(--shadow);
+      }
+
+      body[data-mode="current"] .legacy {
+        display: block;
+      }
+
+      .legacy.workspace {
+        top: 18px;
+        right: 18px;
+      }
+
+      .legacy.actions {
+        top: 168px;
+        right: 28px;
+        display: none;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        width: auto;
+        padding: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      body[data-mode="current"] .legacy.actions {
+        display: flex;
+      }
+
+      .legacy-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgb(127 127 127 / 22%);
+        border-radius: 10px;
+        background: rgb(127 127 127 / 8%);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+
+      .legacy-files {
+        padding: 6px 8px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .toast {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        display: none;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #151515;
+        box-shadow: var(--shadow);
+      }
+
+      .toast[data-show="true"] {
+        display: block;
+      }
+
+      @media (max-width: 980px) {
+        .page {
+          grid-template-columns: 1fr;
+        }
+
+        .brief {
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+      }
+    </style>
+  </head>
+  <body data-mode="target">
+    <div class="page">
+      <aside class="brief">
+        <h1>对话浮层改成这样</h1>
+        <p class="lede">
+          截图里两块红圈都是同一类错：Host 控件漂在对话中间，挡住正文和官方按钮。目标不是换皮，是把职责拆开。
+        </p>
+
+        <h2>你要的</h2>
+        <ol>
+          <li>
+            <b>工作区 / 变更是底栏 mask</b>，贴在 Composer 正上方，占满对话列宽。仓库、分支、工作树、
+            <span class="add">+N</span>/<span class="del">-N</span> 一眼能读完，不再截成
+            <code>codex-h...</code>。
+          </li>
+          <li>
+            <b>编辑 / 回滚 / Redo 长在选中的那一轮上</b>，做横向 chip，给官方「提交变更」留出右上角。没选中轮次时不出现。
+          </li>
+          <li>
+            按钮要有 <b>即时悬浮说明</b>、<b>按下反馈</b>，以及 <b>二次确认</b>。回滚/编辑会丢后续对话，不能一碰就执行。
+          </li>
+        </ol>
+
+        <div class="mode-switch" role="tablist" aria-label="预览模式">
+          <button type="button" id="mode-target" aria-pressed="true">目标样式</button>
+          <button type="button" id="mode-current" aria-pressed="false">当前烂样式</button>
+        </div>
+        <p class="hint">右侧可以点轮次、悬停按钮、点回滚看确认框。当前模式是按你截图复原的漂浮层。</p>
+
+        <h2>怎么实现</h2>
+        <ul>
+          <li>
+            工作区回到 OpenSpec 原约定：插在
+            <code>[data-codex-composer-root]</code>
+            前一个兄弟节点，不要 <code>position: fixed</code> 贴到对话右上。
+          </li>
+          <li>
+            文件列表从底栏向上展开，选中轮次时筛「本轮文件」。点
+            <span class="add">+N</span>
+            仍走官方 Review。
+          </li>
+          <li>
+            轮次操作仍是 Host 自有节点（不能写进 React transcript），但坐标锚到选中
+            <code>[data-turn-key]</code>
+            的顶栏右侧；和官方 summary 按钮撞框时让位。
+          </li>
+          <li>
+            在 <code>renderer-turn-actions.ts</code> 补 hover/active/focus、自定义 tooltip、锚定确认气泡。Edit / Rollback / Redo 都先确认再调现有 Host RPC。
+          </li>
+          <li>
+            改 <code>renderer-overlay-layout.ts</code>：删掉右栏
+            <code>conversationRailBox</code>
+            当主摆放；底栏用 Composer 宽度，动作条用 turn rect。
+          </li>
+        </ul>
+
+        <h2>先不动的</h2>
+        <p class="hint">
+          这页只是预览。生产注入、Redo RPC、Mapping Store 先不动。你点头后再改
+          <code>renderer-workspace-bar.ts</code>
+          /
+          <code>renderer-turn-actions.ts</code>
+          和对应测试。
+        </p>
+      </aside>
+
+      <main class="stage">
+        <section class="desktop" aria-label="Codex Desktop 对话预览">
+          <header class="titlebar">
+            <span class="dot"></span>
+            <span class="title">260901-对话浮层预览</span>
+            <button class="share" type="button" tabindex="-1">Share</button>
+          </header>
+          <div class="thread">
+            <div class="transcript" id="transcript">
+              <article class="turn" data-role="user" data-turn="t1">
+                <div class="turn-kicker">
+                  你
+                  <span class="turn-actions" data-actions-for="t1"></span>
+                </div>
+                <p>这种样式烂透了。先梳理我想要的，再出 preview。</p>
+              </article>
+              <article class="turn" data-role="assistant" data-turn="t2" data-selected="true">
+                <div class="turn-kicker">
+                  Grok · 本轮
+                  <span class="turn-actions" data-actions-for="t2"></span>
+                </div>
+                <p>按批量提交技能先盘点两个仓库的脏文件，再按行为分批提交；这次只提交、不推送。</p>
+                <p>文档与实现对齐。按行为拆成几批本地提交：Composer 残留、Grok steer/标题、Host 通路、文档。</p>
+                <span class="native-commit">提交所有的代码变更进行提交</span>
+              </article>
+              <article class="turn" data-role="user" data-turn="t3">
+                <div class="turn-kicker">
+                  你
+                  <span class="turn-actions" data-actions-for="t3"></span>
+                </div>
+                <p>按钮要有悬浮提示、真实点击效果，以及二次确认。</p>
+              </article>
+            </div>
+
+            <div class="legacy workspace" aria-hidden="true">
+              <div class="legacy-row">
+                <b>codex-h...</b>
+                <span>czz-d...</span>
+                <span class="add">+1,226</span>
+                <span class="del">-181</span>
+              </div>
+              <div class="legacy-row">
+                <b>c...</b>
+                <span>codex/2...</span>
+                <span>wt 260...</span>
+                <span class="add">+0</span>
+                <span class="del">-0</span>
+              </div>
+              <div class="legacy-files">▸ 0 files this turn</div>
+            </div>
+            <div class="legacy actions" aria-hidden="true">
+              <button class="chip" type="button">Edit</button>
+              <button class="chip" type="button">Rollback</button>
+              <button class="chip" type="button">Redo</button>
+            </div>
+
+            <div class="footer">
+              <aside class="mask" aria-label="工作区底栏">
+                <div class="chips">
+                  <span class="repo">
+                    <b>codex-host</b>
+                    <span class="branch">czz-dev</span>
+                    <button class="stat" type="button" data-open-review>
+                      <span class="tooltip">打开官方审查，查看工作区 diff</span>
+                      <span class="add">+1,226</span>
+                      <span class="del">-181</span>
+                    </button>
+                  </span>
+                  <span class="repo">
+                    <b>CodeNote</b>
+                    <span class="branch">master</span>
+                    <span class="tree">wt 260901-composer</span>
+                    <button class="stat" type="button" data-open-review>
+                      <span class="tooltip">这个工作树当前是干净的</span>
+                      <span class="add">+0</span>
+                      <span class="del">-0</span>
+                    </button>
+                  </span>
+                </div>
+                <div class="files" id="files" data-open="false">
+                  <button class="files-toggle" type="button" id="files-toggle">
+                    ▸ 本轮 2 个文件
+                  </button>
+                  <div class="file-list">
+                    <button class="file" type="button">
+                      <code>packages/renderer-extension/src/renderer-turn-actions.ts</code>
+                      <span class="add">+86</span>
+                      <span class="del">-12</span>
+                    </button>
+                    <button class="file" type="button">
+                      <code>packages/renderer-extension/src/renderer-workspace-bar.ts</code>
+                      <span class="add">+40</span>
+                      <span class="del">-9</span>
+                    </button>
+                  </div>
+                </div>
+              </aside>
+              <div class="composer">
+                <div class="placeholder">Do anything</div>
+                <div class="composer-meta">
+                  <span class="pill">58%</span>
+                  <span>Always approve</span>
+                  <span>CH 99.1%</span>
+                  <span>Grok 4.6 Extra High</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script>
+      const copy = {
+        t1: {
+          later: true,
+          edit: "将先回滚该轮之后的对话与文件，再到本轮开始处编辑",
+          rollback: "回滚到本轮开始：取消之后的对话，并尽量还原本轮文件",
+          redo: "回滚之后才能重做",
+        },
+        t2: {
+          later: true,
+          edit: "将先回滚该轮之后的对话与文件，再到本轮开始处编辑",
+          rollback: "回滚到本轮开始：取消之后的对话，并尽量还原本轮文件",
+          redo: "回滚之后才能重做",
+        },
+        t3: {
+          later: false,
+          edit: "已是最后一轮，可直接编辑提示",
+          rollback: "没有后续轮次可回滚",
+          redo: "回滚之后才能重做",
+        },
+      };
+
+      const state = {
+        mode: "target",
+        selected: "t2",
+        rolledBack: false,
+        confirming: null,
+      };
+
+      const toastEl = document.getElementById("toast");
+      let toastTimer = 0;
+
+      function toast(text) {
+        toastEl.textContent = text;
+        toastEl.dataset.show = "true";
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => {
+          toastEl.dataset.show = "false";
+        }, 2200);
+      }
+
+      function setMode(mode) {
+        state.mode = mode;
+        document.body.dataset.mode = mode;
+        document.getElementById("mode-target").setAttribute("aria-pressed", String(mode === "target"));
+        document.getElementById("mode-current").setAttribute("aria-pressed", String(mode === "current"));
+        renderActions();
+      }
+
+      function selectTurn(id) {
+        state.selected = id;
+        state.confirming = null;
+        for (const turn of document.querySelectorAll(".turn")) {
+          turn.dataset.selected = String(turn.dataset.turn === id);
+        }
+        renderActions();
+      }
+
+      function actionButton(label, title, options) {
+        const wrap = document.createElement("span");
+        wrap.className = "action";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chip";
+        button.textContent = label;
+        if (options.tone) button.dataset.tone = options.tone;
+        button.disabled = Boolean(options.disabled);
+        if (options.busy) button.dataset.busy = "true";
+        const tooltip = document.createElement("span");
+        tooltip.className = "tooltip";
+        tooltip.textContent = title;
+        button.append(tooltip);
+        if (!options.disabled && options.confirmText) {
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            if (state.confirming === options.id) {
+              state.confirming = null;
+              renderActions();
+              return;
+            }
+            state.confirming = options.id;
+            renderActions();
+          });
+        }
+        wrap.append(button);
+        return wrap;
+      }
+
+      function confirmBox(text, confirmLabel, danger, onConfirm) {
+        const box = document.createElement("div");
+        box.className = "confirm";
+        const p = document.createElement("p");
+        p.textContent = text;
+        const row = document.createElement("div");
+        row.className = "confirm-row";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "ghost";
+        cancel.textContent = "取消";
+        cancel.addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.confirming = null;
+          renderActions();
+        });
+        const ok = document.createElement("button");
+        ok.type = "button";
+        ok.className = danger ? "primary danger" : "primary";
+        ok.textContent = confirmLabel;
+        ok.addEventListener("click", (event) => {
+          event.stopPropagation();
+          onConfirm();
+        });
+        row.append(cancel, ok);
+        box.append(p, row);
+        return box;
+      }
+
+      function renderActions() {
+        for (const host of document.querySelectorAll(".turn-actions")) {
+          host.replaceChildren();
+          const turnId = host.getAttribute("data-actions-for");
+          if (state.mode !== "target" || turnId !== state.selected) continue;
+          const item = copy[turnId];
+          const rolled = state.rolledBack && turnId === "t2";
+          const edit = actionButton("编辑", rolled ? "已回滚到本轮开始，可直接编辑提示" : item.edit, {
+            id: "edit",
+            confirmText: true,
+          });
+          const rollback = actionButton("回滚", item.rollback, {
+            id: "rollback",
+            tone: "danger",
+            disabled: !item.later || rolled,
+            confirmText: true,
+          });
+          const redo = actionButton("Redo", rolled ? "恢复刚回滚掉的后续对话" : item.redo, {
+            id: "redo",
+            disabled: !rolled,
+            busy: rolled && state.confirming === "redo",
+            confirmText: true,
+          });
+          host.append(edit, rollback, redo);
+          const editBtn = edit.querySelector(".chip");
+          const rollbackBtn = rollback.querySelector(".chip");
+          const redoBtn = redo.querySelector(".chip");
+          if (state.confirming === "edit") {
+            editBtn.dataset.busy = "true";
+            edit.append(
+              confirmBox("编辑会先回滚该轮之后的对话和文件，再打开提示。确定继续？", "确认编辑", true, () => {
+                state.rolledBack = true;
+                state.confirming = null;
+                toast("已回滚到本轮开始，可以改提示后重发");
+                renderActions();
+              }),
+            );
+          }
+          if (state.confirming === "rollback") {
+            rollbackBtn.dataset.busy = "true";
+            rollback.append(
+              confirmBox("回滚到本轮开始，将取消之后的对话，并尽量还原本轮文件。", "确认回滚", true, () => {
+                state.rolledBack = true;
+                state.confirming = null;
+                toast("已回滚。Redo 现在可用");
+                renderActions();
+              }),
+            );
+          }
+          if (state.confirming === "redo") {
+            redoBtn.dataset.busy = "true";
+            redo.append(
+              confirmBox("恢复刚回滚掉的后续对话。文件不会自动再改回去。", "确认 Redo", false, () => {
+                state.rolledBack = false;
+                state.confirming = null;
+                toast("已恢复后续对话");
+                renderActions();
+              }),
+            );
+          }
+        }
+      }
+
+      document.getElementById("mode-target").addEventListener("click", () => setMode("target"));
+      document.getElementById("mode-current").addEventListener("click", () => setMode("current"));
+
+      for (const turn of document.querySelectorAll(".turn")) {
+        turn.addEventListener("click", () => selectTurn(turn.dataset.turn));
+      }
+
+      const files = document.getElementById("files");
+      document.getElementById("files-toggle").addEventListener("click", () => {
+        const open = files.dataset.open === "true";
+        files.dataset.open = String(!open);
+        document.getElementById("files-toggle").textContent = `${open ? "▸" : "▾"} 本轮 2 个文件`;
+      });
+
+      document.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest("[data-open-review], .file")) {
+          toast("打开官方审查 / 文件 diff");
+        }
+        if (state.confirming && !target.closest(".action")) {
+          state.confirming = null;
+          renderActions();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && state.confirming) {
+          state.confirming = null;
+          renderActions();
+        }
+      });
+
+      renderActions();
+    </script>
+  </body>
+</html>

@@ -152,7 +152,9 @@ export type { RendererSidebarContractInspection } from "./renderer-sidebar-agent
 export {
   installRendererTurnActions,
   nativeTurnButton,
+  nativeTurnChromeBox,
   orderedTurnKeys,
+  turnActionCopy,
   turnsAfterKey,
 } from "./renderer-turn-actions.js";
 export type { RendererTurnActions } from "./renderer-turn-actions.js";
