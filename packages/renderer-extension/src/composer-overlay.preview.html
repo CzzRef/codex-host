@@ -673,21 +673,26 @@
       <aside class="brief">
         <h1>对话浮层改成这样</h1>
         <p class="lede">
-          截图里两块红圈都是同一类错：Host 控件漂在对话中间，挡住正文和官方按钮。目标不是换皮，是把职责拆开。
+          截图里两块红圈都是同一类错：Host
+          控件漂在对话中间，挡住正文和官方按钮。目标不是换皮，是把职责拆开。
         </p>
 
         <h2>你要的</h2>
         <ol>
           <li>
-            <b>工作区 / 变更是底栏 mask</b>，贴在 Composer 正上方，占满对话列宽。仓库、分支、工作树、
-            <span class="add">+N</span>/<span class="del">-N</span> 一眼能读完，不再截成
-            <code>codex-h...</code>。
+            <b>工作区 / 变更是底栏 mask</b>，贴在 Composer
+            正上方，占满对话列宽。仓库、分支、工作树、 <span class="add">+N</span>/<span class="del"
+              >-N</span
+            >
+            一眼能读完，不再截成 <code>codex-h...</code>。
           </li>
           <li>
-            <b>编辑 / 回滚 / Redo 长在选中的那一轮上</b>，做横向 chip，给官方「提交变更」留出右上角。没选中轮次时不出现。
+            <b>编辑 / 回滚 / Redo 长在选中的那一轮上</b>，做横向
+            chip，给官方「提交变更」留出右上角。没选中轮次时不出现。
           </li>
           <li>
-            按钮要有 <b>即时悬浮说明</b>、<b>按下反馈</b>，以及 <b>二次确认</b>。回滚/编辑会丢后续对话，不能一碰就执行。
+            按钮要有 <b>即时悬浮说明</b>、<b>按下反馈</b>，以及
+            <b>二次确认</b>。回滚/编辑会丢后续对话，不能一碰就执行。
           </li>
         </ol>
 
@@ -695,7 +700,9 @@
           <button type="button" id="mode-target" aria-pressed="true">目标样式</button>
           <button type="button" id="mode-current" aria-pressed="false">当前烂样式</button>
         </div>
-        <p class="hint">右侧可以点轮次、悬停按钮、点回滚看确认框。当前模式是按你截图复原的漂浮层。</p>
+        <p class="hint">
+          右侧可以点轮次、悬停按钮、点回滚看确认框。当前模式是按你截图复原的漂浮层。
+        </p>
 
         <h2>怎么实现</h2>
         <ul>
@@ -715,7 +722,17 @@
             的顶栏右侧；和官方 summary 按钮撞框时让位。
           </li>
           <li>
-            在 <code>renderer-turn-actions.ts</code> 补 hover/active/focus、自定义 tooltip、锚定确认气泡。Edit / Rollback / Redo 都先确认再调现有 Host RPC。
+            动作簇只在对话滚动区里活动：长轮次滚过顶边时它贴住对话区上沿，不会漂进标题栏挡住
+            Share；轮次只剩一条缝或滑到 Composer 之下就隐藏。
+          </li>
+          <li>
+            Redo 是线程级状态：只有 Host <code>inspect</code> 报
+            <code>historyRedoAvailable</code>（回滚最后一轮之后）才亮；官方 Redo 只给 Codex
+            自己的线程兜底，外部线程没槽就只提示。
+          </li>
+          <li>
+            在 <code>renderer-turn-actions.ts</code> 补 hover/active/focus、自定义
+            tooltip、锚定确认气泡。Edit / Rollback / Redo 都先确认再调现有 Host RPC。
           </li>
           <li>
             改 <code>renderer-overlay-layout.ts</code>：删掉右栏
@@ -756,7 +773,10 @@
                   <span class="turn-actions" data-actions-for="t2"></span>
                 </div>
                 <p>按批量提交技能先盘点两个仓库的脏文件，再按行为分批提交；这次只提交、不推送。</p>
-                <p>文档与实现对齐。按行为拆成几批本地提交：Composer 残留、Grok steer/标题、Host 通路、文档。</p>
+                <p>
+                  文档与实现对齐。按行为拆成几批本地提交：Composer 残留、Grok steer/标题、Host
+                  通路、文档。
+                </p>
                 <span class="native-commit">提交所有的代码变更进行提交</span>
               </article>
               <article class="turn" data-role="user" data-turn="t3">
@@ -890,8 +910,12 @@
       function setMode(mode) {
         state.mode = mode;
         document.body.dataset.mode = mode;
-        document.getElementById("mode-target").setAttribute("aria-pressed", String(mode === "target"));
-        document.getElementById("mode-current").setAttribute("aria-pressed", String(mode === "current"));
+        document
+          .getElementById("mode-target")
+          .setAttribute("aria-pressed", String(mode === "target"));
+        document
+          .getElementById("mode-current")
+          .setAttribute("aria-pressed", String(mode === "current"));
         renderActions();
       }
 
@@ -970,10 +994,14 @@
           if (state.mode !== "target" || turnId !== state.selected) continue;
           const item = copy[turnId];
           const rolled = state.rolledBack && turnId === "t2";
-          const edit = actionButton("编辑", rolled ? "已回滚到本轮开始，可直接编辑提示" : item.edit, {
-            id: "edit",
-            confirmText: true,
-          });
+          const edit = actionButton(
+            "编辑",
+            rolled ? "已回滚到本轮开始，可直接编辑提示" : item.edit,
+            {
+              id: "edit",
+              confirmText: true,
+            },
+          );
           const rollback = actionButton("回滚", item.rollback, {
             id: "rollback",
             tone: "danger",
@@ -993,34 +1021,49 @@
           if (state.confirming === "edit") {
             editBtn.dataset.busy = "true";
             edit.append(
-              confirmBox("编辑会先回滚该轮之后的对话和文件，再打开提示。确定继续？", "确认编辑", true, () => {
-                state.rolledBack = true;
-                state.confirming = null;
-                toast("已回滚到本轮开始，可以改提示后重发");
-                renderActions();
-              }),
+              confirmBox(
+                "编辑会先回滚该轮之后的对话和文件，再打开提示。确定继续？",
+                "确认编辑",
+                true,
+                () => {
+                  state.rolledBack = true;
+                  state.confirming = null;
+                  toast("已回滚到本轮开始，可以改提示后重发");
+                  renderActions();
+                },
+              ),
             );
           }
           if (state.confirming === "rollback") {
             rollbackBtn.dataset.busy = "true";
             rollback.append(
-              confirmBox("回滚到本轮开始，将取消之后的对话，并尽量还原本轮文件。", "确认回滚", true, () => {
-                state.rolledBack = true;
-                state.confirming = null;
-                toast("已回滚。Redo 现在可用");
-                renderActions();
-              }),
+              confirmBox(
+                "回滚到本轮开始，将取消之后的对话，并尽量还原本轮文件。",
+                "确认回滚",
+                true,
+                () => {
+                  state.rolledBack = true;
+                  state.confirming = null;
+                  toast("已回滚。Redo 现在可用");
+                  renderActions();
+                },
+              ),
             );
           }
           if (state.confirming === "redo") {
             redoBtn.dataset.busy = "true";
             redo.append(
-              confirmBox("恢复刚回滚掉的后续对话。文件不会自动再改回去。", "确认 Redo", false, () => {
-                state.rolledBack = false;
-                state.confirming = null;
-                toast("已恢复后续对话");
-                renderActions();
-              }),
+              confirmBox(
+                "恢复刚回滚掉的后续对话。文件不会自动再改回去。",
+                "确认 Redo",
+                false,
+                () => {
+                  state.rolledBack = false;
+                  state.confirming = null;
+                  toast("已恢复后续对话");
+                  renderActions();
+                },
+              ),
             );
           }
         }
