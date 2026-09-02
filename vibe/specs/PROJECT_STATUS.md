@@ -23,7 +23,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 - Worktree checkbox routing is merged into `czz-dev` (`c9ee09b`): the checkbox drives Desktop `setComposerMode(worktree|local)`, and the workspace surface is the compact changed-file line. Tracked in [task card](260902/1340-worktree-checkbox-routing/task-card.md).
 - In-turn interjection items (2026-09-02): `HostItem.userMessage` plus Grok live/history unwrap and Pi history folding are implemented; OMP/Claude/DSH/Cursor and Desktop reload remain. Tracked in [task card](260902/1437-in-turn-interjection-items/task-card.md).
 - Grok steer + archived listing (2026-09-02 14:00): grok 1.0.13 has no `x.ai/interject`; the Adapter now calls `_x.ai/interject` with `{sessionId, text}`, settles on checkpoint identity after waiting for the persisted `turn_completed`, and the Grok `1 + deliveredInterjections` relaxation from `2155d93` is withdrawn. `codexhost thread list` gains `--archived true|false` and an `archived` field on external rows so EyPc can retire Desktop-archived Threads. Tracked in [task card](260902/1400-grok-interject-archived-list/task-card.md) and OpenSpec [add-delegation-thread-list-archived](../../openspec/changes/add-delegation-thread-list-archived/proposal.md).
-- Cursor native history (2026-09-02 15:02): replace ACP live-only with Grok-style `cursor-agent acp` plus `~/.cursor/acp-sessions` resume/snapshot. Isolated on `codex/260902-cursor-native-history`. Tracked in [spec](260902/1502-cursor-native-history/spec.md).
+- Cursor native history (2026-09-02 15:02): replace ACP live-only with Grok-style `cursor-agent acp` plus `~/.cursor/acp-sessions` resume/snapshot. Merged into `czz-dev` (`467d491` / `d9809a5`). Tracked in [spec](260902/1502-cursor-native-history/spec.md).
 
 ## Active Task Index
 
@@ -41,7 +41,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 | In-turn interjection items | `implemented-partial / this-commit` | [task-card](260902/1437-in-turn-interjection-items/task-card.md), OpenSpec [add-in-turn-interjection-items](../../openspec/changes/add-in-turn-interjection-items/proposal.md) | focused vitest grok/pi/projector/fake 101 pass; typecheck pass | `HostItem.userMessage` + Grok 实时/历史剥壳 + Pi 历史折叠；OMP/Claude/DSH/Cursor 与 Desktop 重载待做 |
 | AI rules init | `implemented-local / this-repo-commit-authorized` | [task-card](260901/2034-ai-rules-init/task-card.md) | `audit_ai_rules.py --mode project` OK | CodeNote catalog 另仓未提交 |
 | czz-dev integration | existing / see task package | [docs/tasks/260831-czz-dev-integration](../../docs/tasks/260831-czz-dev-integration/spec.md) | see that verify | not migrated into `vibe/specs/` |
-| Cursor native history | `implemented-local / isolated-worktree / uncommitted` | [spec](260902/1502-cursor-native-history/spec.md) | cursor vitest 9 pass; tsc cursor+renderer | supersede Cursor live-only; Grok-style ACP + disk history; child worktree still dirty, not merged into `czz-dev` |
+| Cursor native history | `integrated 467d491 / d9809a5` | [spec](260902/1502-cursor-native-history/spec.md) | cursor vitest 9 pass; tsc cursor+renderer | supersede Cursor live-only; Grok-style ACP + disk history; child worktree retained until explicit cleanup |
 
 ## Verification State
 
@@ -59,7 +59,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 
 - Gate: `app-server-host.ts` mixes Redo, unread fallback, and workspace `extraRoots` hunks; `renderer-turn-actions.ts` mixes Host-first Redo with overlay layout
 - Blocking condition: resolved 2026-09-02 by patch-staged batches `3b0275d` / `18cfa10` / `43b6ca0`; overlay `2f3a53b` is the rollback point for the Turn-action redesign
-- Worktree control: `codex/260901-composer-workspace-bar` remains parked/contained; `codex/260902-worktree-checkbox-routing` is contained by `czz-dev` via merge `c9ee09b` (child HEAD `142fcfb`). `codex/260902-cursor-native-history` is a separate isolated line with uncommitted child-worktree implementation.
+- Worktree control: `codex/260901-composer-workspace-bar` remains parked/contained; `codex/260902-worktree-checkbox-routing` is contained by `czz-dev` via merge `c9ee09b` (child HEAD `142fcfb`). `codex/260902-cursor-native-history` is contained by merge `467d491` (child HEAD `d9809a5`).
 - Rollback note: Redo is additive (`historyRedo` optional, Host method, Renderer Host-first with official click fallback)
 
 ## Governance Baseline
