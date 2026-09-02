@@ -566,6 +566,16 @@ export class ExternalThreadRepository {
   }
 }
 
+export function isEphemeralDerivedThread(record: StoredThreadRecordV1): boolean {
+  return record.ephemeral === true && record.forkSource !== undefined;
+}
+
+export function navigationHostThreadId(record: StoredThreadRecordV1): HostThreadId {
+  return isEphemeralDerivedThread(record) && record.forkSource
+    ? record.forkSource.hostThreadId
+    : record.hostThreadId;
+}
+
 export function createExternalThreadRecordInput(input: {
   hostThreadId?: HostThreadId;
   createRequestId?: string;

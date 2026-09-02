@@ -68,6 +68,7 @@ import {
   derivedThreadName,
   ExternalThreadRepository,
   externalThreadValue,
+  navigationHostThreadId,
   type ExternalThreadStore,
 } from "./external-thread-repository.js";
 import {
@@ -1654,7 +1655,7 @@ export class AppServerHost {
           {
             threadId: entry.id,
             harnessId: record ? (record.harnessId as ExternalHarnessId) : "codex",
-            deepLink: `codex://threads/${entry.id}`,
+            deepLink: `codex://threads/${record ? navigationHostThreadId(record) : entry.id}`,
             status,
             // Only external Threads carry Host-owned unread; official rows
             // keep the Desktop's own unread authority and omit the field.
