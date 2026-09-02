@@ -71,7 +71,11 @@ import {
 } from "@codexhost/shared-contracts";
 
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
-import { ClaudeCodeExecutableError, resolveClaudeCodeExecutable } from "./command.js";
+import {
+  ClaudeCodeExecutableError,
+  resolveClaudeCodeExecutable,
+  claudeInstallationIdentity,
+} from "./command.js";
 import { forkClaudeSession } from "./claude-fork.js";
 import { mapClaudeSnapshot, mapClaudeSubagentSnapshot } from "./claude-history.js";
 import { claudeTranscriptItemId } from "./item-identity.js";
@@ -2238,7 +2242,14 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   readonly #dependencies: ClaudeAdapterDependencies;
   readonly #toolOutputLimit: number;
   readonly #continuationQuiescenceMs: number;
-  readonly #inspectionCache = new Map<string, HarnessInspection>();
+  // Keyed by cwd. `fingerprint` is the Claude Code build that produced the
+  // catalog; a later inspect against a different build re-runs the CLI so an
+  // updated model list (a new Claude generation, say) appears without a Host
+  // restart.
+  readonly #inspectionCache = new Map<
+    string,
+    { fingerprint: string | undefined; inspection: HarnessInspection }
+  >();
   readonly #inspectionInFlight = new Map<string, Promise<HarnessInspection>>();
   readonly #inspectors = new Set<ClaudeModelInspector>();
   readonly #sessions = new Set<ClaudeHarnessSession>();
@@ -2261,12 +2272,13 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     }
     this.#dependencies = dependencies ?? {
       randomUUID,
-      inspectInstallation: () => {
-        resolveClaudeCodeExecutable({
-          ...(options.command ? { command: options.command } : {}),
-          environment: options.environment ?? process.env,
-        });
-      },
+      inspectInstallation: () =>
+        claudeInstallationIdentity(
+          resolveClaudeCodeExecutable({
+            ...(options.command ? { command: options.command } : {}),
+            environment: options.environment ?? process.env,
+          }),
+        ),
       createInspector: (input) =>
         new ClaudeSdkModelInspector({
           ...input,
@@ -2312,12 +2324,15 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     const cwd = path.resolve(input.cwd ?? process.cwd());
     if (!input.refresh) {
       const cached = this.#inspectionCache.get(cwd);
-      if (cached) return cached;
+      if (cached && this.#installationUnchanged(cached.fingerprint)) return cached.inspection;
     }
     const current = this.#inspectionInFlight.get(cwd);
     if (current) return current;
-    const inspection = this.#inspectModels(cwd).then((result) => {
-      if (result.status === "ready") this.#inspectionCache.set(cwd, result);
+    const record: { fingerprint?: string } = {};
+    const inspection = this.#inspectModels(cwd, record).then((result) => {
+      if (result.status === "ready") {
+        this.#inspectionCache.set(cwd, { fingerprint: record.fingerprint, inspection: result });
+      }
       return result;
     });
     this.#inspectionInFlight.set(cwd, inspection);
@@ -2329,12 +2344,29 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     return inspection;
   }
 
-  async #inspectModels(cwd: string): Promise<HarnessInspection> {
+  /**
+   * `true` while the Claude Code build behind the command is the one a cached
+   * catalog came from. An unknown identity on either side keeps the cache; a
+   * command that no longer resolves counts as changed so the next inspect
+   * reports the real failure instead of a stale catalog.
+   */
+  #installationUnchanged(previous: string | undefined): boolean {
+    if (previous === undefined) return true;
+    try {
+      const identity = this.#dependencies.inspectInstallation();
+      return identity === undefined || identity.fingerprint === previous;
+    } catch {
+      return false;
+    }
+  }
+
+  async #inspectModels(cwd: string, record: { fingerprint?: string }): Promise<HarnessInspection> {
     let inspector: ClaudeModelInspector | null = null;
     const startedAt = Date.now();
     let stage = "resolve-executable";
     try {
-      this.#dependencies.inspectInstallation();
+      const identity = this.#dependencies.inspectInstallation();
+      if (identity) record.fingerprint = identity.fingerprint;
       stage = "startup";
       inspector = this.#dependencies.createInspector({ cwd });
       this.#inspectors.add(inspector);
