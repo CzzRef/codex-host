@@ -33,3 +33,15 @@ Host SHALL watch Git identity files for Thread cwds that have been inspected and
 
 - **WHEN** HEAD changes in an inspected Thread cwd
 - **THEN** Host SHALL notify that Thread ID so the Renderer can re-inspect
+
+#### Scenario: Primary checkout has sibling worktrees
+
+- **WHEN** the primary root lists linked worktrees through `git worktree list --porcelain`
+- **THEN** Host SHALL include each sibling worktree as its own `worktree` row after the primary and submodule rows
+- **AND** it SHALL NOT create, remove, or check out any of them
+
+#### Scenario: Thread declares additional workspace roots
+
+- **WHEN** the Thread record or official `thread/read` carries `runtimeWorkspaceRoots` outside cwd
+- **THEN** Host SHALL inspect each root that is a Git repository and include it as an `additional` row
+- **AND** a root that is not a Git repository SHALL be skipped rather than invented

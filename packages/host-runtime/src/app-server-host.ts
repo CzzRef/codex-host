@@ -1903,8 +1903,17 @@ export class AppServerHost {
       return;
     }
     let cwd: string | null = null;
+    const extraRoots: string[] = [];
+    const collectExtraRoots = (thread: Record<string, unknown> | null): void => {
+      if (!thread || !Array.isArray(thread.runtimeWorkspaceRoots)) return;
+      for (const root of thread.runtimeWorkspaceRoots) {
+        if (typeof root === "string" && root.trim().length > 0 && root !== cwd)
+          extraRoots.push(root);
+      }
+    };
     if (location.kind === "external") {
       cwd = location.record.cwd;
+      collectExtraRoots(isRecord(location.thread?.thread) ? location.thread.thread : null);
     } else {
       try {
         const response = await this.#officialRequestBroker.request("thread/read", {
@@ -1916,13 +1925,14 @@ export class AppServerHost {
           if (thread && typeof thread.cwd === "string" && thread.cwd.trim().length > 0) {
             cwd = thread.cwd;
           }
+          collectExtraRoots(thread);
         }
       } catch {
         cwd = null;
       }
     }
     const inspection = cwd
-      ? await inspectGitWorkspace(cwd)
+      ? await inspectGitWorkspace(cwd, extraRoots)
       : { cwd: "", repositories: [], watchPaths: [] };
     if (cwd) this.#workspaceWatch.track(params.data.threadId, inspection);
     const result = threadWorkspaceSnapshotSchema.parse({

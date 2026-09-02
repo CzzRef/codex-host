@@ -69,6 +69,16 @@ function parseNumstat(output: string | null): { addedLines: number; deletedLines
   return { addedLines, deletedLines };
 }
 
+function parseWorktreePaths(output: string | null): string[] {
+  if (!output) return [];
+  const paths: string[] = [];
+  for (const line of output.split("\n")) {
+    const match = /^worktree (.+)$/u.exec(line);
+    if (match?.[1]) paths.push(match[1].trim());
+  }
+  return [...new Set(paths)];
+}
+
 function parseSubmodulePaths(output: string | null): string[] {
   if (!output) return [];
   const paths: string[] = [];
@@ -135,7 +145,24 @@ async function describeRepository(
   };
 }
 
-export async function inspectGitWorkspace(cwd: string): Promise<GitWorkspaceInspection> {
+async function pushRepository(
+  repositories: ThreadWorkspaceRepository[],
+  watchPaths: Set<string>,
+  root: string,
+  kind: ThreadWorkspaceRepository["kind"],
+): Promise<void> {
+  if (repositories.length >= THREAD_WORKSPACE_REPOSITORY_MAX_LENGTH) return;
+  const described = await describeRepository(root, kind);
+  if (!described) return;
+  if (repositories.some((repository) => repository.root === described.repository.root)) return;
+  repositories.push(described.repository);
+  for (const path of described.watchPaths) watchPaths.add(path);
+}
+
+export async function inspectGitWorkspace(
+  cwd: string,
+  extraRoots: readonly string[] = [],
+): Promise<GitWorkspaceInspection> {
   const resolvedCwd = await realDirectory(cwd);
   const toplevel = await git(resolvedCwd, ["rev-parse", "--show-toplevel"]);
   if (!toplevel) {
@@ -149,14 +176,17 @@ export async function inspectGitWorkspace(cwd: string): Promise<GitWorkspaceInsp
     (await git(primary.repository.root, ["ls-files", "--stage"])) ??
     (await git(primary.repository.root, ["submodule", "status", "--recursive"]));
   for (const relativePath of parseSubmodulePaths(submoduleOutput)) {
-    if (repositories.length >= THREAD_WORKSPACE_REPOSITORY_MAX_LENGTH) break;
     const submoduleRoot = resolve(primary.repository.root, relativePath);
     if (!submoduleRoot.startsWith(`${primary.repository.root}${sep}`)) continue;
-    const described = await describeRepository(submoduleRoot, "submodule");
-    if (!described) continue;
-    if (repositories.some((repository) => repository.root === described.repository.root)) continue;
-    repositories.push(described.repository);
-    for (const path of described.watchPaths) watchPaths.add(path);
+    await pushRepository(repositories, watchPaths, submoduleRoot, "submodule");
+  }
+  const worktreeOutput = await git(primary.repository.root, ["worktree", "list", "--porcelain"]);
+  for (const worktreeRoot of parseWorktreePaths(worktreeOutput)) {
+    await pushRepository(repositories, watchPaths, worktreeRoot, "worktree");
+  }
+  for (const extraRoot of extraRoots) {
+    if (typeof extraRoot !== "string" || extraRoot.trim().length === 0) continue;
+    await pushRepository(repositories, watchPaths, extraRoot, "additional");
   }
   return { cwd: resolvedCwd, repositories, watchPaths: [...watchPaths] };
 }

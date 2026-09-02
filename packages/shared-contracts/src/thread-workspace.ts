@@ -14,7 +14,12 @@ export const THREAD_WORKSPACE_NAME_MAX_LENGTH = 256;
 export const THREAD_WORKSPACE_BRANCH_MAX_LENGTH = 256;
 export const THREAD_WORKSPACE_SHA_MAX_LENGTH = 64;
 
-export const threadWorkspaceRepositoryKindSchema = z.enum(["primary", "submodule"]);
+export const threadWorkspaceRepositoryKindSchema = z.enum([
+  "primary",
+  "submodule",
+  "worktree",
+  "additional",
+]);
 export type ThreadWorkspaceRepositoryKind = z.infer<typeof threadWorkspaceRepositoryKindSchema>;
 
 export const threadWorkspaceRepositorySchema = z
