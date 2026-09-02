@@ -503,6 +503,7 @@ describe("mapping-store package", () => {
       nativeSessionRef: nativeRef,
       turnMappings: [mapping(1)],
     });
+    expect(replaced.historyRedo).toBeUndefined();
     await store.close();
   });
 
@@ -547,6 +548,99 @@ describe("mapping-store package", () => {
       await readFile(path.join(directory, "threads", `${threadId}.json`), "utf8"),
     ) as StoredThreadRecordV1;
     expect(persisted).toEqual(replaced);
+    await store.close();
+  });
+
+  it("stashes and restores a distinct last-Turn Redo slot", async () => {
+    const directory = await temporaryStoreDirectory();
+    const first = new MappingStore({ directory, instanceId: "first" });
+    await first.initialize();
+    await createReady(first);
+    await first.upsertTurnMappings(threadId, [mapping(2)]);
+    const before = await first.getThread(threadId);
+    const rolledBackRef = nativeSessionRefSchema.parse({
+      harnessId,
+      nativeSessionId: "native-session-rolled-back",
+      formatVersion: 1,
+    }) as NativeSessionRef;
+
+    const rolledBack = await first.replaceReadySessionAfterLastTurn({
+      hostThreadId: threadId,
+      nativeSessionRef: rolledBackRef,
+      turnMappings: [mappingForSession(rolledBackRef, 1)],
+    });
+    expect(rolledBack.historyRedo).toEqual({
+      nativeSessionRef: nativeRef,
+      turnMappings: [mapping(1), mapping(2)],
+    });
+    await first.close();
+
+    const second = new MappingStore({ directory, instanceId: "second" });
+    await second.initialize();
+    await expect(second.getThread(threadId)).resolves.toEqual(rolledBack);
+    const restored = await second.replaceReadySessionAfterRedo({
+      hostThreadId: threadId,
+      nativeSessionRef: nativeRef,
+      turnMappings: [mapping(1), mapping(2)],
+    });
+    expect(restored.historyRedo).toBeUndefined();
+    expect(restored).toMatchObject({
+      nativeSessionRef: nativeRef,
+      turnMappings: [mapping(1), mapping(2)],
+    });
+    expect(restored.revision).toBe((before?.revision ?? 0) + 2);
+    await second.close();
+  });
+
+  it("clears the Redo slot when a new Host Turn is persisted", async () => {
+    const directory = await temporaryStoreDirectory();
+    const store = new MappingStore({ directory });
+    await store.initialize();
+    await createReady(store);
+    await store.upsertTurnMappings(threadId, [mapping(2)]);
+    const rolledBackRef = nativeSessionRefSchema.parse({
+      harnessId,
+      nativeSessionId: "native-session-rolled-back",
+      formatVersion: 1,
+    }) as NativeSessionRef;
+    await store.replaceReadySessionAfterLastTurn({
+      hostThreadId: threadId,
+      nativeSessionRef: rolledBackRef,
+      turnMappings: [mappingForSession(rolledBackRef, 1)],
+    });
+
+    const continued = await store.upsertTurnMappings(threadId, [
+      mappingForSession(rolledBackRef, 2),
+    ]);
+    expect(continued.historyRedo).toBeUndefined();
+    expect(continued.turnMappings).toHaveLength(2);
+    await store.close();
+  });
+
+  it("rejects Redo replacement that does not match the stashed slot", async () => {
+    const directory = await temporaryStoreDirectory();
+    const store = new MappingStore({ directory });
+    await store.initialize();
+    await createReady(store);
+    const rolledBackRef = nativeSessionRefSchema.parse({
+      harnessId,
+      nativeSessionId: "native-session-rolled-back",
+      formatVersion: 1,
+    }) as NativeSessionRef;
+    const rolledBack = await store.replaceReadySessionAfterLastTurn({
+      hostThreadId: threadId,
+      nativeSessionRef: rolledBackRef,
+      turnMappings: [],
+    });
+
+    await expect(
+      store.replaceReadySessionAfterRedo({
+        hostThreadId: threadId,
+        nativeSessionRef: rolledBackRef,
+        turnMappings: [mappingForSession(rolledBackRef, 1)],
+      }),
+    ).rejects.toMatchObject({ code: "MAPPING_CONFLICT" });
+    await expect(store.getThread(threadId)).resolves.toEqual(rolledBack);
     await store.close();
   });
 

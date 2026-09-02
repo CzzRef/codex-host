@@ -283,6 +283,16 @@ describe("Harness Model runtime contracts", () => {
       locked: true,
     });
     expect(
+      threadInspectionSchema.parse({
+        owner: "external",
+        harnessId: "pi",
+        transportModelId: "codexhost/pi-native",
+        history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
+        historyRedoAvailable: true,
+        locked: true,
+      }),
+    ).toMatchObject({ historyRedoAvailable: true });
+    expect(
       threadInspectionSchema.safeParse({
         owner: "external",
         harnessId: "pi",

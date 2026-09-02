@@ -15,6 +15,7 @@ export type {
   DelegationStatus,
   FindRecentDelegationInput,
   ReplaceReadySessionAfterLastTurnInput,
+  ReplaceReadySessionAfterRedoInput,
   ReplaceReadySessionInput,
   StoredDelegationRecordV1,
   StoredThreadRecordV1,

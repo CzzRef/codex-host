@@ -11,6 +11,7 @@ import {
   type DelegationStatus,
   type FindRecentDelegationInput,
   type ReplaceReadySessionAfterLastTurnInput,
+  type ReplaceReadySessionAfterRedoInput,
   type ReplaceReadySessionInput,
   type StoredDelegationRecordV1,
   type StoredThreadRecordV1,
@@ -51,6 +52,9 @@ export interface ExternalThreadStore {
   replaceReadySession(input: ReplaceReadySessionInput): Promise<StoredThreadRecordV1>;
   replaceReadySessionAfterLastTurn(
     input: ReplaceReadySessionAfterLastTurnInput,
+  ): Promise<StoredThreadRecordV1>;
+  replaceReadySessionAfterRedo(
+    input: ReplaceReadySessionAfterRedoInput,
   ): Promise<StoredThreadRecordV1>;
   upsertTurnMappings(
     hostThreadId: HostThreadId,
@@ -423,6 +427,59 @@ export class ExternalThreadRepository {
       turns: snapshot.turns.map((turn, index) => {
         const mapping = mappings[index];
         if (!mapping) throw new Error("Last-Turn rollback Snapshot mapping is incomplete");
+        return projectHistoricalTurn({
+          turnId: mapping.hostTurnId,
+          cwd: current.cwd,
+          snapshot: turn,
+        });
+      }),
+    };
+  }
+
+  async commitLastTurnRedo(
+    current: StoredThreadRecordV1,
+    nativeSessionRef: NativeSessionRef,
+    snapshot: HostThreadSnapshot,
+  ): Promise<AlignedExternalSnapshot> {
+    const historyRedo = current.historyRedo;
+    if (
+      current.state !== "ready" ||
+      !historyRedo ||
+      nativeSessionRef.harnessId !== current.harnessId ||
+      nativeSessionRef.nativeSessionId !== historyRedo.nativeSessionRef.nativeSessionId ||
+      snapshot.turns.length !== historyRedo.turnMappings.length
+    ) {
+      throw new Error("Last-Turn redo is not an exact stashed Session restoration");
+    }
+    const mappings = snapshot.turns.map((turn, index): StoredTurnMappingV1 => {
+      const previous = historyRedo.turnMappings[index];
+      if (
+        !previous ||
+        turn.nativeTurnRef.harnessId !== current.harnessId ||
+        turn.nativeTurnRef.nativeSessionId !== nativeSessionRef.nativeSessionId ||
+        turn.nativeTurnRef.nativeTurnKey !== previous.nativeTurnRef.nativeTurnKey ||
+        (turn.checkpoint &&
+          (turn.checkpoint.harnessId !== current.harnessId ||
+            turn.checkpoint.nativeSessionId !== nativeSessionRef.nativeSessionId))
+      ) {
+        throw new Error("Last-Turn redo Snapshot identity is invalid");
+      }
+      return {
+        hostTurnId: previous.hostTurnId,
+        nativeTurnRef: turn.nativeTurnRef,
+        ...(turn.checkpoint ? { nativeCheckpointRef: turn.checkpoint } : {}),
+      };
+    });
+    const nextRecord = await this.store.replaceReadySessionAfterRedo({
+      hostThreadId: current.hostThreadId,
+      nativeSessionRef,
+      turnMappings: mappings,
+    });
+    return {
+      record: nextRecord,
+      turns: snapshot.turns.map((turn, index) => {
+        const mapping = mappings[index];
+        if (!mapping) throw new Error("Last-Turn redo Snapshot mapping is incomplete");
         return projectHistoricalTurn({
           turnId: mapping.hostTurnId,
           cwd: current.cwd,

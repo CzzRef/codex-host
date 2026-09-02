@@ -308,6 +308,7 @@ const externalThreadInspectionSchema = z
     availableThinkingOptions: harnessThinkingOptionsSchema.optional(),
     effectivePermissionModeId: harnessPermissionModeIdSchema.optional(),
     history: harnessHistoryCapabilitiesSchema,
+    historyRedoAvailable: z.boolean().optional(),
     usage: threadUsageSnapshotSchema.optional(),
     locked: z.literal(true),
   })
