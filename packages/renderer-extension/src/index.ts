@@ -171,6 +171,8 @@ export type { RendererWorkspaceBar } from "./renderer-workspace-bar.js";
 export {
   BRANCH_WORKTREE_PREFERENCE_KEY,
   BRANCH_WORKTREE_TOGGLE_ATTRIBUTE,
+  draftWorktreeModeBindingFromButton,
+  findDraftWorktreeModeBinding,
   installRendererBranchWorktreeToggle,
   isSwitchBranchButton,
   readBranchWorktreePreference,

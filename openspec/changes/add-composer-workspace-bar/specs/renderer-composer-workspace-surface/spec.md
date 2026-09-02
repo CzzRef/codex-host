@@ -32,3 +32,26 @@ The Renderer SHALL subscribe to `codexhost/thread/workspace/updated` through the
 
 - **WHEN** a workspace-updated notification arrives for the Composer Thread
 - **THEN** the visible rows SHALL match the next successful inspection
+
+### Requirement: Worktree preference controls the official new-chat execution mode
+
+For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL route the persisted Worktree preference through Codex Desktop's owned `setComposerMode` state. Checked SHALL select `worktree`; unchecked SHALL select `local`. The Renderer SHALL NOT invoke Git or provision a Worktree itself.
+
+#### Scenario: Checked preference selects a new Worktree
+
+- **GIVEN** the current surface is a new-chat draft and the preference is checked
+- **WHEN** the official run-location control currently reports `local`
+- **THEN** the Renderer SHALL set the official Composer mode to `worktree`
+- **AND** Codex Desktop SHALL remain responsible for provisioning the Worktree when the draft is submitted
+
+#### Scenario: User opts out of a new Worktree
+
+- **WHEN** the user unchecks the preference on a verified new-chat draft
+- **THEN** the Renderer SHALL set the official Composer mode to `local`
+- **AND** SHALL persist the unchecked preference
+
+#### Scenario: Mode ownership is unsupported or belongs to an existing Thread
+
+- **WHEN** the run-location React ownership chain is missing, ambiguous, unsupported, or carries a non-null conversation id
+- **THEN** the Renderer SHALL render no Worktree checkbox
+- **AND** SHALL NOT change Composer mode, Thread cwd, branch state, or Git Worktrees

@@ -61,3 +61,10 @@
 - [x] 6.1 Enumerate `git worktree list --porcelain` roots of the primary checkout as `worktree` rows
 - [x] 6.2 Accept Thread `runtimeWorkspaceRoots` as `additional` rows without creating or checking out anything
 - [x] 6.3 Contract kinds `worktree` / `additional`; Host and shared-contracts tests for both
+
+## 7. Worktree checkbox routing correction
+
+- [x] 7.1 Specify checked/unchecked routing through Desktop-owned new-chat Composer mode
+- [x] 7.2 Bind only a verified null-conversation run-location React owner and fail closed elsewhere
+- [x] 7.3 Cover mode routing, semantic ownership, false-positive labels, and Composer E2E
+- [x] 7.4 Run focused renderer tests, TypeScript typecheck, and strict OpenSpec validation
