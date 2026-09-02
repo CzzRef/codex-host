@@ -122,6 +122,12 @@ export interface GrokAdapterOptions {
   commandTimeoutMs?: number;
   closeTimeoutMs?: number;
   toolOutputLimit?: number;
+  /**
+   * How long a finished prompt may wait for Grok to persist its terminal
+   * `turn_completed` record before the Host Turn settles on the pre-terminal
+   * Native Turn identity.
+   */
+  nativeHistorySettleTimeoutMs?: number;
 }
 
 export interface GrokAdapterDependencies {
@@ -181,9 +187,8 @@ interface ActiveTurn {
   approvals: Map<HostInteractionId, ActiveApproval>;
   cancellationRequested: boolean;
   pendingSteers: string[];
-  /** Steers Grok accepted natively during this Turn; each may persist its own Native Turn. */
-  deliveredInterjections: number;
-  beforeNativeTurnKeys: Set<string>;
+  /** Identities of the Native Turns already persisted before this prompt ran. */
+  beforeNativeTurnIds: Set<string>;
   completion: Promise<void>;
   resolveCompletion(): void;
 }
@@ -214,6 +219,21 @@ function capabilitiesForModels(modelState: GrokModelState): HarnessSessionCapabi
   };
 }
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
+const DEFAULT_NATIVE_HISTORY_SETTLE_TIMEOUT_MS = 1_500;
+const NATIVE_HISTORY_SETTLE_POLL_MS = 50;
+
+/**
+ * A Native Turn is keyed by its user event until Grok persists `turn_completed`,
+ * after which the prompt id takes over. The prompt index (checkpoint) never
+ * changes, so it is the stable identity for "already persisted before".
+ */
+function nativeTurnIdentity(turn: HostThreadSnapshot["turns"][number]): string {
+  return turn.checkpoint?.checkpointId ?? turn.nativeTurnRef.nativeTurnKey;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 function invalidState(message: string): HarnessError {
   return { code: "invalidState", message, retryable: false };
@@ -301,6 +321,7 @@ class GrokHarnessSession implements HarnessSession {
   readonly #channel = new HarnessOutputChannel<HarnessOutput>();
   readonly #closeTimeoutMs: number;
   readonly #cwd: string;
+  readonly #nativeHistorySettleTimeoutMs: number;
   readonly #modelState: GrokModelState;
   readonly #onClosed: () => void;
   readonly #refreshCredits: () => Promise<unknown>;
@@ -325,6 +346,7 @@ class GrokHarnessSession implements HarnessSession {
     options: {
       closeTimeoutMs: number;
       history: GrokTransportEvent[];
+      nativeHistorySettleTimeoutMs: number;
       initialUsage?: HostUsage | null;
       initialPermissionModeId: HarnessPermissionModeId;
       knownTurnRefs?: NativeTurnRef[];
@@ -339,6 +361,7 @@ class GrokHarnessSession implements HarnessSession {
     this.#onClosed = onClosed;
     this.#refreshCredits = options.refreshCredits;
     this.#closeTimeoutMs = options.closeTimeoutMs;
+    this.#nativeHistorySettleTimeoutMs = options.nativeHistorySettleTimeoutMs;
     this.#randomUUID = options.randomUUID;
     this.#toolOutputLimit = options.toolOutputLimit;
     this.initialUsage = options.initialUsage ?? null;
@@ -487,10 +510,7 @@ class GrokHarnessSession implements HarnessSession {
       approvals: new Map(),
       cancellationRequested: false,
       pendingSteers: [],
-      deliveredInterjections: 0,
-      beforeNativeTurnKeys: new Set(
-        this.#snapshot.turns.map((turn) => turn.nativeTurnRef.nativeTurnKey),
-      ),
+      beforeNativeTurnIds: new Set(this.#snapshot.turns.map(nativeTurnIdentity)),
       completion,
       resolveCompletion,
     };
@@ -582,8 +602,7 @@ class GrokHarnessSession implements HarnessSession {
       approvals: new Map(),
       cancellationRequested: false,
       pendingSteers: [],
-      deliveredInterjections: 0,
-      beforeNativeTurnKeys: new Set(),
+      beforeNativeTurnIds: new Set(),
       completion,
       resolveCompletion,
     };
@@ -817,7 +836,6 @@ class GrokHarnessSession implements HarnessSession {
     try {
       await this.#transport.interject(text);
       if (this.#active !== active || active.cancellationRequested) return;
-      active.deliveredInterjections += 1;
       const index = active.pendingSteers.indexOf(text);
       if (index >= 0) active.pendingSteers.splice(index, 1);
     } catch {
@@ -1170,20 +1188,14 @@ class GrokHarnessSession implements HarnessSession {
     let checkpoint: NativeCheckpointRef | undefined;
     let created: HostThreadSnapshot["turns"] = [];
     try {
-      history = await this.#refreshSnapshot();
-      created = this.#snapshot.turns.filter(
-        (turn) => !active.beforeNativeTurnKeys.has(turn.nativeTurnRef.nativeTurnKey),
-      );
-      // A steer delivered through native interject may be persisted by Grok as
-      // its own Native Turn, so one Host Turn legitimately spans the prompt's
-      // Turn plus up to one Turn per delivered interjection. Anything outside
-      // that range is still a protocol fault. The prompt's Native Turn keeps
-      // the Host Turn identity and checkpoint, so rewind/redo still target the
-      // state before the whole Host Turn.
-      const maxExpected = 1 + active.deliveredInterjections;
-      if (created.length < 1 || created.length > maxExpected) {
+      ({ history, created } = await this.#awaitPersistedTurn(active));
+      // grok 1.0.13 delivers an accepted `_x.ai/interject` inside the running
+      // prompt's Native Turn (same prompt_id, one turn_completed), so one prompt
+      // persists exactly one Native Turn. Anything else leaves the Host Turn
+      // without an unambiguous Native identity.
+      if (created.length !== 1) {
         throw new Error(
-          `Grok Turn persisted ${created.length} new Native Turns; expected 1 to ${maxExpected} (${active.deliveredInterjections} interjection(s) delivered)`,
+          `Grok Turn persisted ${created.length} new Native Turns; exactly one is required`,
         );
       }
       nativeTurnRef = created[0]?.nativeTurnRef;
@@ -1202,10 +1214,7 @@ class GrokHarnessSession implements HarnessSession {
       (outcome.status === "succeeded" || outcome.status === "cancelled")
     ) {
       this.#completeOpenItems(active, outcome);
-      for (const turn of created) {
-        active.beforeNativeTurnKeys.add(turn.nativeTurnRef.nativeTurnKey);
-      }
-      active.deliveredInterjections = 0;
+      for (const turn of created) active.beforeNativeTurnIds.add(nativeTurnIdentity(turn));
       const next = active.pendingSteers.shift();
       if (!next) {
         this.#finish(
@@ -1243,6 +1252,31 @@ class GrokHarnessSession implements HarnessSession {
       sessionUsageFromHistory(history) ?? (response ? usageFromPrompt(response) : null),
       nativeTurnRef,
     );
+  }
+
+  /**
+   * Grok answers `session/prompt` before it appends the terminal
+   * `turn_completed` record to `updates.jsonl`; until that record lands the
+   * new Native Turn is keyed by its user event and reads as `unknown`. A Host
+   * Turn settled on that snapshot would carry an identity no later history
+   * read repeats, and a follow-up prompt in the same Host Turn would count the
+   * re-keyed Turn as new. Wait (bounded) for the persisted terminal record.
+   */
+  async #awaitPersistedTurn(
+    active: ActiveTurn,
+  ): Promise<{ history: GrokTransportEvent[]; created: HostThreadSnapshot["turns"] }> {
+    const deadline = Date.now() + this.#nativeHistorySettleTimeoutMs;
+    for (;;) {
+      const history = await this.#refreshSnapshot();
+      const created = this.#snapshot.turns.filter(
+        (turn) => !active.beforeNativeTurnIds.has(nativeTurnIdentity(turn)),
+      );
+      const [first] = created;
+      const persisted =
+        created.length === 1 && first !== undefined && first.outcome.status !== "unknown";
+      if (persisted || created.length > 1 || Date.now() >= deadline) return { history, created };
+      await delay(NATIVE_HISTORY_SETTLE_POLL_MS);
+    }
   }
 
   async #refreshNativeTitle(): Promise<void> {
@@ -1379,6 +1413,7 @@ export class GrokAdapter implements HarnessAdapter {
   readonly harnessId: HarnessId = grokHarnessId;
   readonly #closeTimeoutMs: number;
   readonly #dependencies: GrokAdapterDependencies;
+  readonly #nativeHistorySettleTimeoutMs: number;
   readonly #environment: NodeJS.ProcessEnv | undefined;
   readonly #fetchCredits: (input: {
     environment?: NodeJS.ProcessEnv;
@@ -1392,6 +1427,8 @@ export class GrokAdapter implements HarnessAdapter {
 
   constructor(options: GrokAdapterOptions = {}, dependencies?: GrokAdapterDependencies) {
     this.#closeTimeoutMs = options.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
+    this.#nativeHistorySettleTimeoutMs =
+      options.nativeHistorySettleTimeoutMs ?? DEFAULT_NATIVE_HISTORY_SETTLE_TIMEOUT_MS;
     this.#environment = options.environment;
     this.#toolOutputLimit = options.toolOutputLimit ?? DEFAULT_GROK_TOOL_OUTPUT_LIMIT;
     this.#dependencies = dependencies ?? {
@@ -1723,6 +1760,7 @@ export class GrokAdapter implements HarnessAdapter {
         {
           closeTimeoutMs: this.#closeTimeoutMs,
           history,
+          nativeHistorySettleTimeoutMs: this.#nativeHistorySettleTimeoutMs,
           initialUsage,
           initialPermissionModeId,
           ...(input.kind === "resume" && input.knownTurnRefs

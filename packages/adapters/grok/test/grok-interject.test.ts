@@ -7,23 +7,22 @@ import {
 } from "../src/grok-interject.js";
 
 describe("Grok native interject", () => {
-  it("builds the ACP prompt payload used by the native pager", () => {
-    expect(GROK_INTERJECT_METHOD).toBe("x.ai/interject");
+  it("targets the prefixed ACP extension method with a plain text payload", () => {
+    // grok 1.0.13: `x.ai/interject` is Method not found; `_x.ai/interject`
+    // wants `text`, not an ACP prompt block array.
+    expect(GROK_INTERJECT_METHOD).toBe("_x.ai/interject");
     expect(buildGrokInterjectParams("session-1", "second")).toEqual({
       sessionId: "session-1",
-      prompt: [{ type: "text", text: "second" }],
+      text: "second",
     });
   });
 
-  it("parses camelCase and snake_case acknowledgements", () => {
+  it("parses the nested and flat status acknowledgements", () => {
     expect(parseGrokInterjectResult(undefined)).toEqual({});
-    expect(parseGrokInterjectResult({ interjectionId: "inj-1", queued: false })).toEqual({
-      interjectionId: "inj-1",
-      queued: false,
+    expect(parseGrokInterjectResult({ result: { status: "queued" } })).toEqual({
+      status: "queued",
     });
-    expect(parseGrokInterjectResult({ interjection_id: "inj-2", queued: true })).toEqual({
-      interjectionId: "inj-2",
-      queued: true,
-    });
+    expect(parseGrokInterjectResult({ status: "queued" })).toEqual({ status: "queued" });
+    expect(parseGrokInterjectResult({ result: {} })).toEqual({});
   });
 });
