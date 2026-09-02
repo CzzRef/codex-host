@@ -2,6 +2,7 @@ import type { RoutedHarnessId } from "@codexhost/protocol-core";
 import type {
   HarnessInspection,
   HarnessModelRef,
+  HarnessPermissionModeId,
   HarnessSessionState,
   HarnessThinkingOptionId,
 } from "@codexhost/harness-adapter";
@@ -53,6 +54,8 @@ export interface DelegationStartInput {
   requestId?: string;
   model?: HarnessModelRef;
   thinkingOptionId?: HarnessThinkingOptionId;
+  /** Harness Permission Mode id from `harness inspect` permissionModes; the child runs in it from its first Turn. */
+  permissionModeId?: HarnessPermissionModeId;
 }
 
 export interface HarnessInspectInput {
@@ -67,10 +70,17 @@ export interface HarnessInspectResult {
 }
 
 export interface DelegationConfigurationResult {
-  requested?: { model?: HarnessModelRef; thinkingOptionId?: HarnessThinkingOptionId };
+  requested?: {
+    model?: HarnessModelRef;
+    thinkingOptionId?: HarnessThinkingOptionId;
+    permissionModeId?: HarnessPermissionModeId;
+  };
   effective?: Pick<
     HarnessSessionState,
-    "effectiveModel" | "resolvedModelLabel" | "effectiveThinkingOptionId"
+    | "effectiveModel"
+    | "resolvedModelLabel"
+    | "effectiveThinkingOptionId"
+    | "effectivePermissionModeId"
   >;
 }
 
