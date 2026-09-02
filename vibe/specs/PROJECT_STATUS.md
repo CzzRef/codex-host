@@ -70,7 +70,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 - Project rules: created this round from former root `AGENTS.md` / `CLAUDE.md`
 - Knowledge: architecture created this round; glossary remains `docs/领域术语表.md`
 - ADR: empty index only; OpenSpec stays the capability authority
-- Error memory: one record — [Grok 插队后 Host Turn 被判 failed](../knowledge/error-memory/grok-interjection-persists-extra-native-turn.md#L1) (2026-09-02, verified; fix in `packages/adapters/grok`, uncommitted pending user commit authority)
+- Error memory: one record — [Grok 插队后 Host Turn 被判 failed](../knowledge/error-memory/grok-interjection-persists-extra-native-turn.md#L1) (2026-09-02, verified; fix landed in `2155d93` on `czz-dev`, Host restart still pending for it to take effect)
 - DB memory: not configured
 
 ## Cross-Repository Links
