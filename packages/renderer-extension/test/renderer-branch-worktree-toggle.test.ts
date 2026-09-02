@@ -1,10 +1,54 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  draftWorktreeModeBindingFromButton,
+  findDraftWorktreeModeBinding,
   isSwitchBranchButton,
   readBranchWorktreePreference,
   writeBranchWorktreePreference,
 } from "../src/renderer-branch-worktree-toggle.js";
+
+function runLocationButton(options: {
+  conversationId?: string | null;
+  duplicateOwner?: boolean;
+  mode?: "cloud" | "local" | "worktree";
+  target?: string;
+}) {
+  const setComposerMode = vi.fn();
+  const target = options.target ?? "run-location";
+  const owner = {
+    memoizedProps: {
+      composerMode: options.mode ?? "local",
+      setComposerMode,
+      conversationId: options.conversationId ?? null,
+    },
+    return: null,
+  };
+  const duplicate = options.duplicateOwner
+    ? {
+        memoizedProps: {
+          composerMode: "local",
+          setComposerMode: vi.fn(),
+          conversationId: null,
+        },
+        return: owner,
+      }
+    : owner;
+  const fiber = {
+    memoizedProps: {
+      "data-composer-navigation-target": target,
+      "aria-haspopup": "menu",
+    },
+    return: duplicate,
+  };
+  const button = {
+    matches(selector: string) {
+      return selector.includes('button[aria-haspopup="menu"]') && target === "run-location";
+    },
+  } as unknown as Element;
+  Object.defineProperty(button, "__reactFiber$test", { value: fiber });
+  return { button, setComposerMode };
+}
 
 describe("official Switch-branch worktree preference", () => {
   it("defaults to creating a worktree and remembers an opt-out", () => {
@@ -22,7 +66,7 @@ describe("official Switch-branch worktree preference", () => {
     expect(readBranchWorktreePreference(adapter)).toBe(true);
   });
 
-  it("recognizes official Switch branch buttons", () => {
+  it("recognizes only semantic Switch branch labels, not descendant text", () => {
     const button = {
       getAttribute: (name: string) => (name === "aria-label" ? "Switch branch main" : null),
       textContent: "main",
@@ -31,8 +75,36 @@ describe("official Switch-branch worktree preference", () => {
     expect(
       isSwitchBranchButton({
         getAttribute: () => null,
-        textContent: "Send",
+        textContent: "terminal output mentioning Switch branch",
       } as unknown as Element),
     ).toBe(false);
+  });
+
+  it("binds a new-chat run-location control to the official Composer mode setter", () => {
+    const { button, setComposerMode } = runLocationButton({ mode: "local" });
+    const binding = draftWorktreeModeBindingFromButton(button);
+    expect(binding?.mode).toBe("local");
+    binding?.setMode("worktree");
+    expect(setComposerMode).toHaveBeenCalledWith("worktree");
+    expect(
+      findDraftWorktreeModeBinding({
+        querySelectorAll: () => [button],
+      } as unknown as ParentNode)?.mode,
+    ).toBe("local");
+  });
+
+  it("fails closed for an existing Thread, unsupported mode, or ambiguous owner", () => {
+    expect(
+      draftWorktreeModeBindingFromButton(runLocationButton({ conversationId: "thread-1" }).button),
+    ).toBeNull();
+    expect(
+      draftWorktreeModeBindingFromButton(runLocationButton({ mode: "cloud" }).button),
+    ).toBeNull();
+    expect(
+      draftWorktreeModeBindingFromButton(runLocationButton({ duplicateOwner: true }).button),
+    ).toBeNull();
+    expect(
+      draftWorktreeModeBindingFromButton(runLocationButton({ target: "reasoning" }).button),
+    ).toBeNull();
   });
 });

@@ -61,3 +61,24 @@
 - [x] 6.1 Enumerate `git worktree list --porcelain` roots of the primary checkout as `worktree` rows
 - [x] 6.2 Accept Thread `runtimeWorkspaceRoots` as `additional` rows without creating or checking out anything
 - [x] 6.3 Contract kinds `worktree` / `additional`; Host and shared-contracts tests for both
+
+## 7. Worktree checkbox routing correction
+
+- [x] 7.1 Specify checked/unchecked routing through Desktop-owned new-chat Composer mode
+- [x] 7.2 Bind only a verified null-conversation run-location React owner and fail closed elsewhere
+- [x] 7.3 Cover mode routing, semantic ownership, false-positive labels, and Composer E2E
+- [x] 7.4 Run focused renderer tests, TypeScript typecheck, and strict OpenSpec validation
+
+## 8. Compact changed-files workspace surface
+
+- [x] 8.1 Filter workspace locations to repositories owning conversation-changed files and render only Worktree identity plus branch on one line
+- [x] 8.2 Move the file disclosure first and float its expanded list upward without Composer reflow
+- [x] 8.3 Preserve file hover previews and native Review routing while conditionally hiding duplicate native Changes/Review controls
+- [x] 8.4 Cover ownership filtering, native fallback/restoration, upward placement, and hover preview in focused unit/E2E verification
+
+## 9. Right-side changed-file disclosure
+
+- [x] 9.1 Keep changed-file Worktree identity and branch on the left of the compact line
+- [x] 9.2 Move the file disclosure to the right and show file count plus aggregate conversation-file additions/deletions
+- [x] 9.3 Align the upward file panel to the right edge and preserve direct file-to-native-change navigation
+- [x] 9.4 Update preview and E2E coverage for the attached-reference layout

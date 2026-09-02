@@ -425,16 +425,22 @@
       }
 
       .mask {
+        position: absolute;
+        z-index: 12;
+        bottom: calc(100% + 8px);
+        left: 50%;
         display: none;
-        flex-direction: column;
-        gap: 8px;
-        width: min(760px, 100%);
-        margin: 0 auto 8px;
-        padding: 8px;
+        width: min(760px, calc(100% - 36px));
+        min-height: 32px;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px;
         border: 1px solid rgb(255 255 255 / 10%);
-        border-radius: 14px;
-        background: rgb(17 17 17 / 92%);
+        border-radius: 10px;
+        background: rgb(17 17 17 / 90%);
+        box-shadow: var(--shadow);
         backdrop-filter: blur(16px);
+        transform: translateX(-50%);
       }
 
       body[data-mode="target"] .mask {
@@ -443,20 +449,25 @@
 
       .chips {
         display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
+        flex: 1;
+        flex-wrap: nowrap;
+        gap: 4px;
+        min-width: 0;
+        overflow: hidden;
       }
 
       .repo {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        min-height: 30px;
-        padding: 0 10px;
-        border: 1px solid rgb(255 255 255 / 10%);
-        border-radius: 999px;
-        background: rgb(255 255 255 / 4%);
-        font-size: 12px;
+        gap: 6px;
+        min-height: 24px;
+        min-width: 0;
+        padding: 0 6px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        font-size: 11px;
+        white-space: nowrap;
       }
 
       .repo b {
@@ -491,18 +502,19 @@
       }
 
       .files {
-        border-top: 1px solid rgb(255 255 255 / 8%);
-        padding-top: 6px;
+        position: relative;
+        flex: 0 0 auto;
+        margin-left: auto;
       }
 
       .files-toggle {
         display: flex;
-        width: 100%;
         align-items: center;
         gap: 6px;
-        padding: 4px 6px;
+        min-height: 24px;
+        padding: 3px 6px;
         border: 0;
-        border-radius: 8px;
+        border-radius: 7px;
         background: transparent;
         cursor: pointer;
         color: var(--muted);
@@ -515,10 +527,19 @@
       }
 
       .file-list {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 8px);
+        left: auto;
         display: none;
-        max-height: 132px;
+        width: min(420px, calc(100vw - 24px));
+        max-height: min(300px, 42vh);
         overflow: auto;
-        padding: 2px 0 4px;
+        padding: 6px;
+        border: 1px solid rgb(255 255 255 / 12%);
+        border-radius: 10px;
+        background: rgb(17 17 17 / 96%);
+        box-shadow: var(--shadow);
       }
 
       .files[data-open="true"] .file-list {
@@ -549,6 +570,31 @@
         text-overflow: ellipsis;
         color: #d5d5d5;
         font-size: 11px;
+      }
+
+      .file-preview {
+        position: absolute;
+        right: 428px;
+        bottom: calc(100% + 8px);
+        left: auto;
+        display: none;
+        width: min(360px, calc(100vw - 460px));
+        padding: 8px 10px;
+        border: 1px solid rgb(255 255 255 / 12%);
+        border-radius: 10px;
+        background: rgb(20 20 20 / 96%);
+        box-shadow: var(--shadow);
+        color: var(--muted);
+        font:
+          11px/16px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        white-space: pre;
+      }
+
+      .files:has(.file:hover) .file-preview {
+        display: block;
       }
 
       .composer {
@@ -680,11 +726,8 @@
         <h2>你要的</h2>
         <ol>
           <li>
-            <b>工作区 / 变更是底栏 mask</b>，贴在 Composer
-            正上方，占满对话列宽。仓库、分支、工作树、 <span class="add">+N</span>/<span class="del"
-              >-N</span
-            >
-            一眼能读完，不再截成 <code>codex-h...</code>。
+            <b>工作区 / 变更缩成单行浮层</b>，贴在 Composer 正上方。左侧只展示改动文件所在的
+            Worktree 和分支；右侧展示文件数与对话文件增删统计，并展开具体文件。
           </li>
           <li>
             <b>编辑 / 回滚 / Redo 长在选中的那一轮上</b>，做横向
@@ -707,14 +750,14 @@
         <h2>怎么实现</h2>
         <ul>
           <li>
-            工作区回到 OpenSpec 原约定：插在
-            <code>[data-codex-composer-root]</code>
-            前一个兄弟节点，不要 <code>position: fixed</code> 贴到对话右上。
+            工作区节点仍插在 <code>[data-codex-composer-root]</code>
+            前一个兄弟位置，但用固定定位贴住 Composer 顶边；向上展开时不挤动 Composer 或
+            transcript。
           </li>
           <li>
-            文件列表从底栏向上展开，选中轮次时筛「本轮文件」。点
-            <span class="add">+N</span>
-            仍走官方 Review。
+            顶部左侧保留变更文件所在 Worktree
+            与分支；右侧折叠控件展示文件数和聚合增删，文件列表贴右边向上展开，并支持悬浮 diff
+            预览与点击进入该文件的官方变更展示。原生 Changes / Review 重复区在替代控件可用时隐藏。
           </li>
           <li>
             轮次操作仍是 Host 自有节点（不能写进 React transcript），但坐标锚到选中
@@ -741,13 +784,11 @@
           </li>
         </ul>
 
-        <h2>先不动的</h2>
+        <h2>本轮状态</h2>
         <p class="hint">
-          这页只是预览。生产注入、Redo RPC、Mapping Store 先不动。你点头后再改
-          <code>renderer-workspace-bar.ts</code>
-          /
-          <code>renderer-turn-actions.ts</code>
-          和对应测试。
+          工作区单行浮层、变更文件向上展开、悬浮 diff 预览与原生重复区条件隐藏已进入
+          <code>renderer-workspace-bar.ts</code> 和自动化测试；Redo / Mapping Store
+          不在本轮改动范围。
         </p>
       </aside>
 
@@ -811,33 +852,21 @@
             </div>
 
             <div class="footer">
-              <aside class="mask" aria-label="工作区底栏">
+              <aside class="mask" aria-label="工作区变更浮层">
                 <div class="chips">
                   <span class="repo">
-                    <b>codex-host</b>
-                    <span class="branch">czz-dev</span>
-                    <button class="stat" type="button" data-open-review>
-                      <span class="tooltip">打开官方审查，查看工作区 diff</span>
-                      <span class="add">+1,226</span>
-                      <span class="del">-181</span>
-                    </button>
-                  </span>
-                  <span class="repo">
-                    <b>CodeNote</b>
-                    <span class="branch">master</span>
-                    <span class="tree">wt 260901-composer</span>
-                    <button class="stat" type="button" data-open-review>
-                      <span class="tooltip">这个工作树当前是干净的</span>
-                      <span class="add">+0</span>
-                      <span class="del">-0</span>
-                    </button>
+                    <b>260902-worktree-checkbox-routing</b>
+                    <span class="branch">· codex/260902-worktree-checkbox-routing</span>
                   </span>
                 </div>
                 <div class="files" id="files" data-open="false">
                   <button class="files-toggle" type="button" id="files-toggle">
-                    ▸ 本轮 2 个文件
+                    <span>2 个文件</span>
+                    <span class="add">+126</span>
+                    <span class="del">-21</span>
+                    <span id="files-chevron">▸</span>
                   </button>
-                  <div class="file-list">
+                  <div class="file-list" title="悬浮文件可预览 diff">
                     <button class="file" type="button">
                       <code>packages/renderer-extension/src/renderer-turn-actions.ts</code>
                       <span class="add">+86</span>
@@ -848,6 +877,11 @@
                       <span class="add">+40</span>
                       <span class="del">-9</span>
                     </button>
+                  </div>
+                  <div class="file-preview" aria-hidden="true">
+                    <span class="add">+ const compact = true;</span>
+                    <span class="del">- const inventory = allRepositories;</span>
+                    // changed-file owner only
                   </div>
                 </div>
               </aside>
@@ -1080,7 +1114,7 @@
       document.getElementById("files-toggle").addEventListener("click", () => {
         const open = files.dataset.open === "true";
         files.dataset.open = String(!open);
-        document.getElementById("files-toggle").textContent = `${open ? "▸" : "▾"} 本轮 2 个文件`;
+        document.getElementById("files-chevron").textContent = open ? "▸" : "▾";
       });
 
       document.addEventListener("click", (event) => {
