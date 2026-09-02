@@ -18,7 +18,12 @@ import type {
   HostToolExecutionItem,
   TurnOutcome,
 } from "@codexhost/harness-adapter";
-import { hostItemIdSchema, jsonValueSchema, type HostTurnId } from "@codexhost/shared-contracts";
+import {
+  hostItemIdSchema,
+  jsonValueSchema,
+  type HostTurnId,
+  type NativeTurnRef,
+} from "@codexhost/shared-contracts";
 
 import { CursorInteractions } from "./cursor-interactions.js";
 
@@ -45,6 +50,8 @@ export class CursorTurn {
   #text: HostAgentMessageItem | HostReasoningItem | undefined;
   #finished = false;
   cancellationRequested = false;
+  /** True after ACP returned a terminal stopReason; history settle may still be in flight. */
+  acpTerminal = false;
   /** Steer text waiting for the interrupted prompt to settle before it is re-prompted. */
   pendingSteer: string | undefined;
 
@@ -188,7 +195,7 @@ export class CursorTurn {
     this.#completedTools.add(update.toolCallId);
   }
 
-  finish(outcome: TurnOutcome): void {
+  finish(outcome: TurnOutcome, nativeTurnRef?: NativeTurnRef): void {
     if (this.#finished) return;
     this.#finished = true;
     this.interactions.close();
@@ -209,7 +216,11 @@ export class CursorTurn {
       );
     }
     this.#tools.clear();
-    // ACP supplies no durable native message ID. Do not manufacture a NativeTurnRef.
-    this.#event({ type: "turn.completed", turnId: this.turnId, outcome });
+    this.#event({
+      type: "turn.completed",
+      turnId: this.turnId,
+      outcome,
+      ...(nativeTurnRef ? { nativeTurnRef } : {}),
+    });
   }
 }

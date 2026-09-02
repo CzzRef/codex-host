@@ -93,11 +93,11 @@ codexhost SHALL 从同一权威模板向 `~/.agents/skills/codexhost-delegation/
 - **THEN** Host SHALL 继续使用该请求与目标 Adapter 的既有权限选择语义
 - **AND** MUST NOT 因委派默认策略而强制提升普通 Thread 权限
 
-#### Scenario: 委派给仅支持实时历史的 Cursor
-- **WHEN** 目标 Cursor Adapter 显式报告 `history.transcript: "live-only"`
+#### Scenario: 委派给仅支持实时历史的 Adapter
+- **WHEN** 目标 Adapter 显式报告 `history.transcript: "live-only"`
 - **THEN** 委派 SHALL 使用当前 Host 的实时投影提供结果读取与等待
 - **AND** MUST NOT 要求或伪造 NativeTurnRef、Fork Checkpoint 或持久化 transcript
-- **AND** Host 重启后的恢复 SHALL 明确失败并保留 Cursor 归属
+- **AND** Host 重启后的恢复 SHALL 明确失败并保留该 Harness 归属
 
 ### Requirement: 委派关系独立持久化且重复请求幂等
 Host SHALL 独立于 Thread 记录持久化 Delegation 关系，包含 Delegation 标识、父子 Thread 标识、父与目标 Harness、状态与可选 Request ID。调用方 SHALL 可以省略 Request ID；省略时 Host SHALL 在一个有界时间窗内依据父 Thread 与任务文本判定重复。Host MUST NOT 依据委派层级拒绝委派。

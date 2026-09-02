@@ -4,7 +4,7 @@
 
 ## czz-dev 的受限实时接入
 
-下文持久化合同适用于 `capabilities.history.transcript` 为 `native` 或省略的 Adapter。只有明确报告 `live-only` 的受限 Adapter 可以不提供 NativeTurnRef；仍必须使用已确认的原生 Session identity。该模式只允许 Host 保留当前进程内的实时投影，`readSnapshot`、跨进程 resume、Fork 和 Rollback 必须明确返回 unsupported，不能制造空历史、随机 native identity 或第二份持久化 transcript。Cursor 当前属于此模式，不算通过下文的持久化 History 完成标准。完整边界见 [czz-dev 接入说明](../../../../docs/czz-dev.md)。
+下文持久化合同适用于 `capabilities.history.transcript` 为 `native` 或省略的 Adapter。只有明确报告 `live-only` 的受限 Adapter 可以不提供 NativeTurnRef；仍必须使用已确认的原生 Session identity。该模式只允许 Host 保留当前进程内的实时投影，`readSnapshot`、跨进程 resume、Fork 和 Rollback 必须明确返回 unsupported，不能制造空历史、随机 native identity 或第二份持久化 transcript。Cursor 现在走 native transcript（ACP + `~/.cursor/acp-sessions`），与 Grok 一样要满足下文的持久化 History 合同；Fork/rollback 仍显式 unsupported。完整边界见 [czz-dev 接入说明](../../../../docs/czz-dev.md)。
 
 ## 三层身份
 

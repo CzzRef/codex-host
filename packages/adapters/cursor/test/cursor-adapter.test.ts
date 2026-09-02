@@ -9,6 +9,7 @@ import {
   harnessInspectionSchema,
   harnessPermissionModeIdSchema,
   hostTurnIdSchema,
+  nativeCheckpointRefSchema,
 } from "@codexhost/shared-contracts";
 
 import { CursorAdapter } from "../src/cursor-adapter.js";
@@ -18,6 +19,7 @@ import type {
   CursorTransportOptions,
   CursorTurnCallbacks,
 } from "../src/acp-transport.js";
+import type { CursorNativeMessage } from "../src/cursor-history.js";
 
 const adapters: CursorAdapter[] = [];
 afterEach(async () => {
@@ -66,12 +68,16 @@ function fixture() {
   let options: CursorTransportOptions | undefined;
   let finish: (result: PromptResponse) => void = () => {};
   const native = nativeSession();
+  const history: CursorNativeMessage[] = [];
   const transport: CursorTransport = {
     inspect: vi.fn(async (): Promise<InitializeResponse> => ({
       protocolVersion: 1,
       agentCapabilities: { loadSession: true },
     })),
-    open: vi.fn(async () => native),
+    open: vi.fn(async (input) => {
+      if (input?.kind === "resume") return { ...native, sessionId: input.sessionId };
+      return native;
+    }),
     runTurn: vi.fn((_text, handlers) => {
       callbacks = handlers;
       return new Promise<PromptResponse>((resolve) => {
@@ -87,9 +93,14 @@ function fixture() {
     close: vi.fn(async () => {
       finish({ stopReason: "cancelled" });
     }),
+    readHistory: vi.fn(async () => history),
+    sessionDirectory: vi.fn((sessionId: string) => `/synthetic/acp-sessions/${sessionId}`),
   };
   const adapter = new CursorAdapter(
-    { environment: { CODEXHOST_RUNTIME_TOKEN: "synthetic-token" } },
+    {
+      environment: { CODEXHOST_RUNTIME_TOKEN: "synthetic-token" },
+      nativeHistorySettleTimeoutMs: 0,
+    },
     (input) => {
       options = input;
       return transport;
@@ -108,6 +119,7 @@ function fixture() {
       return options;
     },
     finish: (value: PromptResponse) => finish(value),
+    history,
   };
 }
 
@@ -131,7 +143,7 @@ function observe(session: HarnessSession) {
 
 const turnId = hostTurnIdSchema.parse("turn-1");
 
-describe("Cursor live-only Adapter", () => {
+describe("Cursor native-history Adapter", () => {
   it("inspects without creating a native session and does not invent a model catalog", async () => {
     const f = fixture();
     const inspection = await f.adapter.inspect({ cwd: "/synthetic" });
@@ -141,39 +153,53 @@ describe("Cursor live-only Adapter", () => {
       catalog: { models: [] },
       capabilities: {
         configuration: { selectModel: false },
-        history: { transcript: "live-only", fork: false },
+        history: { transcript: "native", fork: false },
       },
     });
     expect(f.transport.open).not.toHaveBeenCalled();
     expect(f.transport.close).toHaveBeenCalledOnce();
   });
 
-  it("keeps the real session ID and refuses every operation requiring native transcript replay", async () => {
+  it("keeps the real session ID, reads native snapshots, and resumes the same session", async () => {
     const f = fixture();
     const session = await open(f);
     expect(session.initialState.nativeRef).toMatchObject({
       nativeSessionId: "native-cursor-session",
       harnessId: "cursor",
+      locator: { protocol: "cursor-acp", transcript: "native" },
     });
     expect(f.options.environment).toMatchObject({
       CODEXHOST_RUNTIME_TOKEN: "synthetic-token",
       CODEXHOST_THREAD_ID: "parent",
     });
+    f.history.push(
+      { blobId: "user-1", role: "user", text: "hello" },
+      { blobId: "asst-1", role: "assistant", text: "ok", nativeId: "native-turn-1" },
+    );
     expect(await session.readSnapshot()).toMatchObject({
-      ok: false,
-      error: { code: "unsupported" },
+      ok: true,
+      value: {
+        turns: [
+          {
+            nativeTurnRef: { nativeTurnKey: "native-turn-1" },
+            input: [{ type: "text", text: "hello" }],
+            outcome: { status: "succeeded" },
+          },
+        ],
+      },
     });
-    const calls = vi.mocked(f.transport.open).mock.calls.length;
     const nativeRef = session.initialState.nativeRef;
     if (!nativeRef) throw new Error("Test session has no native identity");
-    expect(
-      await f.adapter.open({
-        kind: "resume",
-        cwd: "/synthetic",
-        nativeRef,
-      }),
-    ).toMatchObject({ ok: false, error: { code: "unsupported" } });
-    expect(f.transport.open).toHaveBeenCalledTimes(calls);
+    const resumed = await f.adapter.open({
+      kind: "resume",
+      cwd: "/synthetic",
+      nativeRef,
+    });
+    expect(resumed).toMatchObject({ ok: true });
+    expect(f.transport.open).toHaveBeenCalledWith({
+      kind: "resume",
+      sessionId: "native-cursor-session",
+    });
     expect(
       await f.adapter.open({
         kind: "create",
@@ -181,9 +207,22 @@ describe("Cursor live-only Adapter", () => {
         executionPolicy: "unattended-full-access",
       }),
     ).toMatchObject({ ok: false, error: { code: "unsupported" } });
+    expect(
+      await f.adapter.open({
+        kind: "fork",
+        cwd: "/synthetic",
+        sourceRef: nativeRef,
+        checkpoint: nativeCheckpointRefSchema.parse({
+          harnessId: "cursor",
+          nativeSessionId: nativeRef.nativeSessionId,
+          checkpointId: "1",
+          formatVersion: 1,
+        }),
+      }),
+    ).toMatchObject({ ok: false, error: { code: "unsupported" } });
   });
 
-  it("finishes text and tools before a single successful terminal without fabricated NativeTurnRef", async () => {
+  it("finishes text and tools before a single successful terminal with a native Turn identity", async () => {
     const f = fixture();
     const session = await open(f);
     const observed = observe(session);
@@ -221,6 +260,10 @@ describe("Cursor live-only Adapter", () => {
       sessionUpdate: "agent_message_chunk",
       content: { type: "text", text: "Done" },
     });
+    f.history.push(
+      { blobId: "user-1", role: "user", text: "synthetic" },
+      { blobId: "asst-1", role: "assistant", text: "HelloDone", nativeId: "native-turn-1" },
+    );
     f.finish({ stopReason: "end_turn" });
     await vi.waitFor(() =>
       expect(observed.outputs.at(-1)).toMatchObject({
@@ -233,7 +276,10 @@ describe("Cursor live-only Adapter", () => {
     );
     expect(events.filter((event) => event.type === "turn.started")).toHaveLength(1);
     expect(events.filter((event) => event.type === "item.completed")).toHaveLength(3);
-    expect(events.at(-1)).not.toHaveProperty("nativeTurnRef");
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.completed",
+      nativeTurnRef: { nativeTurnKey: "native-turn-1" },
+    });
     await session.close();
     await observed.done;
   });
