@@ -68,6 +68,7 @@ import {
   derivedThreadName,
   ExternalThreadRepository,
   externalThreadValue,
+  isEphemeralDerivedThread,
   navigationHostThreadId,
   type ExternalThreadStore,
 } from "./external-thread-repository.js";
@@ -1731,6 +1732,51 @@ export class AppServerHost {
       rpcEnvelope(request, { result: archived ? {} : { thread: applied.projected } }),
     );
     await this.#notifyExternalArchiveState(applied.record.hostThreadId, archived);
+    await this.#cascadeSideChatArchiveState(applied.record.hostThreadId, archived);
+  }
+
+  /**
+   * Desktop nests side chats inside their source Thread and hides them from
+   * every listing, so archiving the source is the only archive gesture a
+   * user can make for them. Persist the same state on every side chat under
+   * the root, nested ones included, refreshing loaded projections. No Desktop
+   * frame is emitted for them: they are not sidebar rows, and the root's own
+   * thread/archived already carries the gesture.
+   */
+  async #cascadeSideChatArchiveState(rootThreadId: string, archived: boolean): Promise<void> {
+    let records: StoredThreadRecordV1[];
+    try {
+      records = await this.#repository.list();
+    } catch (error) {
+      this.#diagnose(error);
+      return;
+    }
+    const childrenBySource = new Map<string, StoredThreadRecordV1[]>();
+    for (const record of records) {
+      if (!isEphemeralDerivedThread(record) || !record.forkSource) continue;
+      const siblings = childrenBySource.get(record.forkSource.hostThreadId) ?? [];
+      siblings.push(record);
+      childrenBySource.set(record.forkSource.hostThreadId, siblings);
+    }
+    const queue = [rootThreadId];
+    const visited = new Set<string>([rootThreadId]);
+    while (queue.length > 0) {
+      const sourceId = queue.shift() as string;
+      for (const child of childrenBySource.get(sourceId) ?? []) {
+        if (visited.has(child.hostThreadId)) continue;
+        visited.add(child.hostThreadId);
+        queue.push(child.hostThreadId);
+        if (child.archived === archived) continue;
+        const loaded = this.#externalRuntime.get(child.hostThreadId) ?? null;
+        const applied = await this.#applyExternalArchiveState(
+          { kind: "external", record: loaded?.record ?? child, thread: loaded },
+          archived,
+        );
+        if (!applied.ok) {
+          this.#diagnose(`Side chat archive state could not be persisted: ${applied.message}`);
+        }
+      }
+    }
   }
 
   /**
@@ -2996,6 +3042,7 @@ export class AppServerHost {
     const applied = await this.#applyExternalArchiveState(location, archived);
     if (!applied.ok) throw new DelegationControlError("INTERNAL_ERROR", applied.message);
     await this.#notifyExternalArchiveState(applied.record.hostThreadId, archived);
+    await this.#cascadeSideChatArchiveState(applied.record.hostThreadId, archived);
     return { threadId: applied.record.hostThreadId, archived };
   }
 
@@ -4244,10 +4291,41 @@ export class AppServerHost {
     });
   }
 
+  /**
+   * The source Thread a loaded side chat rolls up to. A side chat is an
+   * ephemeral derived Thread (`forkSource` + `ephemeral`): every listing
+   * hides it and Desktop shows it inside its source, spinning the source's
+   * sidebar row while the side chat works. A list consumer that only sees the
+   * source must therefore see the side chat's activity on the source row, or
+   * it reads "completed" while Desktop reads "running". Nested side chats
+   * climb through loaded Threads; an unloaded source is treated as the root.
+   * Returns null for a Thread that is not a side chat.
+   */
+  #sideChatRootId(record: StoredThreadRecordV1): string | null {
+    if (!isEphemeralDerivedThread(record)) return null;
+    let current: StoredThreadRecordV1 = record;
+    const visited = new Set<string>([record.hostThreadId]);
+    while (isEphemeralDerivedThread(current) && current.forkSource) {
+      const sourceId = current.forkSource.hostThreadId;
+      if (visited.has(sourceId)) return null;
+      visited.add(sourceId);
+      const source = this.#externalRuntime.get(sourceId);
+      if (!source) return sourceId;
+      current = source.record;
+    }
+    return current.hostThreadId;
+  }
+
+  #sideChatRunningUnder(threadId: string): boolean {
+    return this.#externalRuntime
+      .values()
+      .some((child) => child.running && this.#sideChatRootId(child.record) === threadId);
+  }
+
   #delegationListStatus(threadId: string, entryStatus: unknown): DelegationThreadStatus {
     const thread = this.#externalRuntime.get(threadId);
     if (thread) {
-      if (thread.running) return "running";
+      if (thread.running || this.#sideChatRunningUnder(threadId)) return "running";
       const last = thread.turns.at(-1);
       const lastStatus = isRecord(last) ? last.status : undefined;
       if (lastStatus === "failed") return "failed";
@@ -4255,15 +4333,19 @@ export class AppServerHost {
       if (last) return "completed";
       return "creating";
     }
+    if (this.#sideChatRunningUnder(threadId)) return "running";
     return isRecord(entryStatus) && entryStatus.type === "active" ? "running" : "completed";
   }
 
   #delegationListAttention(threadId: string): "input" | "approval" | undefined {
+    const owns = (candidate: ExternalThread): boolean =>
+      candidate.record.hostThreadId === threadId ||
+      this.#sideChatRootId(candidate.record) === threadId;
     for (const pending of this.#pendingDesktopQuestions.values()) {
-      if (pending.thread.record.hostThreadId === threadId) return "input";
+      if (owns(pending.thread)) return "input";
     }
     for (const pending of this.#pendingDesktopApprovals.values()) {
-      if (pending.thread.record.hostThreadId === threadId) return "approval";
+      if (owns(pending.thread)) return "approval";
     }
     return undefined;
   }

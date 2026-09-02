@@ -7,6 +7,8 @@ Desktop 之外的消费者只能通过委派 CLI 接触 Host 托管的额外进�
 - 新增委派 CLI `codexhost thread archive [<thread>]` 与 `codexhost thread unarchive [<thread>]`：持久化 Host Thread 归档状态，并发送与 Desktop `thread/archive` / `thread/unarchive` 相同的 `thread/archived` / `thread/unarchived` 通知，侧栏与活跃列表同时收起或恢复。省略 `<thread>` 时使用 `CODEXHOST_THREAD_ID`。
 - 归档不停止正在运行的 Turn，与 Desktop 语义一致。
 - 原生 Codex Thread 不接受该命令（`THREAD_NOT_FOUND`），其归档权威保持在 Desktop。
+- 归档 / 取消归档级联到来源 Thread 下的 side 子对话（`ephemeral` 派生 Thread），Desktop 与 CLI 两条路径一致；子对话不单独发通知。
+- `thread list` 把运行中或挂起提问 / 审批的 side 子对话汇总到来源行的 `status` / `attention`，与 Desktop 侧栏对来源行的转圈一致；子对话本身仍不列出。
 
 ## Capabilities
 
