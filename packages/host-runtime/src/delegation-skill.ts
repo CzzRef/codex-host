@@ -51,7 +51,7 @@ Create an independent child session and submit the requested task.
 After starting the task, choose the appropriate next action based on the
 user’s request and the task:
 
-- send a follow-up message to the same Thread;
+- send a follow-up message to the same Thread, or steer its running Turn with --steer true when the Harness supports native steer;
 - cancel its current Turn;
 - read its current state immediately;
 - wait for a bounded period;

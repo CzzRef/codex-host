@@ -71,24 +71,27 @@ function rejectUnknown(parsed: ReturnType<typeof options>, allowed: readonly str
 export const DELEGATION_HELP = `usage:
   codexhost harness inspect <harness> [--cwd <path>] [--refresh true|false]
   codexhost delegate start --harness <id> --task <text> [--model <opaque-ref>] [--thinking <option-id>] [--parent-thread <thread>] [--request-id <id>]
-  codexhost thread send <thread> --message <text>
+  codexhost thread send <thread> --message <text> [--steer true|false]
   codexhost thread cancel <thread>
   codexhost thread read <thread> [--view result|messages] [--cursor <cursor>] [--limit <n>]
   codexhost thread wait <thread> [--timeout-ms <n>] [--view result|messages] [--cursor <cursor>] [--limit <n>]
-  codexhost thread list [--cwd <path>] [--all true|false] [--parent <thread>] [--limit <n>] [--cursor <cursor>] [--sort created-asc|created-desc|updated-asc|updated-desc|recency-asc|recency-desc]
+  codexhost thread list [--cwd <path>] [--all true|false] [--archived true|false] [--parent <thread>] [--limit <n>] [--cursor <cursor>] [--sort created-asc|created-desc|updated-asc|updated-desc|recency-asc|recency-desc]
   codexhost thread rename [<thread>] --name <title>
+  codexhost thread archive [<thread>]
+  codexhost thread unarchive [<thread>]
 
 Thread identifiers accept a bare ID or codex://threads/<id>. Output is JSON by default.
 harness inspect returns the target Model catalog, default Model, Thinking options, and configuration capabilities without creating a Thread. Use opaque IDs exactly as returned.
 delegate start requires --harness and --task, creates and submits the child Thread, then returns immediately. --model and --thinking select values returned by harness inspect. Omit either option to preserve that target's current default behavior. --parent-thread overrides caller inference. Reuse --request-id for idempotent retries; without it, identical recent parent/target/task/configuration requests are deduplicated briefly.
 Successful start fields: delegationId, threadId, turnId, harnessId, deepLink, status, next.read, next.wait.
-thread send starts a new Turn in an idle writable Thread and returns immediately. It fails with THREAD_BUSY instead of queueing or starting a concurrent Turn.
+thread send starts a new Turn in an idle writable Thread and returns immediately. It fails with THREAD_BUSY instead of queueing or starting a concurrent Turn. --steer true injects the message into the running Turn through the Harness's native steer (same Host Turn, delivered at its next safe gap) and returns that Turn; a Harness without native steer still fails with THREAD_BUSY.
 thread cancel requests cancellation of the current Turn while preserving the Thread. An idle Thread returns cancelled=false.
 thread read is non-blocking. Its default result view returns threadId, harnessId, status, latest turn, visible progress, result.availability/result.text, and nextCursor.
 thread read --view messages additionally returns paginated user/Agent-visible messages. The default page is 25 and --limit is capped at 100; --cursor and --limit require the messages view. Tool calls, tool output, file activity, reasoning summaries, hidden reasoning, and private Harness transcripts are never returned.
 thread wait defaults to 30000 ms and waits only until the Thread reaches a terminal state or the bounded timeout expires. A timeout is a successful running checkpoint with timedOut=true; the child keeps running.
-thread list defaults to the caller cwd, limit 25, created-desc; limit is capped at 100. --all true lists every extra process regardless of cwd. --parent uses Delegation lineage, not Codex Subagent relationships.
+thread list defaults to the caller cwd, limit 25, created-desc; limit is capped at 100. --all true lists every extra process regardless of cwd. --archived true lists archived Threads instead of live ones; external rows always carry archived. --parent uses Delegation lineage, not Codex Subagent relationships.
 thread rename persists the Host Thread title and emits the same thread/name/updated notification Desktop uses, so Codex sidebar updates without a restart. Omit <thread> to use CODEXHOST_THREAD_ID. A Desktop hand-set title is not overwritten.
+thread archive persists the Host archive state for an extra process and emits the same thread/archived notification a Desktop archive does, so the row leaves the sidebar and the live thread list at once; thread unarchive reverses it with thread/unarchived. Neither stops a running Turn. Omit <thread> to use CODEXHOST_THREAD_ID. Native Codex Threads are not accepted; archive them in Desktop.
 read and wait are non-consuming: they do not start a Turn, send input, wake an Agent, mark messages read, or inject a result into the parent Session.
 Native Codex as caller requires a session sandbox that permits local Runtime connections; otherwise RUNTIME_UNREACHABLE is returned. Native Codex as a target uses brokered official requests and is unaffected.
 
@@ -96,7 +99,7 @@ Errors are JSON: {"error":{"code":"...","message":"...","details":{...}}}.
 INVALID_ARGUMENT: fix the named argument or incompatible option combination.
 HARNESS_NOT_FOUND: choose a Harness ID listed in error.details.validHarnessIds.
 THREAD_NOT_FOUND: verify the bare ID or codex:// deep link.
-THREAD_BUSY: wait for or cancel the active Turn before sending another message.
+THREAD_BUSY: wait for or cancel the active Turn before sending another message, or resend with --steer true when the Harness supports native steer.
 PARENT_THREAD_AMBIGUOUS: pass --parent-thread explicitly.
 RUNTIME_UNREACHABLE: run inside the Host-provided environment and, for native Codex, allow local Runtime connections; codexhost never falls back to PATH or another Runtime.
 DELEGATION_FAILED: the target Session or initial task delivery failed and no successful child was published.
@@ -247,7 +250,7 @@ export async function runDelegationCli(input: {
     }
     if (group === "thread" && command === "send") {
       const parsed = options(rest);
-      rejectUnknown(parsed, ["--message"]);
+      rejectUnknown(parsed, ["--message", "--steer"]);
       if (parsed.positionals.length !== 1) {
         throw new DelegationControlError(
           "INVALID_ARGUMENT",
@@ -262,12 +265,20 @@ export async function runDelegationCli(input: {
           "Thread identifier and --message are required",
         );
       }
+      const steerValue = value(parsed, "--steer");
+      if (steerValue !== undefined && steerValue !== "true" && steerValue !== "false") {
+        throw new DelegationControlError("INVALID_ARGUMENT", "--steer must be true or false");
+      }
       writeJson(
         output,
         await requestRuntime({
           environment,
           path: "/v1/thread/send",
-          body: { threadId: normalizeThreadId(threadId), message },
+          body: {
+            threadId: normalizeThreadId(threadId),
+            message,
+            ...(steerValue === "true" ? { steer: true } : {}),
+          },
           ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
         }),
       );
@@ -379,9 +390,45 @@ export async function runDelegationCli(input: {
       );
       return 0;
     }
+    if (group === "thread" && (command === "archive" || command === "unarchive")) {
+      const parsed = options(rest);
+      rejectUnknown(parsed, []);
+      const positional = parsed.positionals[0];
+      const threadId = positional || environment[DELEGATION_THREAD_ID_ENV];
+      if (!threadId) {
+        throw new DelegationControlError(
+          "INVALID_ARGUMENT",
+          `thread ${command} requires a Thread identifier or CODEXHOST_THREAD_ID`,
+        );
+      }
+      if (parsed.positionals.length > 1) {
+        throw new DelegationControlError(
+          "INVALID_ARGUMENT",
+          `thread ${command} accepts at most one Thread identifier`,
+        );
+      }
+      writeJson(
+        output,
+        await requestRuntime({
+          environment,
+          path: "/v1/thread/archive",
+          body: { threadId: normalizeThreadId(threadId), archived: command === "archive" },
+          ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+        }),
+      );
+      return 0;
+    }
     if (group === "thread" && command === "list") {
       const parsed = options(rest);
-      rejectUnknown(parsed, ["--cwd", "--all", "--parent", "--limit", "--cursor", "--sort"]);
+      rejectUnknown(parsed, [
+        "--cwd",
+        "--all",
+        "--archived",
+        "--parent",
+        "--limit",
+        "--cursor",
+        "--sort",
+      ]);
       if (parsed.positionals.length > 0)
         throw new DelegationControlError(
           "INVALID_ARGUMENT",
@@ -410,6 +457,10 @@ export async function runDelegationCli(input: {
           "--all true cannot be combined with --cwd",
         );
       }
+      const archived = value(parsed, "--archived");
+      if (archived !== undefined && archived !== "true" && archived !== "false") {
+        throw new DelegationControlError("INVALID_ARGUMENT", "--archived must be true or false");
+      }
       writeJson(
         output,
         await requestRuntime({
@@ -417,6 +468,7 @@ export async function runDelegationCli(input: {
           path: "/v1/thread/list",
           body: {
             ...(all === "true" ? {} : { cwd: value(parsed, "--cwd") ?? process.cwd() }),
+            ...(archived === "true" ? { archived: true } : {}),
             ...(parentThread ? { parentThreadId: normalizeThreadId(parentThread) } : {}),
             limit: value(parsed, "--limit")
               ? positiveInteger(value(parsed, "--limit"), "--limit", MAX_LIMIT)

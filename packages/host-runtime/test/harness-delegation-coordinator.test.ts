@@ -206,6 +206,44 @@ describe("HarnessDelegationCoordinator", () => {
     }
   });
 
+  it("steers a running Turn on send when opted in and the Harness has native steer", async () => {
+    const value = await fixture();
+    try {
+      const started = await value.coordinator.start({
+        harnessId: "pi",
+        task: "first",
+        cwd: "/synthetic",
+        parentThreadId: "parent-thread",
+      });
+      const session = value.adapter.sessions[0];
+      if (!session) throw new Error("Missing delegated Session");
+
+      // Without native steer the documented THREAD_BUSY stands, opted in or not.
+      await expect(
+        value.coordinator.send({ threadId: started.threadId, message: "again", steer: true }),
+      ).rejects.toMatchObject({ code: "THREAD_BUSY" });
+      expect(session.steeredInputs).toEqual([]);
+
+      session.enableSteer();
+      await expect(
+        value.coordinator.send({ threadId: started.threadId, message: "again" }),
+      ).rejects.toMatchObject({ code: "THREAD_BUSY" });
+      await expect(
+        value.coordinator.send({ threadId: started.threadId, message: "now do this", steer: true }),
+      ).resolves.toMatchObject({
+        threadId: started.threadId,
+        turnId: started.turnId,
+        harnessId: "pi",
+        status: "running",
+      });
+      expect(session.steeredInputs).toEqual(["now do this"]);
+      expect(value.adapter.sessions).toHaveLength(1);
+      session.succeedTurn();
+    } finally {
+      await value.close();
+    }
+  });
+
   it("sends follow-up Turns, rejects busy sends, and cancels the active Turn", async () => {
     const value = await fixture();
     try {
