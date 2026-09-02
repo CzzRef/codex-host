@@ -55,7 +55,8 @@ Task: 1352-claude-catalog-refresh
 
 - Changed surface: `command.ts` (`ClaudeInstallationIdentity`, `claudeInstallationIdentity`), `transport.ts` (`inspectInstallation` returns the identity), `claude-code-adapter.ts` (cache entries carry the fingerprint; `#installationUnchanged`).
 - Verification: adapter + command vitest 94 pass (new: fingerprint-change re-inspect, unknown identity keeps cache, missing executable surfaces `notInstalled`; identity follows a version link and changes with the file); typecheck, eslint, prettier clean; runtime proof with the real binaries behind one symlinked command: link→2.1.252 inspect 1884 ms `claude-fable-5`, cached 0 ms, relink→2.1.258 inspect without `refresh` 2418 ms `claude-fable-5-1`, cached 1 ms.
-- Unverified gaps: the running Host (started before this change) still serves its old cache until refresh or restart; Windows path resolution of the npm shim.
+- Live check 2026-09-02 18:50: source Desktop relaunched with this build (launcher 5766 / desktop 5774 / host 5909); `codexhost harness inspect claude-code` against that Host returns `Fable | claude-fable-5-1[1m] | claude-fable-5-1` alongside Default/Opus/Sonnet/Haiku.
+- Unverified gaps: Windows path resolution of the npm shim.
 
 ## Closeout
 
