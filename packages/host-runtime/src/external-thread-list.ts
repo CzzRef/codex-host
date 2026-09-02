@@ -9,7 +9,10 @@ import {
   type ThreadListSortKey,
 } from "@codexhost/protocol-core";
 
-import { externalThreadValue } from "./external-thread-repository.js";
+import {
+  externalThreadValue,
+  isEphemeralDerivedThread,
+} from "./external-thread-repository.js";
 
 export interface ExternalThreadListRuntimeState {
   running: boolean;
@@ -101,6 +104,7 @@ function includesExternalRecord(
 ): boolean {
   if (record.state !== "ready" || !record.nativeSessionRef) return false;
   if (record.subagent) return false;
+  if (isEphemeralDerivedThread(record)) return false;
   if (record.archived !== query.archived) return false;
   if (query.cwd !== null && !query.cwd.includes(record.cwd)) return false;
   if (

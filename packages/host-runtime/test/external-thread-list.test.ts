@@ -17,6 +17,7 @@ import {
   listExternalThreadMetadata,
   resolveExternalSessionTreeIds,
 } from "../src/external-thread-list.js";
+import { navigationHostThreadId } from "../src/external-thread-repository.js";
 
 const harnessId = harnessIdSchema.parse("pi");
 
@@ -54,6 +55,30 @@ function query(params: JsonObject = {}) {
 }
 
 describe("External Thread metadata catalog", () => {
+  it("omits ephemeral derived Side Chat rows from the default directory", () => {
+    const source = record("source");
+    const sideChat = record("side-chat", {
+      ephemeral: true,
+      forkSource: {
+        hostThreadId: hostThreadIdSchema.parse("source"),
+        hostTurnId: hostTurnIdSchema.parse("source-turn"),
+      },
+    });
+    const ephemeralRoot = record("ephemeral-root", { ephemeral: true });
+    const page = listExternalThreadMetadata({
+      records: [source, sideChat, ephemeralRoot],
+      query: query(),
+      runtimeFor: () => null,
+    });
+    expect(page.data.map((entry) => entry.thread.id).sort()).toEqual([
+      "ephemeral-root",
+      "source",
+    ]);
+    expect(navigationHostThreadId(sideChat)).toBe("source");
+    expect(navigationHostThreadId(source)).toBe("source");
+    expect(navigationHostThreadId(ephemeralRoot)).toBe("ephemeral-root");
+  });
+
   it("projects only ready records without loading Native history", () => {
     const ready = record("ready");
     const provisional = record("provisional", { state: "creating" });
