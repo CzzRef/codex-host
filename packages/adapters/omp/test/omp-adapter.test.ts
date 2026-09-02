@@ -164,11 +164,59 @@ class FakeOmpTransport implements OmpTurnTransport {
 
   async respondToInteraction(): Promise<void> {}
 
+  readonly steered: string[] = [];
+  async steer(text: string): Promise<void> {
+    if (!this.onEvent) throw new Error("No active fake OMP Turn to steer");
+    this.steered.push(text);
+  }
+
   async abort(): Promise<void> {
     this.#resolveTurn?.({ text: "", cancelled: true });
   }
 
   async close(): Promise<void> {}
+}
+
+/** Holds the Turn open so a steer can arrive mid-Turn, then persists one User Entry per steer. */
+class SteerableOmpTransport extends FakeOmpTransport {
+  #resolveHeld: ((result: OmpTurnResult) => void) | null = null;
+  #promptText = "";
+
+  override runTurn(text: string, onEvent: (event: OmpTurnEvent) => void): Promise<OmpTurnResult> {
+    this.onEvent = onEvent;
+    this.#promptText = text;
+    return new Promise((resolve) => {
+      this.#resolveHeld = resolve;
+    });
+  }
+
+  succeed(answer: string): void {
+    const entries = historyTurn({
+      userId: "user-1",
+      parentId: null,
+      assistantId: "assistant-1",
+      text: this.#promptText,
+    });
+    let leafId = "assistant-1";
+    // OMP is a Pi fork: a delivered steer is a regular user message persisted
+    // as its own User Entry (Pi evidence; OMP itself not probed on this machine).
+    this.steered.splice(0).forEach((steerText, offset) => {
+      const ordinal = offset + 2;
+      entries.push(
+        ...historyTurn({
+          userId: `user-${ordinal}`,
+          parentId: leafId,
+          assistantId: `assistant-${ordinal}`,
+          text: steerText,
+        }),
+      );
+      leafId = `assistant-${ordinal}`;
+    });
+    this.history = { entries, leafId };
+    this.#resolveHeld?.({ text: answer, cancelled: false });
+    this.#resolveHeld = null;
+    this.onEvent = null;
+  }
 }
 
 class RestartableOmpTransport extends FakeOmpTransport {
@@ -229,6 +277,50 @@ describe("OMP Adapter Session environment", () => {
     expect(createTransport).toHaveBeenCalledWith(
       expect.objectContaining({ permissionMode: "write" }),
     );
+    await adapter.close();
+  });
+
+  it("steers the active Turn natively and keeps the prompt Entry as the Host Turn identity", async () => {
+    const transport = new SteerableOmpTransport();
+    const adapter = new OmpAdapter({}, { createTransport: () => transport });
+    const opened = await adapter.open({ kind: "create", cwd: "/synthetic" });
+    if (!opened.ok) throw new Error(opened.error.message);
+    const session = opened.value;
+    expect(session.capabilities.turns).toEqual({ steer: true });
+    const iterator = session.outputs[Symbol.asyncIterator]();
+    const turnId = "steer-turn" as HostTurnId;
+
+    await expect(
+      session.execute({ type: "turn.start", turnId, input: [{ type: "text", text: "first" }] }),
+    ).resolves.toEqual({ ok: true, value: { turnId } });
+    for (let step = 0; step < 4; step += 1) {
+      const next = await iterator.next();
+      if (next.done) throw new Error("Output stream ended");
+      if (next.value.kind === "event" && next.value.event.type === "item.started") break;
+    }
+    await expect(
+      session.execute({ type: "turn.steer", turnId, input: [{ type: "text", text: "second" }] }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+    expect(transport.steered).toEqual(["second"]);
+
+    transport.succeed("done");
+    let completed: HarnessOutput | null = null;
+    for (let step = 0; step < 8 && !completed; step += 1) {
+      const next = await iterator.next();
+      if (next.done) throw new Error("Output stream ended");
+      if (next.value.kind === "event" && next.value.event.type === "turn.completed") {
+        completed = next.value;
+      }
+    }
+    // The steer persisted a second User Entry; the Host Turn still succeeds
+    // and its identity/checkpoint stay on the prompt's Entry.
+    expect(completed).toMatchObject({
+      event: {
+        type: "turn.completed",
+        outcome: { status: "succeeded" },
+        nativeTurnRef: { nativeTurnKey: "user-1" },
+      },
+    });
     await adapter.close();
   });
 

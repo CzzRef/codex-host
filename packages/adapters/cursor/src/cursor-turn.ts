@@ -45,6 +45,8 @@ export class CursorTurn {
   #text: HostAgentMessageItem | HostReasoningItem | undefined;
   #finished = false;
   cancellationRequested = false;
+  /** Steer text waiting for the interrupted prompt to settle before it is re-prompted. */
+  pendingSteer: string | undefined;
 
   constructor(
     readonly turnId: HostTurnId,

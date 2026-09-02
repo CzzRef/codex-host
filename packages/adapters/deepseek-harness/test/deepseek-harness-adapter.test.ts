@@ -541,6 +541,57 @@ describe("DeepSeekHarnessAdapter local Host", () => {
     await adapter.close();
   });
 
+  it("steers the running native Turn with prompt mode steer instead of queueing", async () => {
+    const { adapter, connection } = fixture();
+    await expect(adapter.inspect()).resolves.toMatchObject({
+      status: "ready",
+      capabilities: { turns: { steer: true } },
+    });
+    const session = await openCreated(adapter);
+    expect(session.capabilities.turns).toEqual({ steer: true });
+    const sessionId = session.initialState.nativeRef?.nativeSessionId as string;
+    const turnId = hostTurnIdSchema.parse("host-turn-steer-1");
+    const collecting = collectUntilTurn(session);
+
+    await expect(
+      session.execute({
+        type: "turn.steer",
+        turnId,
+        input: [{ type: "text", text: "too early" }],
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalidState" } });
+
+    await session.execute({
+      type: "turn.start",
+      turnId,
+      input: [{ type: "text", text: "prompt 1" }],
+    });
+    connection.sessionEvent(sessionId, 0, "turn/start", { turn: 1 });
+    await expect(
+      session.execute({
+        type: "turn.steer",
+        turnId,
+        input: [{ type: "text", text: "actually do this" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+    expect(connection.calls.prompt).toHaveBeenLastCalledWith({
+      sessionId,
+      mode: "steer",
+      content: [{ type: "text", text: "actually do this" }],
+    });
+    expect(connection.calls.cancel).not.toHaveBeenCalled();
+
+    connection.sessionEvent(sessionId, 1, "user/message", {
+      source: { kind: "user" },
+      content: [{ type: "text", text: "prompt 1" }],
+    });
+    connection.sessionEvent(sessionId, 2, "turn/end", { turn: 1, reason: { kind: "completed" } });
+    const outputs = await collecting;
+    expect(
+      outputs.find((output) => output.kind === "event" && output.event.type === "turn.completed"),
+    ).toMatchObject({ event: { outcome: { status: "succeeded" } } });
+  });
+
   it("publishes stable live and historical Checkpoints for every native Turn outcome", async () => {
     const { adapter, connection } = fixture();
     await expect(adapter.inspect()).resolves.toMatchObject({
