@@ -306,6 +306,16 @@ describe("Cursor native-history Adapter", () => {
     f.finish({ stopReason: "cancelled" });
     await vi.waitFor(() => expect(f.transport.runTurn).toHaveBeenCalledTimes(2));
     expect(vi.mocked(f.transport.runTurn).mock.calls[1]?.[0]).toBe("second");
+    // The re-prompt is surfaced as an in-turn user item before it streams.
+    expect(
+      observed.outputs.some(
+        (output) =>
+          output.kind === "event" &&
+          output.event.type === "item.completed" &&
+          output.event.snapshot.item.type === "userMessage" &&
+          output.event.snapshot.item.text === "second",
+      ),
+    ).toBe(true);
     expect(
       observed.outputs.some(
         (output) => output.kind === "event" && output.event.type === "turn.completed",

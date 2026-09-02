@@ -143,6 +143,50 @@ describe("Claude history mapping", () => {
     });
   });
 
+  it("folds a delivered steer into its Turn as a user item keyed by the transcript uuid", () => {
+    const history = [
+      message("user", "user-1", "first"),
+      message(
+        "assistant",
+        "assistant-1",
+        [
+          { type: "text", text: "checking" },
+          { type: "tool_use", id: "tool-1", name: "Read", input: {} },
+        ],
+        "tool_use",
+      ),
+      message("user", "tool-result-1", [
+        { type: "tool_result", tool_use_id: "tool-1", content: "ignored" },
+      ]),
+      // PushableInput delivered the steer while the model waited on tool
+      // results: a human message after a tool_use stop.
+      message("user", "steer-1", "actually check tests"),
+      message("assistant", "assistant-2", [{ type: "text", text: "done" }], "end_turn"),
+      message("user", "user-2", "next"),
+      message("assistant", "assistant-3", [{ type: "text", text: "ok" }], "end_turn"),
+    ];
+    const snapshot = mapClaudeSnapshot(history, sessionId);
+
+    expect(snapshot.turns).toHaveLength(2);
+    expect(snapshot.turns[0]).toMatchObject({
+      nativeTurnRef: { nativeTurnKey: "user-1" },
+      input: [{ text: "first" }],
+    });
+    const steerItems = snapshot.turns[0]?.items.filter(({ item }) => item.type === "userMessage");
+    expect(steerItems).toEqual([
+      {
+        item: { type: "userMessage", itemId: "steer-1", text: "actually check tests" },
+        outcome: { status: "succeeded" },
+      },
+    ]);
+    const kinds = snapshot.turns[0]?.items.map(({ item }) => item.type) ?? [];
+    expect(kinds.indexOf("userMessage")).toBeGreaterThan(kinds.indexOf("agentMessage"));
+    expect(snapshot.turns[1]).toMatchObject({
+      nativeTurnRef: { nativeTurnKey: "user-2" },
+      input: [{ text: "next" }],
+    });
+  });
+
   it("restores root Bash calls and failed tool calls from Claude history", () => {
     const history = [
       message("user", "user-1", "inspect and edit"),

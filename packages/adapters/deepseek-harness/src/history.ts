@@ -9,6 +9,7 @@ import type {
   HostItemOutcome,
   HostItemSnapshot,
   HostReasoningItem,
+  HostUserMessageItem,
   HostThreadSnapshot,
   HostToolExecutionItem,
   HostTurnSnapshot,
@@ -243,7 +244,19 @@ export function projectDeepSeekHistory(input: {
     if (event.type === "user/message") {
       if (!isRecord(data.source) || data.source.kind !== "user") continue;
       const text = contentText(data);
-      if (text) active.input.push({ type: "text", text });
+      if (!text) continue;
+      if (active.input.length === 0) {
+        active.input.push({ type: "text", text });
+        continue;
+      }
+      // A further user message inside the native Turn is a delivered steer
+      // (`session.prompt mode:"steer"`): an in-turn user item at its position.
+      const item: HostUserMessageItem = {
+        type: "userMessage",
+        itemId: itemId(input.sessionId, event.seq, "user"),
+        text,
+      };
+      active.items.push({ item, outcome: { status: "succeeded" } });
       continue;
     }
     if (event.type === "assistant/chunk") {

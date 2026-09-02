@@ -65,13 +65,14 @@ Task: 1437-in-turn-interjection-items
 
 ## Work And Verification
 
-- Status: `implemented-partial / this-commit`.
-- Done: `HostItem.userMessage` 契约、testing fake `emitUserMessage`、projector 额外官方 `userMessage`（id 用 Host `itemId`）、Grok 实时投递 + 历史剥壳、Pi 历史折叠（`toolUse` 后的 user 为 steer；`model_change` 仍是新 prompt）与 Fork 边界跳过折叠条目。
-- Remaining: OMP 历史（与 Pi 同规则）、Claude uuid / DSH `source.kind` / Cursor re-prompt、Pi/OMP 实时条目与 `1+deliveredSteers` 回收、Grok 实时 UUID 与历史 stableId 对齐、Desktop 重载真机。
-- Verification: focused vitest grok-adapter/history、pi-history、codex-ui-projector、harness-adapter text-session 101 pass / 1 prior fail fixed; `npm run typecheck` pass.
+- Status: `implemented / focused-verified / desktop-reload-pending`.
+- Done: `HostItem.userMessage` 契约、testing fake `emitUserMessage`、projector 额外官方 `userMessage`（id 用 Host `itemId`）、Grok 实时投递 + 历史剥壳（容忍 `</user_query>` 后的尾行）、Pi/OMP 历史折叠与实时条目、Claude 历史 `tool_use` 折叠（条目 id=transcript uuid）、DSH 同 Turn 第二条 user/message、Cursor re-prompt 实时条目；Pi/OMP 结算恢复恰好一条。
+- Remaining: Desktop 视觉位置查看（4.2 后半）；Grok 实时条目 id（uuid）与历史 stableId 未对齐（Claude 已用 transcript uuid 对齐）；OMP 未在本机实测。委派子进程默认权限下受保护工具调用被拒已另立项 [1910](../1910-delegation-permission-mode/task-card.md)。
+- Verification (2026-09-02 18:2x, second pass): pi-adapter/pi-history、omp-adapter、deepseek-harness-adapter、cursor-adapter、grok/*、claude-history/claude-code-adapter、codex-ui-projector、harness-adapter 全部通过（27 文件 379 + 95）；`npm run typecheck`、eslint、prettier 通过；host-runtime app-server-host 139 pass（一次全量运行中的 side-chat 失败为顺序性抖动，单跑与复跑均通过）。
+- Live probe (2026-09-02 18:5x, restarted Host on this dist): two delegated Grok children steered via `codexhost thread send --steer true` ~5s into the Turn; Grok events show `interjected redirect_kind=interjection` with one `turn_completed`; `thread read --view messages` lists the steer as a user message between agent messages, unwrapped after tolerating Grok's trailing line (`Make sure to complete any unfinished tasks from previous turns.`). Both probe Turns ended `interrupted` because the delegated child's tool permission request was auto-rejected (`cancellation_category: permission_rejected`) — unrelated to steer; follow-up is [1910](../1910-delegation-permission-mode/task-card.md).
 
 ## Closeout
 
 - Sidecar: `main-thread`
-- Memory / error route: none yet（实现后若发现启发式误判再登记）。
+- Memory / error route: Grok 剥壳尾行已写入既有 [error-memory](../../../knowledge/error-memory/grok-interjection-persists-extra-native-turn.md)；启发式误判仍未另立新档。
 - Evolution Candidate: `none`

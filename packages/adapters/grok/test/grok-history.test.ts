@@ -51,7 +51,7 @@ describe("Grok history Fork mapping", () => {
 
   it("folds a delivered interjection into its Turn as an unwrapped user item", () => {
     const wrapped =
-      "The user sent a message while you were working:\n<user_query>\nactually check tests\n</user_query>";
+      "The user sent a message while you were working:\n<user_query>\nactually check tests\n</user_query>\nMake sure to complete any unfinished tasks from previous turns.";
     const snapshot = mapGrokReplay(
       [
         { type: "user.text", text: "first", metadata: { eventId: "user-1" } },

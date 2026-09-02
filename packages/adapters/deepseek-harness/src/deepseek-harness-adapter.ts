@@ -38,6 +38,7 @@ import {
   type HostItemSnapshot,
   type HostQuestionInteraction,
   type HostReasoningItem,
+  type HostUserMessageItem,
   type HostThreadSnapshot,
   type HostToolExecutionItem,
   type HostTurnSnapshot,
@@ -164,6 +165,8 @@ interface ActiveTurn {
   command: TurnStartCommand;
   nativeTurn: number | null;
   started: boolean;
+  /** The Host echoes the prompt as the first `user/message`; later ones are delivered steers. */
+  promptEchoed: boolean;
   cancellationRequested: boolean;
   agentItem: HostAgentMessageItem | null;
   reasoningItem: HostReasoningItem | null;
@@ -697,6 +700,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
       command,
       nativeTurn: null,
       started: false,
+      promptEchoed: false,
       cancellationRequested: false,
       agentItem: null,
       reasoningItem: null,
@@ -1341,6 +1345,24 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
         if (this.#nativeTitle?.text === title && this.#nativeTitle.source === source) return;
         this.#nativeTitle = { text: title, source };
         this.#emit({ type: "session.state.changed", state: this.#configurationState() });
+        return;
+      }
+      case "user/message": {
+        if (!active?.started) return;
+        if (!isRecord(data.source) || data.source.kind !== "user") return;
+        if (!active.promptEchoed) {
+          active.promptEchoed = true;
+          return;
+        }
+        // A second user message inside the running native Turn is the steer
+        // delivered by `session.prompt mode:"steer"`: an in-turn user item.
+        const text = contentText(data);
+        if (!text) return;
+        this.#completeReasoning(active, { status: "succeeded" });
+        this.#completeAgent(active, { status: "succeeded" });
+        const item: HostUserMessageItem = { type: "userMessage", itemId: this.#newItemId(), text };
+        this.#emit({ type: "item.started", turnId: active.command.turnId, item });
+        this.#completeItem(active, item, { status: "succeeded" });
         return;
       }
       case "turn/start": {

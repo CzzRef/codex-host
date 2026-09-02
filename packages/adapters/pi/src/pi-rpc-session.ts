@@ -68,6 +68,7 @@ export type PiInteractionResponse =
   | { requestId: string; confirmed: boolean };
 
 export type PiTurnEvent =
+  | { type: "user.message"; text: string }
   | { type: "text.delta"; messageId: string; delta: string }
   | { type: "reasoning.delta"; messageId: string; delta: string }
   | { type: "reasoning.completed"; messageId: string }
@@ -305,6 +306,17 @@ function parseAvailableModels(response: Record<string, unknown>): PiNativeModel[
   });
 }
 
+function userText(value: unknown): string | null {
+  if (!isRecord(value) || value.role !== "user" || !Array.isArray(value.content)) return null;
+  return value.content
+    .filter(
+      (content): content is Record<string, unknown> =>
+        isRecord(content) && content.type === "text" && typeof content.text === "string",
+    )
+    .map((content) => content.text as string)
+    .join("");
+}
+
 function assistantText(value: unknown): string | null {
   if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content)) return null;
   return value.content
@@ -444,6 +456,7 @@ export class PiRpcSession {
     PiRpcSessionOptions;
   readonly #processAdapter: PiRpcProcessAdapter;
   #activeTurn: ActiveTurn | null = null;
+  readonly #queuedSteers: string[] = [];
   #buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   #child: ChildProcessWithoutNullStreams | null = null;
   #closed = false;
@@ -734,6 +747,9 @@ export class PiRpcSession {
       throw new Error("Pi RPC Session has no active Turn to steer");
     }
     await this.#send("steer", { message: text });
+    // Pi reports the delivery as a user `message_start`; remember the text so
+    // that echo is recognised as our steer and surfaced as an in-turn event.
+    this.#queuedSteers.push(text);
   }
 
   respondToInteraction(response: PiInteractionResponse): Promise<void> {
@@ -937,6 +953,19 @@ export class PiRpcSession {
     }
     if (value.type === "extension_ui_request") {
       this.#startInteraction(active, value);
+      return;
+    }
+    if (
+      value.type === "message_start" &&
+      isRecord(value.message) &&
+      value.message.role === "user"
+    ) {
+      const text = userText(value.message);
+      const queued = text === null ? -1 : this.#queuedSteers.indexOf(text);
+      if (queued >= 0 && text !== null) {
+        this.#queuedSteers.splice(queued, 1);
+        active.onEvent({ type: "user.message", text });
+      }
       return;
     }
     if (value.type === "message_start" && assistantText(value.message) !== null) {

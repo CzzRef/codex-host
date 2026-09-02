@@ -129,6 +129,25 @@ function isHumanUser(message: ClaudeHistoryMessage): boolean {
   return visibleUserTextParts(message).length > 0;
 }
 
+/**
+ * A steer pushed through PushableInput lands inside the running Turn: the
+ * nearest earlier assistant message stopped with `tool_use` (the model was
+ * mid-turn, waiting on tool results). A fresh prompt follows an assistant that
+ * actually ended its turn.
+ */
+function isFoldedClaudeSteer(
+  messages: ClaudeHistoryMessage[],
+  promptIndex: number,
+  index: number,
+): boolean {
+  for (let cursor = index - 1; cursor > promptIndex; cursor -= 1) {
+    const message = messages[cursor] as ClaudeHistoryMessage;
+    if (message.type === "assistant") return message.message.stop_reason === "tool_use";
+    if (isHumanUser(message)) return false;
+  }
+  return false;
+}
+
 function turnOutcome(messages: ClaudeHistoryMessage[]): HistoricalTurnOutcome {
   const assistants = messages.filter(({ type }) => type === "assistant");
   const failed = assistants.some(({ message }) => typeof message.error === "string");
@@ -171,7 +190,13 @@ export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThr
       continue;
     }
     let end = index + 1;
-    while (end < messages.length && !isHumanUser(messages[end] as ClaudeHistoryMessage)) end += 1;
+    while (
+      end < messages.length &&
+      (!isHumanUser(messages[end] as ClaudeHistoryMessage) ||
+        isFoldedClaudeSteer(messages, index, end))
+    ) {
+      end += 1;
+    }
     const turnMessages = messages.slice(index, end);
     const outcome = turnOutcome(turnMessages);
     const results = toolResultBlocks(turnMessages);
@@ -200,6 +225,20 @@ export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThr
         text: displayedUserText(text),
       })),
       items: turnMessages.flatMap((message) => {
+        if (message.type === "user" && message !== user && isHumanUser(message)) {
+          // A delivered steer stays in this Turn as a user item; its transcript
+          // uuid is the same id the live stream used for the item.
+          return [
+            {
+              item: {
+                type: "userMessage" as const,
+                itemId: hostItemIdSchema.parse(message.uuid),
+                text: visibleUserTextParts(message).map(displayedUserText).join("\n"),
+              },
+              outcome: { status: "succeeded" as const },
+            },
+          ];
+        }
         if (message.type === "user") {
           const recapOutput = visibleUserTextParts(user).some((text) =>
             isNamedCommandEnvelope(text, recapCommandNamePattern),

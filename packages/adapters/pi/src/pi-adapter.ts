@@ -28,6 +28,7 @@ import {
   type HostItemOutcome,
   type HostQuestionInteraction,
   type HostReasoningItem,
+  type HostUserMessageItem,
   type HostToolExecutionItem,
   type HostToolOutput,
   type InteractionRespondAccepted,
@@ -1087,6 +1088,9 @@ class PiHarnessSession implements HarnessSession {
       case "reasoning.completed":
         this.#completeReasoning(active, { status: "succeeded" });
         return;
+      case "user.message":
+        this.#deliverSteer(active, event.text);
+        return;
       case "message.completed":
         void this.#refreshUsage(active.command.turnId);
         return;
@@ -1224,6 +1228,15 @@ class PiHarnessSession implements HarnessSession {
       turnId: active.command.turnId,
       reason,
     });
+  }
+
+  /** A steer Pi delivered inside the running Turn: an in-turn user item at its position. */
+  #deliverSteer(active: ActiveTurn, text: string): void {
+    this.#completeReasoning(active, { status: "succeeded" });
+    this.#completeAgentItem(active, { status: "succeeded" }, false);
+    const item: HostUserMessageItem = { type: "userMessage", itemId: this.#newItemId(), text };
+    this.#event({ type: "item.started", turnId: active.command.turnId, item });
+    this.#completeItem(active, item, { status: "succeeded" });
   }
 
   #activateAgentMessage(active: ActiveTurn, messageId: string): void {
@@ -1466,10 +1479,11 @@ class PiHarnessSession implements HarnessSession {
     // A natively delivered steer is persisted as its own User Entry, so one
     // Host Turn spans the prompt's Entry plus up to one per delivered steer.
     // The prompt's Entry keeps the Host Turn identity and checkpoint.
-    const maxExpected = 1 + active.deliveredSteers;
-    if (created.length < 1 || created.length > maxExpected) {
+    // History folds delivered steers into their Turn, so a Host Turn is again
+    // exactly one prompt Entry; the steer count only explains a mismatch.
+    if (created.length !== 1) {
       throw new Error(
-        `Pi Turn persisted ${created.length} new User Entries; expected 1 to ${maxExpected} (${active.deliveredSteers} steer(s) delivered)`,
+        `Pi Turn persisted ${created.length} new User Entries; exactly one is required (${active.deliveredSteers} steer(s) delivered)`,
       );
     }
     const turn = created[0];

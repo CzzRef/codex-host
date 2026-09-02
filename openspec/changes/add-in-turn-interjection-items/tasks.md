@@ -6,16 +6,16 @@
 ## 2. 历史折叠（每家一条）
 
 - [x] 2.1 Grok：Turn 内 `user.text` → 剥 `<user_query>` 包装 → `userMessage` 条目；无包装保留原文。
-- [ ] 2.2 Pi / OMP：`stopReason=toolUse` 之后的 user 条目折叠为条目；Fork / rollback 边界跳过折叠条目；撤回或收紧 `1 + deliveredSteers` 放宽。Pi 历史已落地；OMP 历史与结算回收未做。
-- [ ] 2.3 Claude Code：持久化 steer `uuid`，历史按 uuid 折叠，缺失时用 tool_use 启发式。
-- [ ] 2.4 DeepSeek Harness：实测 steer 的 `source.kind` 并折叠。
-- [ ] 2.5 Cursor：re-prompt 段在实时路径发 `userMessage` 条目。
+- [x] 2.2 Pi / OMP：`stopReason=toolUse` 之后的 user 条目折叠为条目；Fork / rollback 边界跳过折叠条目；结算恢复「恰好一条」（`deliveredSteers` 只进错误文案）。OMP 历史按 Pi 同规则落地。
+- [x] 2.3 Claude Code：历史用 `stop_reason=tool_use` 启发式折叠，条目 id 直接取 transcript uuid（实时条目用同一 uuid，无需另行持久化）。
+- [x] 2.4 DeepSeek Harness：`user/message` 的 `source.kind` 恒为 `user`（类型 `MessageSourceMap` 无 steer 变体），按事件顺序折叠——同一原生 Turn 内第二条起的 user/message 为插队条目。
+- [x] 2.5 Cursor：re-prompt 段在实时路径发 `userMessage` 条目（live-only，无历史）。
 
 ## 3. 实时路径
 
-- [ ] 3.1 各 adapter 在原生投递插队时发出 `userMessage` 条目（Grok：包装 `user.text` 到达；Pi：`message_start role=user` 命中 steer 队列；Claude：pushed uuid 出现；DSH：steer 来源消息；Cursor：re-prompt）。Grok 实时已落地。
+- [x] 3.1 各 adapter 在原生投递插队时发出 `userMessage` 条目（Grok：包装 `user.text` 到达；Pi/OMP：`message_start role=user` 命中 steer 队列；Claude：push 即发出、id=uuid；DSH：同 Turn 内第二条 user/message；Cursor：re-prompt 前发出）。
 
 ## 4. 验证
 
-- [ ] 4.1 聚焦测试：每家历史折叠 + 实时条目顺序 + projector 多 `userMessage` 稳定 id；委派 `thread read --view messages` 按顺序含插队。Grok / Pi 历史 / projector / fake session 已覆盖。
-- [ ] 4.2 Desktop 重载后真机查看插队位置与文本（用户执行）。
+- [x] 4.1 聚焦测试：Grok/Pi/OMP/DSH/Claude 历史折叠 + 五家实时条目 + projector 多 `userMessage`；委派 `thread read --view messages` 靠既有 `userMessage` 投影自动含插队（未单独加用例）。
+- [ ] 4.2 Desktop 重载后真机查看插队位置与文本（用户执行）。已在真实 Host 上用委派 CLI 验过一半（2026-09-02 18:5x）：`thread send --steer true` 命中运行中的 Grok Turn，Grok 走原生 `interjected redirect_kind=interjection`，`thread read --view messages` 里插队以未包装原文出现在两段 agent 消息之间；Desktop 视觉位置待看。

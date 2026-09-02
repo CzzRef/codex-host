@@ -46,6 +46,7 @@ tags:
 - Grok ACP 扩展方法一律带 `_x.ai/` 前缀；interject 参数是 `{ sessionId, text }`，响应 `{ result: { status } }`（[grok-interject.ts](../../../packages/adapters/grok/src/grok-interject.ts#L1-L38)）。新接原生方法先用 bogus sessionId 探测：`-32601` 是方法不存在，`-32602` / `-32002` 才说明方法已路由。
 - 结算用 checkpoint（prompt index）作为「已持久化 Native Turn」的身份，并在有界时间内等待 `turn_completed` 落盘再计数（`#awaitPersistedTurn`，`nativeHistorySettleTimeoutMs` 默认 1.5s）；仍要求恰好一条新 Native Turn。
 - 假传输（测试）按真实形态模拟：interject 在当前 prompt 内追加一条 `user.text`，不另开 turn；`finishLagging` / `appendLaggingTerminal` 模拟终止记录滞后落盘。
+- Grok 投递插队时的合成 user 文本是 `The user sent a message while you were working:\n<user_query>\n…\n</user_query>\nMake sure to complete any unfinished tasks from previous turns.`（2026-09-02 真机探针）；剥壳正则必须容忍 `</user_query>` 之后的尾行，否则包装原样进 Turn 条目。
 - Pi/OMP 的 `1 + 已送达插队数` 放宽是它们各自实测的 User Entry 形态，不要反推到 Grok。
 
 ## 记录历史

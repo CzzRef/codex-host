@@ -45,9 +45,14 @@ class FakePiTransport implements PiTurnTransport {
   readonly abort = vi.fn(async () => undefined);
   /** Steers Pi accepted natively; each persists its own User Entry when the Turn settles. */
   readonly steered: string[] = [];
+  /** Persist steers the way live Pi does after a tool-less assistant turn. */
+  steerAfterStop = false;
   readonly steer = vi.fn(async (text: string) => {
     if (this.text === null) throw new Error("No active fake Pi Turn to steer");
     this.steered.push(text);
+    // Pi reports the delivery as a user message_start; the RPC session turns
+    // that into an in-turn user event.
+    this.event({ type: "user.message", text });
   });
   readonly respondToInteraction = vi.fn(async (response: PiInteractionResponse) => {
     this.event({
@@ -197,17 +202,75 @@ class FakePiTransport implements PiTurnTransport {
       },
     );
     this.history.leafId = assistantId;
-    // Live Pi delivers a steer as a regular user message: agent-session
-    // `_queueSteer` → `agent.steer({ role: "user" })`, drained before the next
-    // LLM call and persisted as its own User Entry inside the same Host Turn.
+    // Live Pi delivers a steer as a regular user message after the assistant's
+    // tool calls (`stopReason: "toolUse"` + tool results) and before its next
+    // model call, so history folds it into the same Host Turn.
     this.steered.splice(0).forEach((steerText, offset) => {
-      const steerOrdinal = ordinal + 2 + offset;
-      const steerUserId = `synthetic-user-${steerOrdinal}`;
-      const steerAssistantId = `synthetic-assistant-${steerOrdinal}`;
+      const assistantEntry = this.history.entries.at(-1) as {
+        id: string;
+        timestamp?: string;
+        message: { stopReason?: string; content: unknown[] };
+      };
+      if (this.steerAfterStop) {
+        // Live Pi 0.84.4 also delivers a queued steer after a tool-less
+        // assistant message: the assistant keeps stopReason "stop" and the
+        // steer's message.timestamp (queued while streaming) precedes the
+        // assistant Entry timestamp.
+        const persistedAt = Date.now();
+        assistantEntry.timestamp = new Date(persistedAt).toISOString();
+        const steerUserId = `synthetic-steer-${ordinal + 1}-${offset}`;
+        const steerAssistantId = `synthetic-assistant-${ordinal + 1}-steer-${offset}`;
+        this.history.entries.push(
+          {
+            id: steerUserId,
+            parentId: this.history.leafId,
+            type: "message",
+            timestamp: new Date(persistedAt + 200).toISOString(),
+            message: {
+              role: "user",
+              content: [{ type: "text", text: steerText }],
+              timestamp: persistedAt - 2_000,
+            },
+          },
+          {
+            id: steerAssistantId,
+            parentId: steerUserId,
+            type: "message",
+            timestamp: new Date(persistedAt + 1_500).toISOString(),
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: `${steerText} answer` }],
+              stopReason: "stop",
+            },
+          },
+        );
+        this.history.leafId = steerAssistantId;
+        return;
+      }
+      assistantEntry.message.stopReason = "toolUse";
+      assistantEntry.message.content = [
+        ...assistantEntry.message.content,
+        { type: "toolCall", id: `call-${ordinal + 1}-${offset}`, name: "read", arguments: {} },
+      ];
+      const toolId = `synthetic-tool-${ordinal + 1}-${offset}`;
+      const steerUserId = `synthetic-steer-${ordinal + 1}-${offset}`;
+      const steerAssistantId = `synthetic-assistant-${ordinal + 1}-steer-${offset}`;
       this.history.entries.push(
         {
-          id: steerUserId,
+          id: toolId,
           parentId: this.history.leafId,
+          type: "message",
+          message: {
+            role: "toolResult",
+            toolCallId: `call-${ordinal + 1}-${offset}`,
+            toolName: "read",
+            isError: false,
+            content: [{ type: "text", text: "contents" }],
+          },
+        },
+        {
+          id: steerUserId,
+          parentId: toolId,
           type: "message",
           message: { role: "user", content: [{ type: "text", text: steerText }] },
         },
@@ -358,6 +421,51 @@ async function nextInteraction(
 }
 
 describe("Pi HarnessAdapter Session", () => {
+  it("keeps a steer delivered after a tool-less assistant message inside the Host Turn", async () => {
+    const { adapter, transports } = fixture();
+    const session = await openSession(adapter);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+
+    await expect(session.execute(textTurn("steer-after-stop"))).resolves.toEqual({
+      ok: true,
+      value: { turnId: "steer-after-stop" },
+    });
+    const transport = transports[0];
+    if (!transport) throw new Error("Missing fake Pi transport");
+    transport.steerAfterStop = true;
+    for (let step = 0; step < 6; step += 1) {
+      if ((await nextEvent(iterator)).type === "item.started") break;
+    }
+    await expect(
+      session.execute({
+        type: "turn.steer",
+        turnId: hostTurnIdSchema.parse("steer-after-stop"),
+        input: [{ type: "text", text: "second" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+
+    transport.succeed("done");
+    let completed: Awaited<ReturnType<typeof nextEvent>> | null = null;
+    for (let step = 0; step < 10 && !completed; step += 1) {
+      const event = await nextEvent(iterator);
+      if (event.type === "turn.completed") completed = event;
+    }
+    expect(completed).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+      nativeTurnRef: { nativeTurnKey: "synthetic-user-1" },
+    });
+    const snapshot = await session.readSnapshot();
+    if (!snapshot.ok) throw new Error(snapshot.error.message);
+    expect(snapshot.value.turns).toHaveLength(1);
+    expect(snapshot.value.turns[0]?.items.map(({ item }) => item.type)).toEqual([
+      "agentMessage",
+      "userMessage",
+      "agentMessage",
+    ]);
+    await adapter.close();
+  });
+
   it("steers the active Turn natively and keeps the prompt Entry as the Host Turn identity", async () => {
     const { adapter, transports } = fixture();
     const session = await openSession(adapter);
@@ -383,6 +491,17 @@ describe("Pi HarnessAdapter Session", () => {
     ).resolves.toEqual({ ok: true, value: { accepted: true } });
     expect(transport.steer).toHaveBeenCalledWith("second");
     expect(transport.abort).not.toHaveBeenCalled();
+    // The delivered steer is an in-turn user item, live.
+    let liveUserItem: Awaited<ReturnType<typeof nextEvent>> | null = null;
+    for (let step = 0; step < 8 && !liveUserItem; step += 1) {
+      const event = await nextEvent(iterator);
+      if (event.type === "item.completed" && event.snapshot.item.type === "userMessage") {
+        liveUserItem = event;
+      }
+    }
+    expect(liveUserItem).toMatchObject({
+      snapshot: { item: { type: "userMessage", text: "second" } },
+    });
 
     transport.succeed("done");
     let completed: Awaited<ReturnType<typeof nextEvent>> | null = null;
@@ -390,20 +509,28 @@ describe("Pi HarnessAdapter Session", () => {
       const event = await nextEvent(iterator);
       if (event.type === "turn.completed") completed = event;
     }
-    // The steer persisted a second User Entry; the Host Turn still succeeds
-    // and its identity/checkpoint stay on the prompt's Entry.
+    // The steer persisted a second User Entry, but history folds it into the
+    // prompt's Turn: one Host Turn, identity and checkpoint on the prompt.
     expect(completed).toMatchObject({
       type: "turn.completed",
       outcome: { status: "succeeded" },
       nativeTurnRef: { nativeTurnKey: "synthetic-user-1" },
     });
+    const snapshot = await session.readSnapshot();
+    if (!snapshot.ok) throw new Error(snapshot.error.message);
+    expect(snapshot.value.turns).toHaveLength(1);
+    expect(snapshot.value.turns[0]).toMatchObject({ input: [{ text: "steer-turn" }] });
     expect(
-      transport.history.entries.filter(
-        (entry) =>
-          entry.type === "message" &&
-          (entry.message as { role?: unknown } | undefined)?.role === "user",
-      ),
-    ).toHaveLength(2);
+      snapshot.value.turns[0]?.items.map(({ item }) => [
+        item.type,
+        "text" in item ? item.text : "",
+      ]),
+    ).toEqual([
+      ["agentMessage", "done"],
+      ["toolExecution", ""],
+      ["userMessage", "second"],
+      ["agentMessage", "second answer"],
+    ]);
     await adapter.close();
   });
 

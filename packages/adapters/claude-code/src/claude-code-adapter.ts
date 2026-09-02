@@ -33,6 +33,7 @@ import {
   type HostItemOutcome,
   type HostQuestionInteraction,
   type HostReasoningItem,
+  type HostUserMessageItem,
   type HostUsage,
   type InspectHarnessInput,
   type InteractionRespondAccepted,
@@ -1187,7 +1188,21 @@ class ClaudeHarnessSession implements HarnessSession {
       };
     }
     try {
-      transport.steer(text, this.#randomUUID());
+      const userMessageId = this.#randomUUID();
+      transport.steer(text, userMessageId);
+      // The steer is pushed into the running Turn; surface it as an in-turn
+      // user item keyed by the transcript uuid so history folds to the same id.
+      const item: HostUserMessageItem = {
+        type: "userMessage",
+        itemId: hostItemIdSchema.parse(userMessageId),
+        text,
+      };
+      this.#event({ type: "item.started", turnId: active.command.turnId, item });
+      this.#event({
+        type: "item.completed",
+        turnId: active.command.turnId,
+        snapshot: { item, outcome: { status: "succeeded" } },
+      });
       return { ok: true, value: { accepted: true } };
     } catch (error) {
       return {

@@ -3,6 +3,7 @@ import type {
   HostItemOutcome,
   HostItemSnapshot,
   HostReasoningItem,
+  HostUserMessageItem,
   HostThreadSnapshot,
   HostToolExecutionItem,
   HostToolOutput,
@@ -112,6 +113,74 @@ function messageRole(entry: OmpEntry): string | null {
   return typeof value === "string" ? value : null;
 }
 
+/**
+ * OMP (Pi RPC family) delivers a queued steer as a user Entry inside the running agent
+ * run: after `stopReason=toolUse` and any tool results, or after a tool-less
+ * assistant message whose run continues only because a steer was queued. The
+ * persisted steer carries no marker, but its `message.timestamp` is the time
+ * it was queued, which precedes the assistant Entry it follows; a fresh prompt
+ * is created after that assistant Entry. A `model_change` after the assistant
+ * is a turn boundary (new prompt), not a steer.
+ */
+function isFoldedSteer(preceding: OmpEntry[], candidate: OmpEntry): boolean {
+  let modelChangedAfterAssistant = false;
+  for (let index = preceding.length - 1; index >= 0; index -= 1) {
+    const entry = preceding[index] as OmpEntry;
+    if (modelChange(entry)) {
+      modelChangedAfterAssistant = true;
+      continue;
+    }
+    const role = messageRole(entry);
+    if (role === "toolResult") continue;
+    if (role === "assistant") {
+      if (modelChangedAfterAssistant) return false;
+      if (message(entry)?.stopReason === "toolUse") return true;
+      return queuedBeforeEntry(candidate, entry);
+    }
+    if (role === "user") return false;
+  }
+  return false;
+}
+
+function queuedBeforeEntry(candidate: OmpEntry, assistant: OmpEntry): boolean {
+  const queuedAt = message(candidate)?.timestamp;
+  const persistedAt =
+    typeof assistant.timestamp === "string" ? Date.parse(assistant.timestamp) : NaN;
+  return typeof queuedAt === "number" && Number.isFinite(persistedAt) && queuedAt < persistedAt;
+}
+
+function promptUserEntries(active: OmpEntry[]): OmpEntry[] {
+  return groupedOmpTurns(active).map((entries) => entries[0] as OmpEntry);
+}
+
+function groupedOmpTurns(active: OmpEntry[]): OmpEntry[][] {
+  const turns: OmpEntry[][] = [];
+  for (let index = 0; index < active.length;) {
+    if (modelChange(active[index] as OmpEntry)) {
+      index += 1;
+      continue;
+    }
+    if (messageRole(active[index] as OmpEntry) !== "user") {
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < active.length) {
+      if (messageRole(active[end] as OmpEntry) === "user") {
+        if (isFoldedSteer(active.slice(index, end), active[end] as OmpEntry)) {
+          end += 1;
+          continue;
+        }
+        break;
+      }
+      end += 1;
+    }
+    turns.push(active.slice(index, end));
+    index = end;
+  }
+  return turns;
+}
+
 function itemId(entryId: string, kind: string, ordinal: number) {
   return hostItemIdSchema.parse(`omp-item-v1-${entryId}-${kind}-${ordinal}`);
 }
@@ -163,6 +232,7 @@ function toolOutput(value: unknown): HostToolOutput | undefined {
 
 function snapshotItems(entries: OmpEntry[], outcome: HistoricalTurnOutcome): HostItemSnapshot[] {
   const snapshots: HostItemSnapshot[] = [];
+  const promptId = entries[0]?.id;
   const toolCalls = new Map<
     string,
     { entryId: string; ordinal: number; name: string; arguments: JsonValue }
@@ -171,6 +241,18 @@ function snapshotItems(entries: OmpEntry[], outcome: HistoricalTurnOutcome): Hos
     const nativeMessage = message(entry);
     if (!nativeMessage) continue;
     const content = Array.isArray(nativeMessage.content) ? nativeMessage.content : [];
+    if (nativeMessage.role === "user") {
+      // The prompt is the Turn input; a later user Entry inside the Turn is a
+      // delivered steer and stays here as a user item at its position.
+      if (entry.id === promptId) continue;
+      const item: HostUserMessageItem = {
+        type: "userMessage",
+        itemId: itemId(entry.id, "user", 0),
+        text: textContent(nativeMessage.content),
+      };
+      snapshots.push({ item, outcome: { status: "succeeded" } });
+      continue;
+    }
     if (nativeMessage.role === "assistant") {
       const text = textContent(content);
       const reasoning = thinkingContent(content);
@@ -279,7 +361,16 @@ export function mapOmpSnapshot(
       continue;
     }
     let end = index + 1;
-    while (end < active.length && messageRole(active[end] as OmpEntry) !== "user") end += 1;
+    while (end < active.length) {
+      if (messageRole(active[end] as OmpEntry) === "user") {
+        if (isFoldedSteer(active.slice(index, end), active[end] as OmpEntry)) {
+          end += 1;
+          continue;
+        }
+        break;
+      }
+      end += 1;
+    }
     const entries = active.slice(index, end);
     const outcome = assistantOutcome(entries);
     const userText = textContent(message(user)?.content);
@@ -315,7 +406,7 @@ export function mapOmpSnapshot(
 export function resolveOmpLastTurnBoundary(
   history: OmpSessionHistory,
 ): { lastUserEntryId: string; sourceTurnCount: number } | null {
-  const users = activeOmpEntries(history).filter((entry) => messageRole(entry) === "user");
+  const users = promptUserEntries(activeOmpEntries(history));
   const last = users.at(-1);
   return last ? { lastUserEntryId: last.id, sourceTurnCount: users.length } : null;
 }
@@ -325,7 +416,7 @@ export function resolveOmpForkBoundary(
   checkpointId: string,
 ): { targetTurnIndex: number; nextUserEntryId: string | null } {
   const active = activeOmpEntries(history);
-  const users = active.filter((entry) => messageRole(entry) === "user");
+  const users = promptUserEntries(active);
   const targetTurnIndex = users.findIndex((entry) => entry.id === checkpointId);
   if (targetTurnIndex < 0) throw new Error("Omp Checkpoint is not on the active branch");
   return {
