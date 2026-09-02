@@ -112,11 +112,15 @@ function messageRole(entry: PiEntry): string | null {
 }
 
 /**
- * Pi delivers a queued steer as a user Entry after `stopReason=toolUse` and
- * any tool results, before the next model call. A `model_change` after that
- * assistant is a turn boundary (new prompt), not a steer.
+ * Pi delivers a queued steer as a user Entry inside the running agent
+ * run: after `stopReason=toolUse` and any tool results, or after a tool-less
+ * assistant message whose run continues only because a steer was queued. The
+ * persisted steer carries no marker, but its `message.timestamp` is the time
+ * it was queued, which precedes the assistant Entry it follows; a fresh prompt
+ * is created after that assistant Entry. A `model_change` after the assistant
+ * is a turn boundary (new prompt), not a steer.
  */
-function isFoldedSteer(preceding: PiEntry[]): boolean {
+function isFoldedSteer(preceding: PiEntry[], candidate: PiEntry): boolean {
   let modelChangedAfterAssistant = false;
   for (let index = preceding.length - 1; index >= 0; index -= 1) {
     const entry = preceding[index] as PiEntry;
@@ -127,11 +131,20 @@ function isFoldedSteer(preceding: PiEntry[]): boolean {
     const role = messageRole(entry);
     if (role === "toolResult") continue;
     if (role === "assistant") {
-      return !modelChangedAfterAssistant && message(entry)?.stopReason === "toolUse";
+      if (modelChangedAfterAssistant) return false;
+      if (message(entry)?.stopReason === "toolUse") return true;
+      return queuedBeforeEntry(candidate, entry);
     }
     if (role === "user") return false;
   }
   return false;
+}
+
+function queuedBeforeEntry(candidate: PiEntry, assistant: PiEntry): boolean {
+  const queuedAt = message(candidate)?.timestamp;
+  const persistedAt =
+    typeof assistant.timestamp === "string" ? Date.parse(assistant.timestamp) : NaN;
+  return typeof queuedAt === "number" && Number.isFinite(persistedAt) && queuedAt < persistedAt;
 }
 
 function promptUserEntries(active: PiEntry[]): PiEntry[] {
@@ -152,7 +165,7 @@ function groupedPiTurns(active: PiEntry[]): PiEntry[][] {
     let end = index + 1;
     while (end < active.length) {
       if (messageRole(active[end] as PiEntry) === "user") {
-        if (isFoldedSteer(active.slice(index, end))) {
+        if (isFoldedSteer(active.slice(index, end), active[end] as PiEntry)) {
           end += 1;
           continue;
         }

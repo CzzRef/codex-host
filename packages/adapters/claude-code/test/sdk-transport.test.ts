@@ -78,6 +78,7 @@ function fixture(
   permissionMode: ClaudeSdkTransportOptions["permissionMode"] = "default",
   thinkingOptionId = harnessThinkingOptionIdSchema.parse("auto"),
   environment?: NodeJS.ProcessEnv,
+  extra: Partial<ClaudeSdkTransportOptions> = {},
 ) {
   const fakeQuery = new FakeQuery();
   let queryInput: QueryInput | undefined;
@@ -101,6 +102,7 @@ function fixture(
     onFault,
     onPlanLimit,
     queryFactory,
+    ...extra,
   });
   return {
     fakeQuery,
@@ -153,6 +155,19 @@ function pushAssistantText(
     message: { content: [{ type: "text", text }] },
     parent_tool_use_id: null,
     uuid,
+    session_id: "00000000-0000-4000-8000-000000000001",
+  } as unknown as SDKMessage);
+}
+
+function pushCommandLifecycle(
+  fakeQuery: FakeQuery,
+  commandUuid: string,
+  state: "queued" | "started" | "completed",
+): void {
+  fakeQuery.push({
+    type: "command_lifecycle",
+    command_uuid: commandUuid,
+    state,
     session_id: "00000000-0000-4000-8000-000000000001",
   } as unknown as SDKMessage);
 }
@@ -374,6 +389,65 @@ describe("ClaudeSdkTransport text reconciliation", () => {
       },
     ]);
     expect(value.onFault).not.toHaveBeenCalled();
+    await value.transport.close();
+  });
+
+  it("settles at the first result when the steer was consumed inside the Turn", async () => {
+    const value = fixture();
+    await value.transport.start();
+    const turn = value.transport.runTurn(
+      "synthetic",
+      "00000000-0000-4000-8000-000000000060",
+      () => undefined,
+    );
+    value.transport.steer("also this", "00000000-0000-4000-8000-000000000061");
+    // msg_lifecycle_v1: the CLI injected the steer after a tool boundary, so
+    // it starts before the Turn's single result.
+    pushCommandLifecycle(value.fakeQuery, "00000000-0000-4000-8000-000000000061", "started");
+    pushAssistantText(value.fakeQuery, "INTERJECTED", "00000000-0000-4000-8000-000000000062");
+    completeTurn(value.fakeQuery);
+    await expect(turn).resolves.toEqual({ status: "succeeded" });
+    await value.transport.close();
+  });
+
+  it("keeps the Turn open while a steer is still queued and settles at that steer's result", async () => {
+    const value = fixture();
+    await value.transport.start();
+    const turn = value.transport.runTurn(
+      "synthetic",
+      "00000000-0000-4000-8000-000000000063",
+      () => undefined,
+    );
+    value.transport.steer("late", "00000000-0000-4000-8000-000000000064");
+    pushCommandLifecycle(value.fakeQuery, "00000000-0000-4000-8000-000000000064", "queued");
+    completeTurn(value.fakeQuery);
+    let settled = false;
+    void turn.then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(settled).toBe(false);
+    // The CLI runs the queued steer as a further turn right after the result.
+    pushCommandLifecycle(value.fakeQuery, "00000000-0000-4000-8000-000000000064", "started");
+    pushAssistantText(value.fakeQuery, "INTERJECTED", "00000000-0000-4000-8000-000000000065");
+    completeTurn(value.fakeQuery);
+    await expect(turn).resolves.toEqual({ status: "succeeded" });
+    await value.transport.close();
+  });
+
+  it("settles after the steer window when the CLI never reports the steer lifecycle", async () => {
+    const value = fixture("create", "default", undefined, undefined, {
+      steerSettleTimeoutMs: 20,
+    });
+    await value.transport.start();
+    const turn = value.transport.runTurn(
+      "synthetic",
+      "00000000-0000-4000-8000-000000000066",
+      () => undefined,
+    );
+    value.transport.steer("silent", "00000000-0000-4000-8000-000000000067");
+    completeTurn(value.fakeQuery);
+    await expect(turn).resolves.toEqual({ status: "succeeded" });
     await value.transport.close();
   });
 

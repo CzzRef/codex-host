@@ -338,6 +338,99 @@ describe("Pi active-branch history", () => {
     });
   });
 
+  it("folds a steer delivered after a tool-less assistant message by its queued timestamp", () => {
+    // Live Pi 0.84.4: the steer is queued while the assistant streams, so its
+    // message.timestamp precedes the assistant Entry's timestamp even though
+    // that assistant stopped with "stop" and made no tool call.
+    const steered: PiSessionHistory = {
+      entries: [
+        {
+          id: "user-1",
+          parentId: null,
+          type: "message",
+          timestamp: "2026-09-02T10:18:58.312Z",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "count" }],
+            timestamp: 1788344338312,
+          },
+        },
+        {
+          id: "assistant-1",
+          parentId: "user-1",
+          type: "message",
+          timestamp: "2026-09-02T10:19:01.900Z",
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "1 2 3" }],
+          },
+        },
+        {
+          id: "user-steer",
+          parentId: "assistant-1",
+          type: "message",
+          timestamp: "2026-09-02T10:19:02.066Z",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "stop" }],
+            timestamp: 1788344340312,
+          },
+        },
+        {
+          id: "assistant-2",
+          parentId: "user-steer",
+          type: "message",
+          timestamp: "2026-09-02T10:19:03.500Z",
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "INTERJECTED" }],
+          },
+        },
+        // A fresh prompt is created after the previous assistant Entry.
+        {
+          id: "user-2",
+          parentId: "assistant-2",
+          type: "message",
+          timestamp: "2026-09-02T10:20:00.000Z",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "next" }],
+            timestamp: 1788344399900,
+          },
+        },
+        {
+          id: "assistant-3",
+          parentId: "user-2",
+          type: "message",
+          timestamp: "2026-09-02T10:20:02.000Z",
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "ok" }],
+          },
+        },
+      ],
+      leafId: "assistant-3",
+    };
+    const snapshot = mapPiSnapshot(steered, { sessionId: "session-1", model: null });
+    expect(snapshot.turns).toHaveLength(2);
+    expect(snapshot.turns[0]).toMatchObject({ nativeTurnRef: { nativeTurnKey: "user-1" } });
+    expect(
+      snapshot.turns[0]?.items.map(({ item }) => [item.type, "text" in item ? item.text : ""]),
+    ).toEqual([
+      ["agentMessage", "1 2 3"],
+      ["userMessage", "stop"],
+      ["agentMessage", "INTERJECTED"],
+    ]);
+    expect(snapshot.turns[1]).toMatchObject({ nativeTurnRef: { nativeTurnKey: "user-2" } });
+    expect(resolvePiLastTurnBoundary(steered)).toEqual({
+      lastUserEntryId: "user-2",
+      sourceTurnCount: 2,
+    });
+  });
+
   it("resolves middle and terminal logical Fork boundaries", () => {
     expect(resolvePiForkBoundary(history, "user-1")).toEqual({
       targetTurnIndex: 0,
