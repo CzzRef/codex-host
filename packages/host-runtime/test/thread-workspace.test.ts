@@ -80,12 +80,19 @@ describe("inspectGitWorkspace", () => {
     await git(app, ["worktree", "add", "-b", "feature", worktree]);
 
     const fromWorktree = await inspectGitWorkspace(worktree);
+    const primaryRoot = await realpath(app);
     expect(fromWorktree.repositories[0]).toMatchObject({
       kind: "primary",
       branch: "feature",
       isWorktree: true,
       worktreeName: "app-feature",
-      primaryRoot: await realpath(app),
+      primaryRoot,
+    });
+    expect(
+      fromWorktree.repositories.find((repository) => repository.root === primaryRoot),
+    ).toMatchObject({
+      kind: "worktree",
+      branch: "main",
     });
     const fromPrimary = await inspectGitWorkspace(app);
     expect(fromPrimary.repositories.map((repository) => repository.kind)).toContain("submodule");
@@ -94,6 +101,35 @@ describe("inspectGitWorkspace", () => {
     ).toMatchObject({
       name: "vendor",
       kind: "submodule",
+    });
+    expect(fromPrimary.repositories.map((repository) => repository.kind)).toContain("worktree");
+    expect(
+      fromPrimary.repositories.find((repository) => repository.kind === "worktree"),
+    ).toMatchObject({
+      branch: "feature",
+      isWorktree: true,
+      worktreeName: "app-feature",
+    });
+  });
+
+  it("lists an extra workspace root as its own additional repository", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codexhost-workspace-extra-"));
+    cleanups.push(root);
+    const app = join(root, "app");
+    const other = join(root, "other");
+    await initRepo(app);
+    await initRepo(other, "other");
+    const inspection = await inspectGitWorkspace(app, [other]);
+    expect(inspection.repositories.map((repository) => repository.kind).sort()).toEqual([
+      "additional",
+      "primary",
+    ]);
+    expect(
+      inspection.repositories.find((repository) => repository.kind === "additional"),
+    ).toMatchObject({
+      name: "other",
+      branch: "other",
+      kind: "additional",
     });
   });
 });

@@ -53,6 +53,43 @@ describe("thread workspace snapshot", () => {
     expect(snapshot.repositories[1]?.dirty).toBe(true);
   });
 
+  it("accepts sibling worktrees and additional repository roots", () => {
+    const snapshot = threadWorkspaceSnapshotSchema.parse({
+      threadId,
+      cwd: "/workspace/app-feature",
+      repositories: [
+        repository({
+          root: "/workspace/app-feature",
+          name: "app-feature",
+          branch: "feature",
+          isWorktree: true,
+          worktreeName: "app-feature",
+          primaryRoot: "/workspace/app",
+        }),
+        repository({
+          root: "/workspace/app",
+          name: "app",
+          kind: "worktree",
+          branch: "main",
+          isWorktree: false,
+          worktreeName: null,
+          primaryRoot: "/workspace/app",
+        }),
+        repository({
+          root: "/workspace/other",
+          name: "other",
+          kind: "additional",
+          branch: "dev",
+        }),
+      ],
+    });
+    expect(snapshot.repositories.map((entry) => entry.kind)).toEqual([
+      "primary",
+      "worktree",
+      "additional",
+    ]);
+  });
+
   it("accepts a linked worktree identity", () => {
     expect(
       threadWorkspaceSnapshotSchema.parse({

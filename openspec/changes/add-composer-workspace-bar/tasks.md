@@ -55,3 +55,9 @@
 - [x] 5.2 Renderer tests for insertion, list rows, empty hide, and notification refresh
 - [x] 5.3 Focused typecheck and affected vitest
 - [x] 5.4 Chromium E2E for Composer repository rows, conversation files, branch worktree toggle, and Tab reuse
+
+## 6. Sibling worktrees and additional roots
+
+- [x] 6.1 Enumerate `git worktree list --porcelain` roots of the primary checkout as `worktree` rows
+- [x] 6.2 Accept Thread `runtimeWorkspaceRoots` as `additional` rows without creating or checking out anything
+- [x] 6.3 Contract kinds `worktree` / `additional`; Host and shared-contracts tests for both
