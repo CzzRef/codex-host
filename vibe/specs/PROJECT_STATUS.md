@@ -23,6 +23,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 - Active correction: the Composer Worktree checkbox currently persists display state but does not route the official branch menu. The authorized fix and requirement delta are tracked in [task card](260902/1340-worktree-checkbox-routing/task-card.md).
 - In-turn interjection items (2026-09-02): `HostItem.userMessage` plus Grok live/history unwrap and Pi history folding are implemented; OMP/Claude/DSH/Cursor and Desktop reload remain. Tracked in [task card](260902/1437-in-turn-interjection-items/task-card.md).
 - Grok steer + archived listing (2026-09-02 14:00): grok 1.0.13 has no `x.ai/interject`; the Adapter now calls `_x.ai/interject` with `{sessionId, text}`, settles on checkpoint identity after waiting for the persisted `turn_completed`, and the Grok `1 + deliveredInterjections` relaxation from `2155d93` is withdrawn. `codexhost thread list` gains `--archived true|false` and an `archived` field on external rows so EyPc can retire Desktop-archived Threads. Tracked in [task card](260902/1400-grok-interject-archived-list/task-card.md) and OpenSpec [add-delegation-thread-list-archived](../../openspec/changes/add-delegation-thread-list-archived/proposal.md).
+- Cursor native history (2026-09-02 15:02): replace ACP live-only with Grok-style `cursor-agent acp` plus `~/.cursor/acp-sessions` resume/snapshot. Isolated on `codex/260902-cursor-native-history`. Tracked in [spec](260902/1502-cursor-native-history/spec.md).
 
 ## Active Task Index
 
@@ -40,6 +41,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 | In-turn interjection items | `implemented-partial / this-commit` | [task-card](260902/1437-in-turn-interjection-items/task-card.md), OpenSpec [add-in-turn-interjection-items](../../openspec/changes/add-in-turn-interjection-items/proposal.md) | focused vitest grok/pi/projector/fake 101 pass; typecheck pass | `HostItem.userMessage` + Grok 实时/历史剥壳 + Pi 历史折叠；OMP/Claude/DSH/Cursor 与 Desktop 重载待做 |
 | AI rules init | `implemented-local / this-repo-commit-authorized` | [task-card](260901/2034-ai-rules-init/task-card.md) | `audit_ai_rules.py --mode project` OK | CodeNote catalog 另仓未提交 |
 | czz-dev integration | existing / see task package | [docs/tasks/260831-czz-dev-integration](../../docs/tasks/260831-czz-dev-integration/spec.md) | see that verify | not migrated into `vibe/specs/` |
+| Cursor native history | `active / isolated-worktree bootstrap` | [spec](260902/1502-cursor-native-history/spec.md) | pending | supersede Cursor live-only; Grok-style ACP + disk history |
 
 ## Verification State
 
