@@ -68,3 +68,10 @@
 - [x] 7.2 Bind only a verified null-conversation run-location React owner and fail closed elsewhere
 - [x] 7.3 Cover mode routing, semantic ownership, false-positive labels, and Composer E2E
 - [x] 7.4 Run focused renderer tests, TypeScript typecheck, and strict OpenSpec validation
+
+## 8. Compact changed-files workspace surface
+
+- [x] 8.1 Filter workspace locations to repositories owning conversation-changed files and render only Worktree identity plus branch on one line
+- [x] 8.2 Move the file disclosure first and float its expanded list upward without Composer reflow
+- [x] 8.3 Preserve file hover previews and native Review routing while conditionally hiding duplicate native Changes/Review controls
+- [x] 8.4 Cover ownership filtering, native fallback/restoration, upward placement, and hover preview in focused unit/E2E verification

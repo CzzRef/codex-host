@@ -20,6 +20,15 @@ Fix the checked Worktree control in codexhost so that it affects the official Co
 
 The product requirement delta belongs to the active [Composer workspace surface OpenSpec change](../../../../openspec/changes/add-composer-workspace-bar/specs/renderer-composer-workspace-surface/spec.md).
 
+## Requirement Change Review — compact changed-files surface
+
+- Added: move the codexhost file-change disclosure to the leading/top position and expand its file list upward as a floating panel with per-file hover diff previews.
+- Changed: replace the multi-row repository inventory with one compact line that shows only the Worktree and branch owning conversation-changed files.
+- Removed: hide Desktop's native top Changes summary and bottom Review/diff control while the codexhost file-change replacement is available; restore native controls when the replacement is unavailable or disposed.
+- Superseded: the earlier presentation requirement that every inspected primary, submodule, sibling Worktree, or additional root must always render. Host inspection remains complete, but Renderer presentation is now filtered by changed-file ownership.
+- Conflicting: this directly conflicts with the active OpenSpec's “one row per repository” and “submodule rows are first-class” wording. The explicit current request wins; the OpenSpec is updated before implementation.
+- Decision source: `explicit-current-request`.
+
 ## Scope
 
 - Wire the renderer checkbox to the official Desktop branch menu without invoking Git from the renderer.
@@ -39,16 +48,16 @@ The product requirement delta belongs to the active [Composer workspace surface 
       "base_sha": "40e890fd18d44d8577fcf9c90833abb600d54040",
       "worktree_branch": "codex/260902-worktree-checkbox-routing",
       "task_owner": "vibe/specs/260902/1340-worktree-checkbox-routing/task-card.md",
-      "head": "40e890fd18d44d8577fcf9c90833abb600d54040",
+      "head": "c5c825c9d7952a6e7b7dae3082d13595a70843a1",
       "upstream": null
     }
   ],
   "commit_mode": "verified-milestone",
   "push_mode": "current-message-only",
-  "verification_state": "planned",
+  "verification_state": "verified",
   "push_state": "not-authorized",
   "integration_state": "not-started",
-  "next_action": "review the verified implementation and integrate it into czz-dev"
+  "next_action": "commit the verified compact changed-files workspace surface milestone"
 }
 ```
 
@@ -67,6 +76,25 @@ The product requirement delta belongs to the active [Composer workspace surface 
 - Branch detection no longer treats descendant transcript/tool text containing “Switch branch” as a branch control.
 - Worktree creation remains owned by Codex Desktop at new-chat submission.
 
+## Compact changed-files follow-up implementation
+
+- The workspace surface now mounts as a 32px single-line overlay above the Composer and shows only changed-file-owning locations as Worktree identity plus branch.
+- Relative changed paths map from the primary root; absolute paths select the longest matching repository root so nested submodules and sibling Worktrees remain distinguishable.
+- The file disclosure leads the line; its bounded list opens upward without reflow, and mouse/focus previews retain colorized diff excerpts.
+- Duplicate native top Changes and bottom Review/diff controls are hidden only while the codexhost file disclosure is mounted. Their DOM nodes and handlers remain intact for file-click routing and are restored when the replacement disappears or the extension is disposed.
+- The interactive preview now matches the compact line, upward file list, and adjacent hover diff preview.
+
+## Follow-up verification evidence
+
+- Renderer unit suite: 32 files, 226 tests passed.
+- Composer Playwright E2E: 1 passed; verifies one changed-file owner, unrelated-root filtering, single-line content, native duplicate suppression/restoration, upward list placement, hover preview, and hidden-native Review routing.
+- Full root `npm run typecheck` passed from the child Worktree using the complete temporary dependency mirror.
+- Renderer production bundle, focused ESLint, package-boundary check, Prettier, and `git diff --check` passed.
+- OpenSpec `add-composer-workspace-bar --strict` passed with `@fission-ai/openspec@1.10.0`.
+- Project AI rule audit and changed-document code-link audit passed through the temporary nested-Worktree path bridge; the bridge was removed afterward.
+- ego-browser visual QA confirmed the disclosure is first, exactly one Worktree/branch row is visible, the list opens upward, the hover preview appears beside it, and the legacy native mock is hidden.
+- The first verification attempt ran read-only checks from the control checkout because Bash retained the harness cwd. No task source was written there; all material checks were rerun with an asserted child-Worktree cwd, and the reusable trap is recorded below.
+
 ## Verification evidence
 
 - Renderer unit suite: 32 files, 225 tests passed.
@@ -83,4 +111,4 @@ The product requirement delta belongs to the active [Composer workspace surface 
 ## Documentation impact
 
 - `doc_drift: resolved` — OpenSpec requirement, design, tasks, implementation, unit tests, and E2E now agree.
-- Memory routing: captured the reusable build trap in [Root `node_modules` symlink misses workspace-local dependencies](../../../knowledge/error-memory/worktree-root-node-modules-symlink-misses-workspace-nested-deps.md); no ADR needed.
+- Memory routing: retained the build trap in [Root `node_modules` symlink misses workspace-local dependencies](../../../knowledge/error-memory/worktree-root-node-modules-symlink-misses-workspace-nested-deps.md) and captured the repeated command-lane trap in [Managed-worktree Bash can default to the control checkout](../../../knowledge/error-memory/managed-worktree-bash-defaults-to-control-checkout.md); no ADR needed.
