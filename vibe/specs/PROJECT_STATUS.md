@@ -41,7 +41,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 | In-turn interjection items | `implemented-partial / this-commit` | [task-card](260902/1437-in-turn-interjection-items/task-card.md), OpenSpec [add-in-turn-interjection-items](../../openspec/changes/add-in-turn-interjection-items/proposal.md) | focused vitest grok/pi/projector/fake 101 pass; typecheck pass | `HostItem.userMessage` + Grok 实时/历史剥壳 + Pi 历史折叠；OMP/Claude/DSH/Cursor 与 Desktop 重载待做 |
 | AI rules init | `implemented-local / this-repo-commit-authorized` | [task-card](260901/2034-ai-rules-init/task-card.md) | `audit_ai_rules.py --mode project` OK | CodeNote catalog 另仓未提交 |
 | czz-dev integration | existing / see task package | [docs/tasks/260831-czz-dev-integration](../../docs/tasks/260831-czz-dev-integration/spec.md) | see that verify | not migrated into `vibe/specs/` |
-| Cursor native history | `integrated 467d491 / d9809a5` | [spec](260902/1502-cursor-native-history/spec.md) | cursor vitest 9 pass; tsc cursor+renderer | supersede Cursor live-only; Grok-style ACP + disk history; child worktree retained until explicit cleanup |
+| Cursor native history | `integrated 467d491 / d9809a5` | [spec](260902/1502-cursor-native-history/spec.md) | cursor vitest 9 pass; tsc cursor+renderer; TS+renderer rebuilt | worktree removed, branch kept; Desktop quit but this agent cannot relaunch GUI — run `codexhost launch` in Terminal |
 
 ## Verification State
 
