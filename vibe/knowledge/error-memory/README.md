@@ -4,9 +4,15 @@ Tool: tool-neutral (codex, claude, grok, dsh, and any CodeNote-routed agent)
 
 Use this directory for reusable, verified failure patterns.
 
+## Records
+
+| Record | Fingerprint | Status |
+| --- | --- | --- |
+| [Grok 插队后 Host Turn 被判 failed](grok-interjection-persists-extra-native-turn.md#L1) | steer → native interject persists an extra Native Turn; settle asserted exactly one | verified 2026-09-02 |
+
 ## Sources To Review During Migration
 
-None yet as a CodeNote error-memory index. Historical analysis under `docs/archive/` remains evidence until a later task promotes a verified reusable failure.
+Historical analysis under `docs/archive/` remains evidence until a later task promotes a verified reusable failure.
 
 ## Rules
 

@@ -60,6 +60,8 @@ class FakeGrokTransport implements GrokAcpTransportLike {
   readonly compactCalls: Array<string | undefined> = [];
   readonly promptTexts: string[] = [];
   readonly interjectTexts: string[] = [];
+  /** Interjections Grok accepted natively; each is persisted as its own Native Turn on finish. */
+  readonly persistedInterjections: string[] = [];
   interjectImpl?: (text: string) => Promise<GrokInterjectResult>;
   readonly cancel = vi.fn(async () => undefined);
   readonly close = vi.fn(async () => undefined);
@@ -218,6 +220,7 @@ class FakeGrokTransport implements GrokAcpTransportLike {
   async interject(text: string): Promise<GrokInterjectResult> {
     if (this.interjectImpl) return this.interjectImpl(text);
     this.interjectTexts.push(text);
+    this.persistedInterjections.push(text);
     return {};
   }
 
@@ -238,6 +241,24 @@ class FakeGrokTransport implements GrokAcpTransportLike {
           ...(historyUsage !== undefined ? { usage: historyUsage } : {}),
         },
       );
+      // Live Grok persists an accepted interjection as a further Native Turn
+      // inside the same Host Turn (observed 2026-09-02: "persisted 2 new
+      // Native Turns; exactly one is required" failed every steered Turn).
+      this.persistedInterjections.splice(0).forEach((text, offset) => {
+        const interjectionOrdinal = ordinal + offset + 1;
+        this.replay.push(
+          {
+            type: "user.text",
+            text,
+            metadata: { eventId: `grok-session-user-${interjectionOrdinal}` },
+          },
+          {
+            type: "turn.completed",
+            nativeTurnKey: `grok-prompt-${interjectionOrdinal}`,
+            stopReason: response.stopReason,
+          },
+        );
+      });
     }
     this.#activePromptText = null;
     this.#activePromptEvents = [];
@@ -480,11 +501,15 @@ describe("Grok Adapter ACP projection", () => {
     expect((await nextEvent(iterator)).type).toBe("item.updated");
     transport.finish();
     expect((await nextEvent(iterator)).type).toBe("item.completed");
+    // The interjection persisted a second Native Turn; the Host Turn still
+    // succeeds and keeps the prompt's Native Turn as its identity/checkpoint.
     expect(await nextEvent(iterator)).toMatchObject({
       type: "turn.completed",
       outcome: { status: "succeeded" },
+      nativeTurnRef: { nativeTurnKey: "grok-prompt-1" },
     });
     expect(transport.promptTexts).toEqual(["first"]);
+    expect(transport.replay.filter(({ type }) => type === "turn.completed")).toHaveLength(2);
     await opened.adapter.close();
   });
 
