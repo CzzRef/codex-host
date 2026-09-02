@@ -29,6 +29,16 @@ The product requirement delta belongs to the active [Composer workspace surface 
 - Conflicting: this directly conflicts with the active OpenSpec's “one row per repository” and “submodule rows are first-class” wording. The explicit current request wins; the OpenSpec is updated before implementation.
 - Decision source: `explicit-current-request`.
 
+## Requirement Change Review — right-side file disclosure
+
+- Added: show conversation-file aggregate additions/deletions in the compact line, matching the attached visual reference without adopting unrelated `Create PR` or close actions.
+- Changed: keep changed-file Worktree identity and branch on the left, and move the file-count/disclosure control plus aggregate stats to the right edge.
+- Changed: align the expandable file panel to the right edge as a sidebar-like floating list; each file remains directly clickable into its native change display.
+- Removed: none; native duplicate controls remain conditionally hidden only while the codexhost replacement is available.
+- Superseded: the previous follow-up's requirement that the file disclosure must be the leading/left-most control. The explicit current request replaces it with a trailing/right-side disclosure.
+- Conflicting: the active OpenSpec currently says the disclosure leads the compact line. The explicit current request wins; requirement, design, preview, implementation, and tests are updated together.
+- Decision source: `explicit-current-request` plus attached visual reference.
+
 ## Scope
 
 - Wire the renderer checkbox to the official Desktop branch menu without invoking Git from the renderer.
@@ -48,7 +58,7 @@ The product requirement delta belongs to the active [Composer workspace surface 
       "base_sha": "40e890fd18d44d8577fcf9c90833abb600d54040",
       "worktree_branch": "codex/260902-worktree-checkbox-routing",
       "task_owner": "vibe/specs/260902/1340-worktree-checkbox-routing/task-card.md",
-      "head": "63b063b67c1f24c78376e6aea705961e77d4e1e6",
+      "head": "5708bdc39dcfc19b72e508958ecdd78e20b1c5ba",
       "upstream": null
     }
   ],
@@ -57,7 +67,7 @@ The product requirement delta belongs to the active [Composer workspace surface 
   "verification_state": "verified-commit",
   "push_state": "not-authorized",
   "integration_state": "not-started",
-  "next_action": "integrate the verified milestones into czz-dev when the control checkout is idle, then rebuild Desktop for live verification"
+  "next_action": "commit the verified right-side changed-file disclosure milestone"
 }
 ```
 
@@ -99,6 +109,21 @@ The product requirement delta belongs to the active [Composer workspace surface 
 - ego-browser visual QA confirmed the disclosure is first, exactly one Worktree/branch row is visible, the list opens upward, the hover preview appears beside it, and the legacy native mock is hidden.
 - The first verification attempt ran read-only checks from the control checkout because Bash retained the harness cwd. No task source was written there; all material checks were rerun with an asserted child-Worktree cwd, and the reusable trap is recorded below.
 
+## Right-side file disclosure implementation
+
+- The attached image was treated only as a visual reference: unrelated `Create PR` and close controls were not adopted.
+- Changed-file Worktree identity and branch now occupy the left side of the compact line without pill-style repository inventory chrome.
+- The right-side disclosure shows current file count plus additions/deletions aggregated from the displayed conversation files, not repository-wide Git totals.
+- Expanding the disclosure opens a bounded panel upward and aligned to the right edge; hovering still previews the diff, and clicking a file routes to that file in Desktop's retained native Review flow.
+
+## Right-side follow-up verification evidence
+
+- Renderer unit suite: 32 files, 226 tests passed; aggregate conversation-file stats and changed-file owner filtering are covered.
+- Composer Playwright E2E: 1 passed; verifies left/right DOM order, `+8/-2` aggregate stats, upward-right panel alignment, hover preview, native duplicate suppression/restoration, and file-to-native-change routing.
+- Full root TypeScript typecheck, Renderer production bundle, focused ESLint, package-boundary check, Prettier, and `git diff --check` passed.
+- OpenSpec `add-composer-workspace-bar --strict` passed.
+- ego-browser visual QA confirmed Worktree/branch first, summary last, right-edge list alignment, upward expansion, left-side hover preview, and clickable file behavior.
+
 ## Verification evidence
 
 - Renderer unit suite: 32 files, 225 tests passed.
@@ -115,4 +140,4 @@ The product requirement delta belongs to the active [Composer workspace surface 
 ## Documentation impact
 
 - `doc_drift: resolved` — OpenSpec requirement, design, tasks, implementation, unit tests, and E2E now agree.
-- Memory routing: retained the build trap in [Root `node_modules` symlink misses workspace-local dependencies](../../../knowledge/error-memory/worktree-root-node-modules-symlink-misses-workspace-nested-deps.md) and captured the repeated command-lane trap in [Managed-worktree Bash can default to the control checkout](../../../knowledge/error-memory/managed-worktree-bash-defaults-to-control-checkout.md); no ADR needed.
+- Memory routing: retained the build trap in [Root `node_modules` symlink misses workspace-local dependencies](../../../knowledge/error-memory/worktree-root-node-modules-symlink-misses-workspace-nested-deps.md) and the command-lane trap in [Managed-worktree Bash can default to the control checkout](../../../knowledge/error-memory/managed-worktree-bash-defaults-to-control-checkout.md); this follow-up introduced no new reusable failure, so no additional memory or ADR was needed.

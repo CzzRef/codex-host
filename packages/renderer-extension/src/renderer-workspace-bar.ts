@@ -91,10 +91,10 @@ function ensureStyle(ownerDocument: Document): void {
       min-width: 0;
       max-width: 100%;
       min-height: 24px;
-      padding: 0 7px;
-      border: 1px solid rgb(255 255 255 / 8%);
-      border-radius: 999px;
-      background: rgb(255 255 255 / 4%);
+      padding: 0 6px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
       color: inherit;
       font-size: 11px;
       line-height: 15px;
@@ -143,6 +143,7 @@ function ensureStyle(ownerDocument: Document): void {
       display: flex;
       flex: 0 0 auto;
       min-width: 0;
+      margin-left: auto;
       font-size: 11px;
       line-height: 16px;
     }
@@ -159,7 +160,19 @@ function ensureStyle(ownerDocument: Document): void {
       cursor: pointer;
       padding: 3px 6px;
       font: inherit;
+      font-variant-numeric: tabular-nums;
       white-space: nowrap;
+    }
+    .${BAR_CLASS} .codexhost-workspace-files-count {
+      color: rgb(255 255 255 / 76%);
+    }
+    .${BAR_CLASS} .codexhost-workspace-summary-stats {
+      display: inline-flex;
+      gap: 5px;
+    }
+    .${BAR_CLASS} .codexhost-workspace-files-chevron {
+      color: rgb(255 255 255 / 48%);
+      font-size: 10px;
     }
     .${BAR_CLASS} .codexhost-workspace-files-toggle:hover {
       background: rgb(255 255 255 / 7%);
@@ -167,13 +180,14 @@ function ensureStyle(ownerDocument: Document): void {
     }
     .${BAR_CLASS} .codexhost-workspace-files-list {
       position: absolute;
-      left: 0;
+      right: 0;
       bottom: calc(100% + 8px);
+      left: auto;
       z-index: 2;
       display: flex;
       flex-direction: column;
       gap: 1px;
-      width: min(520px, calc(100vw - 24px));
+      width: min(420px, calc(100vw - 24px));
       max-height: min(300px, 42vh);
       box-sizing: border-box;
       overflow: auto;
@@ -350,6 +364,19 @@ export function repositoriesForConversationFiles(
     if (owner) involvedRoots.add(owner.root);
   }
   return snapshot.repositories.filter((repository) => involvedRoots.has(repository.root));
+}
+
+export function aggregateConversationFileStats(files: readonly ThreadConversationFile[]): {
+  addedLines: number;
+  deletedLines: number;
+} {
+  return files.reduce(
+    (total, file) => ({
+      addedLines: total.addedLines + file.addedLines,
+      deletedLines: total.deletedLines + file.deletedLines,
+    }),
+    { addedLines: 0, deletedLines: 0 },
+  );
 }
 
 export function repositoryDisplayName(repository: ThreadWorkspaceRepository): string {
@@ -543,8 +570,6 @@ function placeBar(bar: HTMLElement, composer: Element): void {
   const rect = composer.getBoundingClientRect();
   const height = bar.offsetHeight || 32;
   const top = overlayTopAboveComposer(rect.top, height, 8);
-  const view = bar.ownerDocument.defaultView;
-  const viewportWidth = view?.innerWidth ?? rect.right;
   bar.style.position = "fixed";
   bar.style.zIndex = "32";
   bar.style.left = `${Math.round(rect.left)}px`;
@@ -555,10 +580,8 @@ function placeBar(bar: HTMLElement, composer: Element): void {
   const fileList = bar.querySelector<HTMLElement>("[data-codexhost-workspace-file-list]");
   if (fileList) {
     fileList.style.maxHeight = `min(300px, 42vh, ${Math.max(0, top - 20)}px)`;
-    const listWidth = Math.min(520, Math.max(0, viewportWidth - 24));
-    const alignRight = rect.left + listWidth > viewportWidth - 12;
-    fileList.style.left = alignRight ? "auto" : "0";
-    fileList.style.right = alignRight ? "0" : "auto";
+    fileList.style.left = "auto";
+    fileList.style.right = "0";
   }
 }
 
@@ -698,11 +721,32 @@ export function installRendererWorkspaceBar(
     heading.setAttribute("aria-expanded", expanded ? "true" : "false");
     const filtered = turnFiles !== null;
     const changeLabel = chinese
-      ? `${filtered ? "本轮变更" : "文件变更"} ${files.length}`
-      : filtered
-        ? `${files.length} ${files.length === 1 ? "change" : "changes"} this turn`
-        : `${files.length} ${files.length === 1 ? "file change" : "file changes"}`;
-    heading.textContent = `${expanded ? "▾" : "▸"} ${changeLabel}`;
+      ? `${filtered ? "本轮" : "变更"} ${files.length} 个文件`
+      : `${files.length} ${files.length === 1 ? "file" : "files"}${filtered ? " this turn" : " changed"}`;
+    heading.setAttribute(
+      "aria-label",
+      chinese
+        ? `${expanded ? "折叠" : "展开"}${changeLabel}`
+        : `${expanded ? "Collapse" : "Expand"} ${changeLabel}`,
+    );
+    const count = documentNode.createElement("span");
+    count.className = "codexhost-workspace-files-count";
+    count.textContent = changeLabel;
+    const aggregate = aggregateConversationFileStats(files);
+    const aggregateStats = documentNode.createElement("span");
+    aggregateStats.className = "codexhost-workspace-summary-stats";
+    const aggregateAdded = documentNode.createElement("span");
+    aggregateAdded.className = "codexhost-workspace-added";
+    aggregateAdded.textContent = `+${aggregate.addedLines.toLocaleString()}`;
+    const aggregateDeleted = documentNode.createElement("span");
+    aggregateDeleted.className = "codexhost-workspace-deleted";
+    aggregateDeleted.textContent = `-${aggregate.deletedLines.toLocaleString()}`;
+    aggregateStats.append(aggregateAdded, aggregateDeleted);
+    const chevron = documentNode.createElement("span");
+    chevron.className = "codexhost-workspace-files-chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    chevron.textContent = expanded ? "▾" : "▸";
+    heading.append(count, aggregateStats, chevron);
     heading.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -712,7 +756,7 @@ export function installRendererWorkspaceBar(
     });
     const rows = documentNode.createElement("div");
     rows.className = "codexhost-workspace-files-list";
-    rows.setAttribute("data-codexhost-workspace-file-list", "upward");
+    rows.setAttribute("data-codexhost-workspace-file-list", "upward-right");
     for (const file of files) {
       const row = documentNode.createElement("button");
       row.type = "button";
@@ -745,7 +789,6 @@ export function installRendererWorkspaceBar(
       rows.append(row);
     }
     list.append(heading, rows);
-    bar.append(list);
     if (repositories.length > 0) {
       const chips = documentNode.createElement("div");
       chips.className = "codexhost-workspace-chips";
@@ -754,6 +797,7 @@ export function installRendererWorkspaceBar(
       }
       bar.append(chips);
     }
+    bar.append(list);
     bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, snapshot?.threadId ?? "ready");
     placeBar(bar, composer);
     clearConversationGutter(root);

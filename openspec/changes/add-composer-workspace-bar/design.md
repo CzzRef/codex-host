@@ -10,7 +10,7 @@ Renderer code cannot run Git. Thread cwd already exists on external Mapping Stor
 
 - Keep complete Host inspection of Git roots under the active Thread cwd.
 - Present only the Worktree identity and branch that own conversation-changed files in one compact line.
-- Put the codexhost changed-file disclosure first, float its list upward, and retain hover diff previews.
+- Put the codexhost changed-file count and aggregate stats on the right, align its floating list to that edge, and retain hover diff previews.
 - Suppress duplicate native Changes/Review controls only while the codexhost replacement is available.
 - Fail closed when cwd, Git, changed-file ownership, or Composer identity is missing.
 
@@ -31,7 +31,7 @@ Renderer code cannot run Git. Thread cwd already exists on external Mapping Stor
 
 Host inspection still returns the complete primary/submodule/sibling-Worktree/additional-root inventory. Renderer presentation maps conversation file paths to that inventory and shows only owning locations. Relative paths resolve against the primary root; absolute paths choose the longest root prefix so nested submodules win over their parent.
 
-Each visible location is reduced to Worktree identity plus branch on one non-wrapping line. Repository names and aggregate diff totals are omitted because the adjacent file disclosure already carries file-level context.
+Each visible location is reduced to Worktree identity plus branch on the left side of one non-wrapping line. Repository-level aggregate totals are omitted; the trailing file disclosure computes additions/deletions only from the conversation files it can enumerate.
 
 ### 3. Display-only worktree identity
 
@@ -45,9 +45,9 @@ Mount a renderer-owned node as the previous sibling of the verified Composer roo
 
 Host watches Git identity files for inspected Thread cwds and notifies `codexhost/thread/workspace/updated`. The Renderer re-inspects that Thread, matching Usage.
 
-### 6. Codexhost file disclosure conditionally replaces native summaries
+### 6. Right-side file disclosure conditionally replaces native summaries
 
-The file disclosure leads the compact line. Its list opens upward in a bounded floating panel; each file keeps the existing hover diff preview and native Review routing. While this replacement exists, recognized official top Changes and bottom Review/diff controls receive a codexhost marker whose stylesheet hides them without deleting nodes or handlers. The marker is removed whenever no replacement exists and on dispose, preserving a native fallback under contract drift or missing file notifications.
+Worktree identity and branch stay on the left. A trailing disclosure on the right shows the current file count and aggregate additions/deletions computed from those conversation files. Its list opens upward, aligned to the right edge, in a bounded sidebar-like floating panel; each file keeps the existing hover diff preview and native Review routing. While this replacement exists, recognized official top Changes and bottom Review/diff controls receive a codexhost marker whose stylesheet hides them without deleting nodes or handlers. The marker is removed whenever no replacement exists and on dispose, preserving a native fallback under contract drift or missing file notifications.
 
 ### 7. Worktree checkbox drives Desktop-owned Composer mode
 
@@ -66,6 +66,6 @@ Existing Threads, ambiguous ownership, unsupported modes, and label-only DOM mat
 ## Migration Plan
 
 1. Keep Host workspace inspection and notifications unchanged.
-2. Filter the Renderer line to changed-file owners and move the file disclosure first.
-3. Float the file list upward and conditionally hide duplicate native controls.
+2. Filter the Renderer line to changed-file owners and keep those identities on the left.
+3. Put file count and aggregate conversation-file stats on the right; float its right-aligned list upward and conditionally hide duplicate native controls.
 4. Re-run renderer unit/E2E, typecheck, formatting, lint, build, and strict OpenSpec validation before integration.

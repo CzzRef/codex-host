@@ -75,3 +75,10 @@
 - [x] 8.2 Move the file disclosure first and float its expanded list upward without Composer reflow
 - [x] 8.3 Preserve file hover previews and native Review routing while conditionally hiding duplicate native Changes/Review controls
 - [x] 8.4 Cover ownership filtering, native fallback/restoration, upward placement, and hover preview in focused unit/E2E verification
+
+## 9. Right-side changed-file disclosure
+
+- [x] 9.1 Keep changed-file Worktree identity and branch on the left of the compact line
+- [x] 9.2 Move the file disclosure to the right and show file count plus aggregate conversation-file additions/deletions
+- [x] 9.3 Align the upward file panel to the right edge and preserve direct file-to-native-change navigation
+- [x] 9.4 Update preview and E2E coverage for the attached-reference layout

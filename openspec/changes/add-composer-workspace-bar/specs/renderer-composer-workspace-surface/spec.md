@@ -9,7 +9,8 @@ The Renderer SHALL insert a codexhost-owned workspace surface as the previous si
 - **WHEN** a connected Thread Composer root is unique and visible
 - **AND** conversation file-change data can be mapped to an inspected repository
 - **THEN** the Renderer SHALL show one compact, single-line surface above the Composer
-- **AND** SHALL show only the owning Worktree identity and branch, not the full inspected repository inventory or repository diff totals
+- **AND** SHALL show only the owning Worktree identity and branch on the left, not the full inspected repository inventory or repository diff totals
+- **AND** MAY show conversation-file aggregate additions/deletions beside the right-side file disclosure
 
 #### Scenario: Composer identity is unsupported
 
@@ -40,15 +41,16 @@ The Renderer SHALL subscribe to `codexhost/thread/workspace/updated` through the
 - **WHEN** a workspace-updated notification arrives for the Composer Thread
 - **THEN** the visible rows SHALL match the next successful inspection
 
-### Requirement: File changes expand upward and replace duplicate native summaries
+### Requirement: File changes expand from the right and replace duplicate native summaries
 
-The codexhost file-change disclosure SHALL be the leading control in the compact workspace surface. Its file list SHALL float upward above the compact line, and hovering a file SHALL show a bounded diff preview. While this replacement is available, the Renderer SHALL hide Desktop's duplicate top Changes summary and bottom Review/diff control without removing their event handlers. It SHALL restore native controls when the replacement is unavailable or disposed.
+The codexhost file-change disclosure SHALL occupy the right edge of the compact workspace surface after the Worktree/branch identity. It SHALL show the current file count and conversation-file aggregate additions/deletions. Its file list SHALL align to the right edge and float upward above the compact line, and hovering a file SHALL show a bounded diff preview. While this replacement is available, the Renderer SHALL hide Desktop's duplicate top Changes summary and bottom Review/diff control without removing their event handlers. It SHALL restore native controls when the replacement is unavailable or disposed.
 
 #### Scenario: User expands changed files
 
-- **WHEN** the user opens the codexhost file-change disclosure
-- **THEN** the file list SHALL appear above the compact workspace line without increasing the Composer's layout height
+- **WHEN** the user opens the right-side codexhost file-change disclosure
+- **THEN** the file list SHALL align to the right edge and appear above the compact workspace line without increasing the Composer's layout height
 - **AND** hovering a file SHALL show its diff preview
+- **AND** selecting a file SHALL enter that file's native change display
 
 #### Scenario: Replacement surface is available
 
