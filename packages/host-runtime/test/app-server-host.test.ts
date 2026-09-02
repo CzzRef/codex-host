@@ -2847,6 +2847,86 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("rolls a running side chat up into its source's list status and cascades archive to it", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    const sourceThreadId = await startPiThread(fixture);
+    const firstTurnId = await completePiTurn(fixture, sourceThreadId, 2);
+    // Desktop creates a side chat as an ephemeral, turn-less fork of the source.
+    writeRequest(fixture.desktopInput, {
+      id: 10,
+      method: "thread/fork",
+      params: {
+        threadId: sourceThreadId,
+        lastTurnId: firstTurnId,
+        excludeTurns: true,
+        ephemeral: true,
+      },
+    });
+    const forkResponse = await fixture.collector.waitFor((message) => requestId(message, 10));
+    const sideChatId = ((forkResponse.result as JsonObject).thread as JsonObject | undefined)?.id;
+    if (typeof sideChatId !== "string") throw new Error("Side chat Fork has no derived Thread ID");
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(sideChatId)),
+    ).resolves.toMatchObject({ ephemeral: true, forkSource: { hostThreadId: sourceThreadId } });
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    const api = delegationApi;
+    const listThreads = async () => {
+      const pending = api.list({ cwd: "/synthetic", limit: 25, sort: "created-desc" });
+      const request = await readJsonLine(fixture.official.stdin);
+      expect(request).toMatchObject({ method: "thread/list" });
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: request.id, result: { data: [], nextCursor: null } })}\n`,
+      );
+      return (await pending).threads;
+    };
+
+    let threads = await listThreads();
+    expect(threads.find((thread) => thread.threadId === sourceThreadId)).toMatchObject({
+      status: "completed",
+    });
+    expect(threads.some((thread) => thread.threadId === sideChatId)).toBe(false);
+
+    const sideTurnId = await startPiTurn(fixture, sideChatId, 20);
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", sideTurnId));
+    threads = await listThreads();
+    expect(threads.find((thread) => thread.threadId === sourceThreadId)).toMatchObject({
+      status: "running",
+    });
+    expect(threads.some((thread) => thread.threadId === sideChatId)).toBe(false);
+
+    const sideSession = fixture.adapter.sessions[1];
+    if (!sideSession) throw new Error("Fake side-chat Session was not opened");
+    sideSession.appendText("side answer");
+    sideSession.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", sideTurnId));
+    threads = await listThreads();
+    expect(threads.find((thread) => thread.threadId === sourceThreadId)).toMatchObject({
+      status: "completed",
+    });
+
+    await expect(delegationApi.archive({ threadId: sourceThreadId })).resolves.toEqual({
+      threadId: sourceThreadId,
+      archived: true,
+    });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(sideChatId)),
+    ).resolves.toMatchObject({ archived: true, forkSource: { hostThreadId: sourceThreadId } });
+    await expect(
+      delegationApi.archive({ threadId: sourceThreadId, archived: false }),
+    ).resolves.toEqual({ threadId: sourceThreadId, archived: false });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(sideChatId)),
+    ).resolves.toMatchObject({ archived: false });
+    await stopFixture(fixture);
+  });
+
   it("renames a Desktop first-message fallback that has no preview evidence", async () => {
     let delegationApi: DelegationControlApi | undefined;
     const fixture = createFixture({

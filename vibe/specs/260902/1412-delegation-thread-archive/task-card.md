@@ -47,7 +47,7 @@ Task: 1412-delegation-thread-archive
 
 - Goal: Desktop 之外的消费者（EyPc 归档按钮）能真实归档 Host 托管的额外进程，而不是把 `thread/archive` 发给不认识该 id 的官方 app-server。
 - Symptom: EyPc 对额外进程归档 6 次全部在预检 `thread/read` 失败（`protocol-error`），Host 记录与 Desktop 侧栏都不变；只有在 Codex App 里归档才生效。
-- In scope: `thread archive [<thread>]` / `thread unarchive [<thread>]` 委派动词；控制服务路由 `/v1/thread/archive`；注册表归属路由；Host `#archiveDelegationThread` 与 Desktop 路径共用的 `#applyExternalArchiveState`；帮助文本与 OpenSpec 增量。
+- In scope: `thread archive [<thread>]` / `thread unarchive [<thread>]` 委派动词；控制服务路由 `/v1/thread/archive`；注册表归属路由；Host `#archiveDelegationThread` 与 Desktop 路径共用的 `#applyExternalArchiveState`；帮助文本与 OpenSpec 增量。第二轮（同日 18:10）：归档级联到 `ephemeral` side 子对话（`#cascadeSideChatArchiveState`）；`thread list` 的 status / attention 汇总运行中的 side 子对话到来源行（`#sideChatRootId` / `#sideChatRunningUnder`）。
 - Out of scope: Desktop 归档 UI；原生 Codex Thread 归档；EyPc 侧消费（其仓库 RAW-199）。
 
 ## Decision
@@ -59,9 +59,9 @@ Task: 1412-delegation-thread-archive
 
 ## Work And Verification
 
-- Changed surface: `delegation-types.ts`（`ThreadArchiveInput/Result`、API `archive`）；`delegation-control-registry.ts`（归属路由）；`delegation-control-server.ts`（`/v1/thread/archive`）；`delegation-cli.ts`（动词、帮助）；`app-server-host.ts`（`#archiveDelegationThread`、`#applyExternalArchiveState`、`#notifyExternalArchiveState`，`#setExternalThreadArchived` 改为复用）。
-- Verification: 见 PROJECT_STATUS 行；聚焦 vitest 四个文件 + `tsc -b`。
-- Unverified gaps: 运行中的 Host 仍是 13:25 启动的旧 dist，`/v1/thread/archive` 路由要等 Desktop 正常退出后 `codexhost launch` 重启才激活；重启会中断当前运行中的额外进程（含并行会话的 Pi 线程），需用户择时执行。
+- Changed surface: `delegation-types.ts`（`ThreadArchiveInput/Result`、API `archive`）；`delegation-control-registry.ts`（归属路由）；`delegation-control-server.ts`（`/v1/thread/archive`）；`delegation-cli.ts`（动词、帮助）；`app-server-host.ts`（`#archiveDelegationThread`、`#applyExternalArchiveState`、`#notifyExternalArchiveState`，`#setExternalThreadArchived` 改为复用；第二轮 `#cascadeSideChatArchiveState` / `#sideChatRootId` / `#sideChatRunningUnder`）。
+- Verification: 见 PROJECT_STATUS 行；聚焦 vitest 四个文件 + `tsc -b`；第二轮 app-server-host `side chat|archiv` 过滤用例（来源行 completed→running→completed，归档级联到子对话记录）。
+- Unverified gaps: 第一轮 CLI 归档已在 15:22 源码重启后生效。第二轮 side 子对话级联 / 列表汇总需一次包含本变更的 Desktop 重启后真机核验。EyPc 消费见其 RAW-199。
 
 ## Closeout
 

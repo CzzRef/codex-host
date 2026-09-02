@@ -23,3 +23,19 @@
 - **WHEN** 调用方既未提供 `<thread>` 也没有 `CODEXHOST_THREAD_ID`
 - **THEN** 命令 SHALL 以 `INVALID_ARGUMENT` 失败
 - **AND** MUST NOT 联系 Runtime
+
+### Requirement: 归档级联到 side 子对话
+side 子对话是 `ephemeral` 的派生 Thread（带 `forkSource`），不出现在任何列表里，Desktop 把它嵌在来源 Thread 内展示。对来源 Thread 的归档 / 取消归档——无论来自 Desktop `thread/archive` 还是委派 CLI——SHALL 把同一归档状态持久化到其下全部 side 子对话（含嵌套）。子对话 MUST NOT 单独发送 `thread/archived` / `thread/unarchived`，来源 Thread 自己的通知已代表该手势。
+
+#### Scenario: Codex 里归档主对话
+- **WHEN** Desktop 对一个带 side 子对话的外部 Thread 执行 `thread/archive`
+- **THEN** Host SHALL 持久化来源 Thread 与全部 side 子对话的 `archived: true`
+- **AND** 取消归档时 SHALL 同样级联为 `archived: false`
+
+### Requirement: side 子对话活动汇总到来源 Thread
+`codexhost thread list` 的 `status` 与 `attention` SHALL 把运行中的 side 子对话计入来源 Thread：任一 side 子对话 `running` 时来源行 SHALL 为 `running`；side 子对话挂起提问或审批时来源行 SHALL 携带对应 `attention`。side 子对话自身仍 MUST NOT 出现在列表中。
+
+#### Scenario: 子对话运行时来源行为 running
+- **WHEN** 来源 Thread 自身空闲而其 side 子对话正在执行一个 Turn
+- **THEN** `thread list` 中的来源行 SHALL 报告 `status: running`
+- **AND** 子对话 Turn 结束后来源行 SHALL 回到自身终态
