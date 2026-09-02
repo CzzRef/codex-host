@@ -248,6 +248,15 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
     ),
   ).toBe(true);
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("file change");
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("+8");
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("-2");
+  expect(
+    await bar.evaluate(
+      (node) =>
+        node.firstElementChild?.classList.contains("codexhost-workspace-chips") === true &&
+        node.lastElementChild?.hasAttribute("data-codexhost-workspace-files") === true,
+    ),
+  ).toBe(true);
   await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
   await page.locator(".codexhost-workspace-files-toggle").click();
   const fileRow = page.locator("[data-codexhost-workspace-file]");
@@ -256,9 +265,14 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("+8");
   const barBox = await bar.boundingBox();
   const fileListBox = await page
-    .locator('[data-codexhost-workspace-file-list="upward"]')
+    .locator('[data-codexhost-workspace-file-list="upward-right"]')
     .boundingBox();
   expect(barBox && fileListBox && fileListBox.y + fileListBox.height <= barBox.y).toBe(true);
+  expect(
+    barBox &&
+      fileListBox &&
+      Math.abs(fileListBox.x + fileListBox.width - (barBox.x + barBox.width)) <= 12,
+  ).toBe(true);
   await fileRow.hover();
   await expect(page.locator("[data-codexhost-workspace-preview]")).toBeVisible();
   await expect(page.locator("[data-codexhost-workspace-preview]")).toContainText("+keep");

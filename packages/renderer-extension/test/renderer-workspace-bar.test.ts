@@ -15,6 +15,7 @@ import {
   turnKeyMatches,
 } from "../src/renderer-conversation-files.js";
 import {
+  aggregateConversationFileStats,
   isNativeWorkspaceDiffControl,
   repositoriesForConversationFiles,
   repositoryDisplayName,
@@ -135,6 +136,12 @@ describe("Renderer workspace bar helpers", () => {
       ]),
     ).toEqual([vendor, sibling]);
     expect(repositoriesForConversationFiles(snapshot, [])).toEqual([]);
+    expect(
+      aggregateConversationFileStats([
+        { ...file("src/a.ts"), addedLines: 2, deletedLines: 1 },
+        { ...file("src/b.ts"), addedLines: 3, deletedLines: 4 },
+      ]),
+    ).toEqual({ addedLines: 5, deletedLines: 5 });
   });
 
   it("recognizes the official Changes and Review controls", () => {

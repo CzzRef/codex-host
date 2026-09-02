@@ -462,10 +462,10 @@
         gap: 6px;
         min-height: 24px;
         min-width: 0;
-        padding: 0 7px;
-        border: 1px solid rgb(255 255 255 / 8%);
-        border-radius: 999px;
-        background: rgb(255 255 255 / 4%);
+        padding: 0 6px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
         font-size: 11px;
         white-space: nowrap;
       }
@@ -504,6 +504,7 @@
       .files {
         position: relative;
         flex: 0 0 auto;
+        margin-left: auto;
       }
 
       .files-toggle {
@@ -527,10 +528,11 @@
 
       .file-list {
         position: absolute;
+        right: 0;
         bottom: calc(100% + 8px);
-        left: 0;
+        left: auto;
         display: none;
-        width: min(520px, calc(100vw - 24px));
+        width: min(420px, calc(100vw - 24px));
         max-height: min(300px, 42vh);
         overflow: auto;
         padding: 6px;
@@ -572,10 +574,11 @@
 
       .file-preview {
         position: absolute;
+        right: 428px;
         bottom: calc(100% + 8px);
-        left: 528px;
+        left: auto;
         display: none;
-        width: min(360px, calc(100vw - 560px));
+        width: min(360px, calc(100vw - 460px));
         padding: 8px 10px;
         border: 1px solid rgb(255 255 255 / 12%);
         border-radius: 10px;
@@ -723,8 +726,8 @@
         <h2>你要的</h2>
         <ol>
           <li>
-            <b>工作区 / 变更缩成单行浮层</b>，贴在 Composer 正上方。只展示改动文件所在的 Worktree
-            和分支，不再罗列无关仓库或工作区总增删统计。
+            <b>工作区 / 变更缩成单行浮层</b>，贴在 Composer 正上方。左侧只展示改动文件所在的
+            Worktree 和分支；右侧展示文件数与对话文件增删统计，并展开具体文件。
           </li>
           <li>
             <b>编辑 / 回滚 / Redo 长在选中的那一轮上</b>，做横向
@@ -752,8 +755,9 @@
             transcript。
           </li>
           <li>
-            顶部只保留变更文件所在 Worktree 与分支；文件变更折叠控件前置，列表向上浮层展开并支持悬浮
-            diff 预览。原生 Changes / Review 重复区在替代控件可用时隐藏。
+            顶部左侧保留变更文件所在 Worktree
+            与分支；右侧折叠控件展示文件数和聚合增删，文件列表贴右边向上展开，并支持悬浮 diff
+            预览与点击进入该文件的官方变更展示。原生 Changes / Review 重复区在替代控件可用时隐藏。
           </li>
           <li>
             轮次操作仍是 Host 自有节点（不能写进 React transcript），但坐标锚到选中
@@ -849,8 +853,19 @@
 
             <div class="footer">
               <aside class="mask" aria-label="工作区变更浮层">
+                <div class="chips">
+                  <span class="repo">
+                    <b>260902-worktree-checkbox-routing</b>
+                    <span class="branch">· codex/260902-worktree-checkbox-routing</span>
+                  </span>
+                </div>
                 <div class="files" id="files" data-open="false">
-                  <button class="files-toggle" type="button" id="files-toggle">▸ 文件变更 2</button>
+                  <button class="files-toggle" type="button" id="files-toggle">
+                    <span>2 个文件</span>
+                    <span class="add">+126</span>
+                    <span class="del">-21</span>
+                    <span id="files-chevron">▸</span>
+                  </button>
                   <div class="file-list" title="悬浮文件可预览 diff">
                     <button class="file" type="button">
                       <code>packages/renderer-extension/src/renderer-turn-actions.ts</code>
@@ -868,12 +883,6 @@
                     <span class="del">- const inventory = allRepositories;</span>
                     // changed-file owner only
                   </div>
-                </div>
-                <div class="chips">
-                  <span class="repo">
-                    <b>260902-worktree-checkbox-routing</b>
-                    <span class="branch">· codex/260902-worktree-checkbox-routing</span>
-                  </span>
                 </div>
               </aside>
               <div class="composer">
@@ -1105,7 +1114,7 @@
       document.getElementById("files-toggle").addEventListener("click", () => {
         const open = files.dataset.open === "true";
         files.dataset.open = String(!open);
-        document.getElementById("files-toggle").textContent = `${open ? "▸" : "▾"} 文件变更 2`;
+        document.getElementById("files-chevron").textContent = open ? "▸" : "▾";
       });
 
       document.addEventListener("click", (event) => {
