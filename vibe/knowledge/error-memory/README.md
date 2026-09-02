@@ -8,7 +8,7 @@ Use this directory for reusable, verified failure patterns.
 
 | Record | Fingerprint | Status |
 | --- | --- | --- |
-| [Grok 插队后 Host Turn 被判 failed](grok-interjection-persists-extra-native-turn.md#L1) | steer → native interject persists an extra Native Turn; settle asserted exactly one | verified 2026-09-02 |
+| [Grok 插队后 Host Turn 被判 failed](grok-interjection-persists-extra-native-turn.md#L1) | `x.ai/interject` Method not found → cancel-and-resend fallback; settle read history before Grok persisted `turn_completed`, so one Native Turn counted twice | verified 2026-09-02 (root cause corrected same day) |
 
 ## Sources To Review During Migration
 
