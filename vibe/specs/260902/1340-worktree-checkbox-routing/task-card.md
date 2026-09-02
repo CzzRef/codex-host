@@ -76,9 +76,10 @@ The product requirement delta belongs to the active [Composer workspace surface 
 - Focused ESLint and package-boundary checks passed.
 - Prettier check passed.
 - OpenSpec `add-composer-workspace-bar --strict` passed with `@fission-ai/openspec@1.10.0`.
-- Full root TypeScript build remains blocked by absent optional/private `@deepseek-ai/dsh-*` declarations in the shared dependency installation; the focused affected projects passed.
+- Project AI rule/link audit passed using a temporary original-layout link bridge for the nested worktree; no repository link was rewritten.
+- Full root TypeScript build remains blocked because the child reused only the primary checkout's root `node_modules`, while the locked `@deepseek-ai/dsh-*` dependencies are installed package-locally; the focused affected projects passed.
 
 ## Documentation impact
 
 - `doc_drift: resolved` — OpenSpec requirement, design, tasks, implementation, unit tests, and E2E now agree.
-- Memory routing: no reusable product knowledge or ADR; the build-environment blocker is reported, not treated as feature failure.
+- Memory routing: captured the reusable build trap in [Root `node_modules` symlink misses workspace-local dependencies](../../../knowledge/error-memory/worktree-root-node-modules-symlink-misses-workspace-nested-deps.md); no ADR needed.
