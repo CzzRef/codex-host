@@ -9,7 +9,7 @@ Markers and timestamps are quick-resume hints. Integration still requires live G
 
 | Repository | Child Branch | Detail | Hub | Source Head | Target Head | Worktree | Milestone | Merge | Push | Marker | State At | Next Action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `codex-host` | `codex/260901-composer-workspace-bar` | `codex-host/openspec/changes/add-composer-workspace-bar/tasks.md` | [hub](../../../codex-host-worktrees/codex) | `0cd79974dab3` | `czz-dev@3c89c8004702` | clean | complete | integrated 1/1 | observed-upstream-contained | `87ab80acfba8` | `2026-09-01T10:21:31Z` | parked; resume later without removing the worktree |
+| `codex-host` | `codex/260901-composer-workspace-bar` | `codex-host/openspec/changes/add-composer-workspace-bar/tasks.md` | [hub](../../../codex-host-worktrees/codex) | `0cd79974dab3` | `czz-dev@7c0333ae4d65` | removed | complete | integrated 1/1 | observed-upstream-contained | `571949f45ee7` | `2026-09-02T08:10:23Z` | worktree removed; branch kept |
 <!-- worktree-control-index:260901-composer-workspace-bar:end -->
 
 <!-- worktree-task-index:260902-worktree-checkbox-routing:start -->
@@ -23,3 +23,9 @@ Markers and timestamps are quick-resume hints. Integration still requires live G
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `260902-cursor-native-history` | `codex-host` | `codex/260902-cursor-native-history` | [task owner](../../vibe/specs/260902/1502-cursor-native-history/spec.md#L1) | `d9809a5bef5c` | `czz-dev@467d491639a6` | removed | verified-commit | integrated 1/1 | not-authorized | `46ff419e7dff` | `2026-09-02T07:42:00Z` | worktree removed; branch kept; origin push blocked in this agent (uid 501 / Launch Services) |
 <!-- worktree-task-index:260902-cursor-native-history:end -->
+
+<!-- worktree-task-index:260901-composer-workspace-bar:start -->
+| Task ID | Repository | Child Branch | Detail | Source Head | Target Head | Worktree | Milestone | Merge | Push | Marker | State At | Next Action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `260901-composer-workspace-bar` | `codex-host` | `codex/260901-composer-workspace-bar` | [task owner](../../openspec/changes/add-composer-workspace-bar/tasks.md#L1) | `0cd79974dab3` | `czz-dev@7c0333ae4d65` | removed | complete | integrated 1/1 | observed-upstream-contained | `571949f45ee7` | `2026-09-02T08:10:23Z` | worktree removed; branch kept |
+<!-- worktree-task-index:260901-composer-workspace-bar:end -->
