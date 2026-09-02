@@ -181,6 +181,8 @@ interface ActiveTurn {
   approvals: Map<HostInteractionId, ActiveApproval>;
   cancellationRequested: boolean;
   pendingSteers: string[];
+  /** Steers Grok accepted natively during this Turn; each may persist its own Native Turn. */
+  deliveredInterjections: number;
   beforeNativeTurnKeys: Set<string>;
   completion: Promise<void>;
   resolveCompletion(): void;
@@ -485,6 +487,7 @@ class GrokHarnessSession implements HarnessSession {
       approvals: new Map(),
       cancellationRequested: false,
       pendingSteers: [],
+      deliveredInterjections: 0,
       beforeNativeTurnKeys: new Set(
         this.#snapshot.turns.map((turn) => turn.nativeTurnRef.nativeTurnKey),
       ),
@@ -579,6 +582,7 @@ class GrokHarnessSession implements HarnessSession {
       approvals: new Map(),
       cancellationRequested: false,
       pendingSteers: [],
+      deliveredInterjections: 0,
       beforeNativeTurnKeys: new Set(),
       completion,
       resolveCompletion,
@@ -813,6 +817,7 @@ class GrokHarnessSession implements HarnessSession {
     try {
       await this.#transport.interject(text);
       if (this.#active !== active || active.cancellationRequested) return;
+      active.deliveredInterjections += 1;
       const index = active.pendingSteers.indexOf(text);
       if (index >= 0) active.pendingSteers.splice(index, 1);
     } catch {
@@ -1169,9 +1174,16 @@ class GrokHarnessSession implements HarnessSession {
       created = this.#snapshot.turns.filter(
         (turn) => !active.beforeNativeTurnKeys.has(turn.nativeTurnRef.nativeTurnKey),
       );
-      if (created.length !== 1) {
+      // A steer delivered through native interject may be persisted by Grok as
+      // its own Native Turn, so one Host Turn legitimately spans the prompt's
+      // Turn plus up to one Turn per delivered interjection. Anything outside
+      // that range is still a protocol fault. The prompt's Native Turn keeps
+      // the Host Turn identity and checkpoint, so rewind/redo still target the
+      // state before the whole Host Turn.
+      const maxExpected = 1 + active.deliveredInterjections;
+      if (created.length < 1 || created.length > maxExpected) {
         throw new Error(
-          `Grok Turn persisted ${created.length} new Native Turns; exactly one is required`,
+          `Grok Turn persisted ${created.length} new Native Turns; expected 1 to ${maxExpected} (${active.deliveredInterjections} interjection(s) delivered)`,
         );
       }
       nativeTurnRef = created[0]?.nativeTurnRef;
@@ -1193,6 +1205,7 @@ class GrokHarnessSession implements HarnessSession {
       for (const turn of created) {
         active.beforeNativeTurnKeys.add(turn.nativeTurnRef.nativeTurnKey);
       }
+      active.deliveredInterjections = 0;
       const next = active.pendingSteers.shift();
       if (!next) {
         this.#finish(
