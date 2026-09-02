@@ -2,7 +2,7 @@
 
 Tool: pi
 Date: 2026-09-02
-Status: implemented / focused-verified
+Status: implemented / integrated into czz-dev (`c9ee09b`)
 
 ## User request
 
@@ -58,7 +58,7 @@ The product requirement delta belongs to the active [Composer workspace surface 
       "base_sha": "40e890fd18d44d8577fcf9c90833abb600d54040",
       "worktree_branch": "codex/260902-worktree-checkbox-routing",
       "task_owner": "vibe/specs/260902/1340-worktree-checkbox-routing/task-card.md",
-      "head": "7d6ac8e6b0187ff2c2350f90baf2592cb0182e06",
+      "head": "142fcfbd9cc3259a0a39e1195fc19a833f9fcc3c",
       "upstream": null
     }
   ],
@@ -66,8 +66,8 @@ The product requirement delta belongs to the active [Composer workspace surface 
   "push_mode": "current-message-only",
   "verification_state": "verified-commit",
   "push_state": "not-authorized",
-  "integration_state": "not-started",
-  "next_action": "record the verified lifecycle-mode error memory, then return the branch for main review"
+  "integration_state": "integrated",
+  "next_action": "parked; resume later without removing the worktree"
 }
 ```
 
