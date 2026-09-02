@@ -47,7 +47,7 @@ This fingerprint applies to reused npm workspace installations with nested packa
 
 ## Prevention rule
 
-Do not use a root-only `node_modules` symlink as evidence for a full codexhost workspace build. Either bootstrap the child worktree with a complete lockfile installation or run and report only focused affected-project checks, keeping the root build explicitly blocked.
+Do not use a root-only `node_modules` symlink as evidence for a full codexhost workspace build. Bootstrap the child with a complete lockfile installation, mirror both root and every package-local workspace installation, or run and report only focused affected-project checks.
 
 ## Alternative route
 
@@ -67,7 +67,8 @@ Steps:
 Verification:
 
 - The Worktree checkbox task passed focused `shared-contracts` + `renderer-extension` TypeScript build, 225 Renderer tests, Composer Playwright E2E, Renderer bundle, ESLint, boundaries, Prettier, and strict OpenSpec validation.
+- A temporary complete dependency mirror covering the repository root plus every package-local workspace `node_modules` then passed the full root `npm run typecheck`.
 
 Fallback:
 
-- Run a complete lockfile install inside the child worktree before retrying the full root build. This fallback remains candidate until separately exercised.
+- Run a complete lockfile install inside the child worktree before retrying the full root build. This installation fallback remains candidate until separately exercised.

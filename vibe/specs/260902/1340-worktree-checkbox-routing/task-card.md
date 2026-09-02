@@ -72,12 +72,13 @@ The product requirement delta belongs to the active [Composer workspace surface 
 - Renderer unit suite: 32 files, 225 tests passed.
 - Composer Playwright E2E: 1 passed; checked selects Worktree, unchecked selects Local and persists `0`, re-check selects Worktree.
 - Focused TypeScript build: `shared-contracts` + `renderer-extension` passed.
+- Full root `npm run typecheck` passed after the temporary dependency mirror included both root and package-local workspace `node_modules` directories.
 - Renderer production bundle build passed.
 - Focused ESLint and package-boundary checks passed.
 - Prettier check passed.
 - OpenSpec `add-composer-workspace-bar --strict` passed with `@fission-ai/openspec@1.10.0`.
 - Project AI rule/link audit passed using a temporary original-layout link bridge for the nested worktree; no repository link was rewritten.
-- Full root TypeScript build remains blocked because the child reused only the primary checkout's root `node_modules`, while the locked `@deepseek-ai/dsh-*` dependencies are installed package-locally; the focused affected projects passed.
+- The first full-root attempt failed because a root-only dependency link omitted package-local workspace installations. The corrected complete temporary mirror passed, and the reusable trap is recorded below.
 
 ## Documentation impact
 
