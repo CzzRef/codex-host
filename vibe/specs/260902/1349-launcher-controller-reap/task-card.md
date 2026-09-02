@@ -55,7 +55,8 @@ Task: 1349-launcher-controller-reap
 - Changed surface: `crates/platform/src/termination_signal.rs` (new) + `lib.rs` export; `crates/launcher/src/main.rs` supervision loops; `packages/desktop-control/src/parent-process-watch.ts` (new), `release-main.ts`, `index.ts`; tests in both packages.
 - Verification (2026-09-02): `cargo test -p codexhost-platform --lib termination_signal` 1 pass; `cargo test -p codexhost-launcher --bin codexhost` 41 pass; clippy `-D warnings` and `cargo fmt --check` clean; `vitest packages/desktop-control` 68 pass; runtime proof: a parent `SIGKILL`ed while its child ran `watchParentProcess` made the child exit within the next poll.
 - Live state 2026-09-02: the 18:45 and 18:50 source relaunches run the launcher binary and controller dist built from this change (controller 5777 is a child of launcher 5766). The 18:45 instance was quit by another session at about 18:49 before a `SIGTERM` could be sent; its controller 92611 did not linger.
-- Unverified gaps: `SIGTERM` to a running source Launcher end to end (needs a quiet moment, since it tears the Desktop down); Windows.
+- SIGTERM end to end 2026-09-02 19:15:18: `kill -TERM 82835` on the 19:13 source Launcher; the Launcher exited within 2 s and took controller 82839, Desktop root 82838, Host runtime 83007 and a Grok child 84549 with it, the runtime descriptor was removed, and no controller was left under PID 1. Relaunched at 19:15:21 as launcher 91215 / desktop 91219 / controller 91220 / host 91347.
+- Unverified gaps: Windows.
 
 ## Closeout
 
