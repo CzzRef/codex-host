@@ -60,6 +60,7 @@ import {
   listExternalItems,
   listExternalTurns,
 } from "./external-thread-history.js";
+import { decodeThreadRedoRequest, executeExternalThreadRedo } from "./external-thread-redo.js";
 import { executeExternalThreadRollback } from "./external-thread-rollback.js";
 import {
   createExternalThreadRecordInput,
@@ -719,6 +720,10 @@ export class AppServerHost {
       }
       if (request.method === "codexhost/thread/command/execute") {
         await this.#executeThreadCommand(request);
+        continue;
+      }
+      if (request.method === "codexhost/thread/redo") {
+        await this.#redoExternalThread(request);
         continue;
       }
       if (request.method === "thread/list") {
@@ -1827,6 +1832,7 @@ export class AppServerHost {
                 }
               : {}),
             history: resolution.thread.session.capabilities.history,
+            ...(resolution.thread.record.historyRedo ? { historyRedoAvailable: true } : {}),
             ...(resolution.thread.latestUsage ? { usage: resolution.thread.latestUsage } : {}),
             locked: true,
           },
@@ -2741,6 +2747,41 @@ export class AppServerHost {
     }
     await this.#writer.json(rpcEnvelope(request, { result: threadRevertResult(result.thread) }));
     await this.#writer.json({ method: "thread/reverted", params: { threadId: thread.id } });
+  }
+
+  async #redoExternalThread(request: JsonRpcRequest): Promise<void> {
+    let threadId: string;
+    try {
+      const decoded = decodeThreadRedoRequest(request);
+      if (!decoded) throw new Error("Expected codexhost/thread/redo request");
+      threadId = decoded.threadId;
+    } catch (error) {
+      await this.#writer.json(rpcError(request, -32602, errorMessage(error)));
+      return;
+    }
+    const resolution = await this.#resolveExternalThread(threadId);
+    if (resolution.kind === "error") {
+      await this.#writer.json(rpcError(request, resolution.error.code, resolution.error.message));
+      return;
+    }
+    if (resolution.kind !== "external") {
+      await this.#writer.json(
+        rpcError(request, -32076, "Official Codex Thread does not use Host Redo"),
+      );
+      return;
+    }
+    const result = await executeExternalThreadRedo({
+      current: resolution.thread,
+      adapters: this.#externalAdapters,
+      repository: this.#repository,
+      runtime: this.#externalRuntime,
+      environment: this.#options.environment ?? process.env,
+    });
+    if (!result.ok) {
+      await this.#writer.json(rpcError(request, result.error.code, result.error.message));
+      return;
+    }
+    await this.#writer.json(rpcEnvelope(request, { result: { thread: result.thread } }));
   }
 
   async #rollbackExternalThread(

@@ -249,6 +249,10 @@ export class FakeHarnessSession implements HarnessSession {
     return this.#state;
   }
 
+  get isClosed(): boolean {
+    return this.#closed;
+  }
+
   setStateForSnapshot(state: HarnessSessionState): void {
     if (this.#closed) throw new Error("Fake Harness Session is closed");
     this.#state = cloneJson(state);
@@ -1162,7 +1166,20 @@ export class FakeHarnessAdapter implements HarnessAdapter {
         },
       };
     }
-    if (input.kind === "resume") return { ok: true, value: source };
+    if (input.kind === "resume") {
+      if (!source.isClosed) return { ok: true, value: source };
+      return {
+        ok: true,
+        value: this.#createSession(
+          input.cwd,
+          source.state.effectiveModel,
+          source.persistedSnapshot().turns,
+          source.state.effectiveThinkingOptionId,
+          source.state.effectivePermissionModeId,
+          sourceRef.nativeSessionId,
+        ),
+      };
+    }
     if (input.kind === "rollbackLastTurn") {
       const current = await source.readSnapshot();
       if (!current.ok) return current;
@@ -1238,39 +1255,42 @@ export class FakeHarnessAdapter implements HarnessAdapter {
     sourceTurns: HostTurnSnapshot[] = [],
     thinkingOptionId?: HarnessThinkingOptionId,
     permissionModeId?: HarnessPermissionModeId,
+    nativeSessionId?: string,
   ): FakeHarnessSession {
     this.#sessionOrdinal += 1;
     const nativeRef: NativeSessionRef = {
       harnessId: this.harnessId,
-      nativeSessionId: `fake-session-${this.#sessionOrdinal}`,
+      nativeSessionId: nativeSessionId ?? `fake-session-${this.#sessionOrdinal}`,
       formatVersion: 1,
     };
-    const turns = sourceTurns.map((turn, index): HostTurnSnapshot => ({
-      ...cloneJson(turn),
-      items: turn.items.map((snapshot, itemIndex) => ({
-        ...cloneJson(snapshot),
-        item: {
-          ...cloneJson(snapshot.item),
-          itemId: hostItemIdSchema.parse(
-            `fake-derived-item-${this.#sessionOrdinal}-${index + 1}-${itemIndex + 1}`,
-          ),
-        },
-      })),
-      nativeTurnRef: {
-        ...turn.nativeTurnRef,
-        nativeSessionId: nativeRef.nativeSessionId,
-        nativeTurnKey: `fake-derived-turn-${index + 1}`,
-      },
-      ...(turn.checkpoint
-        ? {
-            checkpoint: {
-              ...turn.checkpoint,
-              nativeSessionId: nativeRef.nativeSessionId,
-              checkpointId: `fake-checkpoint-${index + 1}`,
+    const turns = nativeSessionId
+      ? sourceTurns.map((turn) => cloneJson(turn))
+      : sourceTurns.map((turn, index): HostTurnSnapshot => ({
+          ...cloneJson(turn),
+          items: turn.items.map((snapshot, itemIndex) => ({
+            ...cloneJson(snapshot),
+            item: {
+              ...cloneJson(snapshot.item),
+              itemId: hostItemIdSchema.parse(
+                `fake-derived-item-${this.#sessionOrdinal}-${index + 1}-${itemIndex + 1}`,
+              ),
             },
-          }
-        : {}),
-    }));
+          })),
+          nativeTurnRef: {
+            ...turn.nativeTurnRef,
+            nativeSessionId: nativeRef.nativeSessionId,
+            nativeTurnKey: `fake-derived-turn-${index + 1}`,
+          },
+          ...(turn.checkpoint
+            ? {
+                checkpoint: {
+                  ...turn.checkpoint,
+                  nativeSessionId: nativeRef.nativeSessionId,
+                  checkpointId: `fake-checkpoint-${index + 1}`,
+                },
+              }
+            : {}),
+        }));
     const session = new FakeHarnessSession(
       this.harnessId,
       this.catalog,

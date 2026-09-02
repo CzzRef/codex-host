@@ -20,6 +20,7 @@ import {
   THREAD_TOKEN_USAGE_UPDATED_METHOD,
   THREAD_USAGE_INSPECT_METHOD,
   THREAD_USAGE_UPDATED_METHOD,
+  THREAD_REDO_METHOD,
   UPDATE_CHECK_METHOD,
   UPDATE_START_METHOD,
   UPDATE_STATUS_METHOD,
@@ -145,6 +146,7 @@ describe("Renderer fixed Model request client", () => {
       "inspectThreadWorkspace",
       "listThreadOwnership",
       "readUpdateStatus",
+      "redoThread",
       "rollbackThread",
       "selectThreadModel",
       "selectThreadPermissionMode",
@@ -387,5 +389,13 @@ describe("Renderer fixed Model request client", () => {
     if (!client) throw new Error("Synthetic Model client was not created");
 
     await expect(client.inspectHarness({ harnessId: piHarnessId })).rejects.toThrow();
+  });
+
+  it("sends Host last-Turn Redo for a mapped Thread", async () => {
+    const sendRequest = vi.fn(async () => ({ thread: { id: "thread-1", turns: [] } }));
+    const client = createRendererModelClient([{ sendRequest }]);
+    if (!client) throw new Error("Synthetic Model client was not created");
+    await client.redoThread?.({ threadId: hostThreadIdSchema.parse("thread-1") });
+    expect(sendRequest).toHaveBeenCalledWith(THREAD_REDO_METHOD, { threadId: "thread-1" });
   });
 });

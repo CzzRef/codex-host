@@ -26,7 +26,7 @@ import type { ExternalThread, ExternalThreadRuntime } from "./external-thread-ru
 export type ExternalThreadRollbackResult =
   { ok: false; error: ExternalThreadRpcError } | { ok: true; thread: JsonObject };
 
-function currentConfiguration(current: ExternalThread): HarnessSessionState {
+export function currentConfiguration(current: ExternalThread): HarnessSessionState {
   const state = current.stateObserver.state;
   return {
     ...state,
@@ -48,7 +48,7 @@ function currentConfiguration(current: ExternalThread): HarnessSessionState {
   };
 }
 
-function sameCurrentConfiguration(
+export function sameCurrentConfiguration(
   current: HarnessSessionState,
   replacement: HarnessSessionState,
 ): boolean {
@@ -59,7 +59,7 @@ function sameCurrentConfiguration(
   );
 }
 
-async function restoreCurrentConfiguration(
+export async function restoreCurrentConfiguration(
   session: HarnessSession,
   configuration: HarnessSessionState,
 ): Promise<ExternalThreadRpcError | null> {

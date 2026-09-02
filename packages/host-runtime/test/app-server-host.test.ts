@@ -4462,6 +4462,88 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("redoes a distinct last-Turn rollback onto the stashed Native Session", async () => {
+    const adapter = rollbackCapableAdapter();
+    const fixture = createFixture({ externalAdapters: new Map([["pi", adapter]]) });
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    const threadId = await startPiThread(fixture);
+    const firstTurnId = await completePiTurn(fixture, threadId, 2);
+    const secondTurnId = await completePiTurn(fixture, threadId, 3);
+
+    writeRequest(fixture.desktopInput, {
+      id: 10,
+      method: "thread/rollback",
+      params: { threadId, numTurns: 1 },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 10)),
+    ).resolves.toMatchObject({
+      result: { thread: { id: threadId, turns: [{ id: firstTurnId }] } },
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 11,
+      method: "codexhost/thread/inspect",
+      params: { threadId },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 11)),
+    ).resolves.toMatchObject({
+      result: { owner: "external", historyRedoAvailable: true },
+    });
+
+    writeRequest(fixture.desktopInput, {
+      id: 12,
+      method: "codexhost/thread/redo",
+      params: { threadId },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 12)),
+    ).resolves.toMatchObject({
+      result: {
+        thread: { id: threadId, turns: [{ id: firstTurnId }, { id: secondTurnId }] },
+      },
+    });
+    const restored = await fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId));
+    expect(restored).toMatchObject({
+      nativeSessionRef: { nativeSessionId: "fake-session-1" },
+      turnMappings: [{ hostTurnId: firstTurnId }, { hostTurnId: secondTurnId }],
+    });
+    expect(restored?.historyRedo).toBeUndefined();
+    await completePiTurn(fixture, threadId, 13, 2);
+    expect(officialWrite).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
+  it("rejects Host Redo without a slot and does not forward it to Codex", async () => {
+    const adapter = rollbackCapableAdapter();
+    const fixture = createFixture({ externalAdapters: new Map([["pi", adapter]]) });
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    const threadId = await startPiThread(fixture);
+    await completePiTurn(fixture, threadId, 2);
+
+    writeRequest(fixture.desktopInput, {
+      id: 10,
+      method: "codexhost/thread/redo",
+      params: { threadId },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 10)),
+    ).resolves.toMatchObject({ error: { code: -32076 } });
+
+    writeRequest(fixture.desktopInput, {
+      id: 11,
+      method: "codexhost/thread/redo",
+      params: { threadId: "official-thread" },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 11)),
+    ).resolves.toMatchObject({ error: { code: -32076 } });
+    expect(officialWrite).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
   it("restores configuration before reading a resume-state rollback replacement", async () => {
     const permissionModes = harnessPermissionModeCatalogSchema.parse({
       modes: [

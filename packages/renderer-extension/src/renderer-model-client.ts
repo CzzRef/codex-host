@@ -71,6 +71,7 @@ export const THREAD_TOKEN_USAGE_UPDATED_METHOD = "thread/tokenUsage/updated";
 export const THREAD_WORKSPACE_INSPECT_METHOD = "codexhost/thread/workspace/inspect";
 export const THREAD_WORKSPACE_UPDATED_METHOD = "codexhost/thread/workspace/updated";
 export const THREAD_ROLLBACK_METHOD = "thread/rollback";
+export const THREAD_REDO_METHOD = "codexhost/thread/redo";
 export const UPDATE_CHECK_METHOD = "codexhost/update/check";
 export const UPDATE_START_METHOD = "codexhost/update/start";
 export const UPDATE_STATUS_METHOD = "codexhost/update/status";
@@ -123,6 +124,7 @@ export interface RendererModelClient {
   subscribeThreadWorkspace?(listener: (update: ThreadWorkspaceSnapshot) => void): () => void;
   subscribeThreadFileChanges?(listener: (update: ThreadConversationFileUpdate) => void): () => void;
   rollbackThread?(input: { threadId: string; numTurns: number }): Promise<void>;
+  redoThread?(input: { threadId: string }): Promise<void>;
   selectThreadModel(input: ThreadModelSelectParams): Promise<HarnessModelSelectionState>;
   selectThreadThinking(input: ThreadThinkingSelectParams): Promise<HarnessModelSelectionState>;
   selectThreadPermissionMode(
@@ -349,6 +351,10 @@ export function createRendererModelClient(
         throw new Error("Thread rollback requires a positive numTurns");
       }
       await manager.sendRequest(THREAD_ROLLBACK_METHOD, { threadId, numTurns: input.numTurns });
+    },
+    async redoThread(input: { threadId: string }): Promise<void> {
+      const threadId = hostThreadIdSchema.parse(input.threadId);
+      await manager.sendRequest(THREAD_REDO_METHOD, { threadId });
     },
     selectThreadModel,
     selectThreadThinking,

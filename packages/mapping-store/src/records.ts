@@ -74,6 +74,13 @@ export const storedThreadRecordV1Schema = z
       .strict()
       .optional(),
     turnMappings: z.array(storedTurnMappingV1Schema),
+    historyRedo: z
+      .object({
+        nativeSessionRef: nativeSessionRefSchema,
+        turnMappings: z.array(storedTurnMappingV1Schema),
+      })
+      .strict()
+      .optional(),
     createdAt: isoDateSchema,
     updatedAt: isoDateSchema,
   })
@@ -133,6 +140,69 @@ export const storedThreadRecordV1Schema = z
             code: "custom",
             path: ["turnMappings", index, name, "nativeSessionId"],
             message: "Turn Ref Native Session must match the Thread Native Session",
+          });
+        }
+      }
+    }
+    const historyRedo = record.historyRedo;
+    if (!historyRedo) return;
+    if (record.state !== "ready" || !record.nativeSessionRef) {
+      context.addIssue({
+        code: "custom",
+        path: ["historyRedo"],
+        message: "Redo slot requires a ready Thread Native Session",
+      });
+      return;
+    }
+    if (historyRedo.nativeSessionRef.harnessId !== record.harnessId) {
+      context.addIssue({
+        code: "custom",
+        path: ["historyRedo", "nativeSessionRef", "harnessId"],
+        message: "Redo Native Session Harness must match the Thread Harness",
+      });
+    }
+    if (historyRedo.nativeSessionRef.nativeSessionId === record.nativeSessionRef.nativeSessionId) {
+      context.addIssue({
+        code: "custom",
+        path: ["historyRedo", "nativeSessionRef", "nativeSessionId"],
+        message: "Redo Native Session must differ from the current Native Session",
+      });
+    }
+    if (historyRedo.turnMappings.length !== record.turnMappings.length + 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["historyRedo", "turnMappings"],
+        message: "Redo mappings must be the current Host Turn prefix plus one Turn",
+      });
+    }
+    for (const [index, mapping] of historyRedo.turnMappings.entries()) {
+      if (
+        index < record.turnMappings.length &&
+        mapping.hostTurnId !== record.turnMappings[index]?.hostTurnId
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["historyRedo", "turnMappings", index, "hostTurnId"],
+          message: "Redo mappings must keep the current Host Turn prefix",
+        });
+      }
+      for (const [name, ref] of [
+        ["nativeTurnRef", mapping.nativeTurnRef],
+        ["nativeCheckpointRef", mapping.nativeCheckpointRef],
+      ] as const) {
+        if (!ref) continue;
+        if (ref.harnessId !== record.harnessId) {
+          context.addIssue({
+            code: "custom",
+            path: ["historyRedo", "turnMappings", index, name, "harnessId"],
+            message: "Redo Turn Ref Harness must match the Thread Harness",
+          });
+        }
+        if (ref.nativeSessionId !== historyRedo.nativeSessionRef.nativeSessionId) {
+          context.addIssue({
+            code: "custom",
+            path: ["historyRedo", "turnMappings", index, name, "nativeSessionId"],
+            message: "Redo Turn Ref Native Session must match the Redo Native Session",
           });
         }
       }
@@ -223,6 +293,12 @@ export interface ReplaceReadySessionInput {
 }
 
 export interface ReplaceReadySessionAfterLastTurnInput {
+  hostThreadId: HostThreadId;
+  nativeSessionRef: NativeSessionRef;
+  turnMappings: StoredTurnMappingV1[];
+}
+
+export interface ReplaceReadySessionAfterRedoInput {
   hostThreadId: HostThreadId;
   nativeSessionRef: NativeSessionRef;
   turnMappings: StoredTurnMappingV1[];

@@ -25,6 +25,7 @@ import {
   type DelegationStatus,
   type FindRecentDelegationInput,
   type ReplaceReadySessionAfterLastTurnInput,
+  type ReplaceReadySessionAfterRedoInput,
   type ReplaceReadySessionInput,
   type StoredDelegationRecordV1,
   type StoredThreadRecordV1,
@@ -77,6 +78,14 @@ interface ProcessIdentity {
 
 function cloneRecord<T>(record: T): T {
   return JSON.parse(JSON.stringify(record)) as T;
+}
+
+function withoutHistoryRedo(
+  record: StoredThreadRecordV1,
+): Omit<StoredThreadRecordV1, "historyRedo"> {
+  const rest = { ...record };
+  delete rest.historyRedo;
+  return rest;
 }
 
 function nativeSessionKey(ref: { harnessId: string; nativeSessionId: string }): string {
@@ -490,7 +499,7 @@ export class MappingStore {
         );
       }
       return {
-        ...current,
+        ...withoutHistoryRedo(current),
         nativeSessionRef: input.nativeSessionRef,
         turnMappings: input.turnMappings,
         forkSource: input.forkSource,
@@ -515,8 +524,47 @@ export class MappingStore {
           "Last-Turn Session replacement must retain the exact shorter Host Turn prefix",
         );
       }
+      const previousNativeRef = current.nativeSessionRef;
+      const previousMappings = current.turnMappings;
+      const next = {
+        ...withoutHistoryRedo(current),
+        nativeSessionRef: input.nativeSessionRef,
+        turnMappings: input.turnMappings,
+      };
+      if (previousNativeRef.nativeSessionId === input.nativeSessionRef.nativeSessionId) {
+        return next;
+      }
       return {
-        ...current,
+        ...next,
+        historyRedo: {
+          nativeSessionRef: previousNativeRef,
+          turnMappings: previousMappings,
+        },
+      };
+    });
+  }
+
+  async replaceReadySessionAfterRedo(
+    input: ReplaceReadySessionAfterRedoInput,
+  ): Promise<StoredThreadRecordV1> {
+    return this.#update(input.hostThreadId, (current) => {
+      const historyRedo = current.historyRedo;
+      if (
+        current.state !== "ready" ||
+        !historyRedo ||
+        historyRedo.nativeSessionRef.nativeSessionId !== input.nativeSessionRef.nativeSessionId ||
+        input.turnMappings.length !== historyRedo.turnMappings.length ||
+        input.turnMappings.some(
+          ({ hostTurnId }, index) => hostTurnId !== historyRedo.turnMappings[index]?.hostTurnId,
+        )
+      ) {
+        throw new MappingStoreError(
+          "MAPPING_CONFLICT",
+          "Redo Session replacement must restore the exact stashed Native prefix",
+        );
+      }
+      return {
+        ...withoutHistoryRedo(current),
         nativeSessionRef: input.nativeSessionRef,
         turnMappings: input.turnMappings,
       };
@@ -527,10 +575,14 @@ export class MappingStore {
     hostThreadId: HostThreadId,
     mappings: StoredTurnMappingV1[],
   ): Promise<StoredThreadRecordV1> {
-    return this.#update(hostThreadId, (current) => ({
-      ...current,
-      turnMappings: this.#mergeMappings(current.turnMappings, mappings),
-    }));
+    return this.#update(hostThreadId, (current) => {
+      const turnMappings = this.#mergeMappings(current.turnMappings, mappings);
+      if (sameJson(current.turnMappings, turnMappings)) return null;
+      if (turnMappings.length > current.turnMappings.length) {
+        return { ...withoutHistoryRedo(current), turnMappings };
+      }
+      return { ...current, turnMappings };
+    });
   }
 
   async reconcileTurnMappings(
