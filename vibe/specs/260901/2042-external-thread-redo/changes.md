@@ -6,8 +6,8 @@
 
 | 批次 | 提交 | 文件数 | 核心说明 |
 | --- | --- | --- | --- |
-| process | uncommitted | 8 | Standard requirement + OpenSpec 增量 |
-| implementation | uncommitted | 16 | Mapping Store 槽、Host resume、Renderer Host-first Redo、Fake resume-after-close |
+| process | `b939a81` | 8 | Standard requirement + OpenSpec 增量 |
+| implementation | `3b0275d` + `2f3a53b` | 16 | Store 槽、Host resume、client、Fake resume 在 `3b0275d`；注入按钮 Host-first 与 overlay 布局在 `2f3a53b` |
 
 ## 2. 交付物清单
 
@@ -42,7 +42,7 @@
 
 ## 3. 逐批清单
 
-### process uncommitted
+### process `b939a81`
 
 | 文件 | 核心说明 |
 | --- | --- |
@@ -50,7 +50,7 @@
 | `openspec/changes/add-external-thread-last-turn-redo/*` | 能力增量 |
 | `vibe/specs/PROJECT_STATUS.md` | 焦点切换 |
 
-### implementation uncommitted
+### implementation `3b0275d` / `2f3a53b`
 
 | 文件 | 核心说明 |
 | --- | --- |
@@ -69,7 +69,7 @@
 | Grok 原地 rewind 前进 | 0 | 同 Native Session ID 不写槽 |
 | Cursor / DSH | 0 | 无 `rollbackLastTurn` |
 | Composer workspace-bar | 1 组脏文件 | 排除，不属本任务 |
-| `app-server-host` unread hunk | 1 | 预先存在的无关改动，未在本任务重写 |
+| `app-server-host` unread hunk | 1 | 预先存在的无关改动，单独提交为 `43b6ca0` |
 
 ## 5. 用户可见行为变化
 
@@ -88,4 +88,4 @@
 
 | 批次 | 测试 | 构建 | 静态检查 |
 | --- | --- | --- | --- |
-| implementation | vitest 7 files / 223 tests pass | `tsc -b` pass | 未跑完整 `npm run lint` / `npm test` |
+| implementation | vitest 79 files / 712 pass（2026-09-02 全量） | `tsc -b` pass；boundaries pass | 未跑 eslint / `npm test` / `gate:*` |
