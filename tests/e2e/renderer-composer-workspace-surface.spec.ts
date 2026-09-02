@@ -95,6 +95,13 @@ const { outputFiles } = await build({
       changes.addEventListener("click", () => {
         globalThis.__changesClicks = (globalThis.__changesClicks ?? 0) + 1;
       });
+      const review = document.createElement("button");
+      review.type = "button";
+      review.setAttribute("data-tab-id", "diff");
+      review.setAttribute("aria-label", "Open review tab");
+      review.textContent = "Review";
+      review.style.width = "80px";
+      review.style.height = "24px";
       const turn = document.createElement("div");
       turn.setAttribute("data-turn-key", "history-content:turn:turn-a");
       turn.textContent = "You said: hello";
@@ -104,7 +111,7 @@ const { outputFiles } = await build({
       document.body.style.display = "flex";
       document.body.style.flexDirection = "column";
       document.body.style.minHeight = "100vh";
-      document.body.append(turn, parent, branch, runLocation, changes);
+      document.body.append(turn, parent, branch, runLocation, changes, review);
 
       const unavailable = async () => {
         throw new Error("unused fixed control");
@@ -185,6 +192,7 @@ const { outputFiles } = await build({
           turnId: "turn-a",
         });
       };
+      globalThis.disposeBinding = () => binding.dispose();
       } catch (error) {
         globalThis.__e2eError = error instanceof Error ? error.stack : String(error);
       }
@@ -204,7 +212,7 @@ const { outputFiles } = await build({
 const browserBundle = outputFiles[0]?.text;
 if (!browserBundle) throw new Error("Composer workspace surface E2E bundle was not generated");
 
-test("Composer shows repository rows, conversation files, branch worktree toggle, and Tab prompt reuse", async ({
+test("Composer shows a compact changed-files workspace surface, branch worktree toggle, and Tab prompt reuse", async ({
   page,
 }) => {
   await page.route("https://codexhost.test/**", async (route) => {
@@ -218,27 +226,44 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
   await page.addScriptTag({ content: browserBundle });
 
   const bar = page.locator("[data-codexhost-workspace-bar]");
+  const nativeChanges = page.locator('[data-slot="thread-summary-panel-item-button"]');
+  const nativeReview = page.locator('[data-tab-id="diff"]');
+  await expect(bar).toHaveCount(0);
+  await expect(nativeChanges).toBeVisible();
+  await expect(nativeReview).toBeVisible();
+
+  await page.evaluate("globalThis.emitWorkspaceFiles()");
   await expect(bar).toBeVisible();
-  await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(2);
-  await expect(bar).toContainText("app");
-  await expect(bar).toContainText("vendor");
-  await expect(bar).toContainText("wt app-feature");
+  await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
+  await expect(bar).toContainText("app-feature");
+  await expect(bar).toContainText("main");
+  await expect(bar).not.toContainText("vendor");
+  await expect(bar).not.toContainText("+12");
+  await expect(nativeChanges).toBeHidden();
+  await expect(nativeReview).toBeHidden();
   const composer = page.locator("[data-codex-composer-root]");
   expect(
     await bar.evaluate(
       (node) => node.nextElementSibling?.hasAttribute("data-codex-composer-root") === true,
     ),
   ).toBe(true);
-
-  await page.evaluate("globalThis.emitWorkspaceFiles()");
-  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText(
-    "files this conversation",
-  );
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("file change");
   await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
   await page.locator(".codexhost-workspace-files-toggle").click();
-  await expect(page.locator("[data-codexhost-workspace-file]")).toBeVisible();
-  await expect(page.locator("[data-codexhost-workspace-file]")).toContainText("src/bar.ts");
+  const fileRow = page.locator("[data-codexhost-workspace-file]");
+  await expect(fileRow).toBeVisible();
+  await expect(fileRow).toContainText("src/bar.ts");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("+8");
+  const barBox = await bar.boundingBox();
+  const fileListBox = await page
+    .locator('[data-codexhost-workspace-file-list="upward"]')
+    .boundingBox();
+  expect(barBox && fileListBox && fileListBox.y + fileListBox.height <= barBox.y).toBe(true);
+  await fileRow.hover();
+  await expect(page.locator("[data-codexhost-workspace-preview]")).toBeVisible();
+  await expect(page.locator("[data-codexhost-workspace-preview]")).toContainText("+keep");
+  await fileRow.click();
+  await expect.poll(async () => page.evaluate("globalThis.__changesClicks ?? 0")).toBe(1);
   await page.locator("[data-turn-key]").click();
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("this turn");
   await expect(page.locator("[data-codexhost-turn-files]")).toHaveCount(1);
@@ -276,8 +301,6 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
     .toBe("0");
   await worktreeToggle.check();
   await expect(runLocation).toHaveText("Worktree");
-  await page.getByRole("button", { name: "Open review" }).first().click({ force: true });
-  await expect.poll(async () => page.evaluate("globalThis.__changesClicks ?? 0")).toBe(1);
 
   const editor = page.locator('[data-codex-composer][contenteditable="true"]');
   await composer.evaluate((node) => {
@@ -299,4 +322,8 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
   await editor.click();
   await editor.press("Tab");
   await expect(editor).toContainText("现在是第二段");
+
+  await page.evaluate("globalThis.disposeBinding()");
+  await expect(nativeChanges).toBeVisible();
+  await expect(nativeReview).toBeVisible();
 });

@@ -31,6 +31,7 @@ export const WORKSPACE_FILES_ATTRIBUTE = "data-codexhost-workspace-files";
 export const WORKSPACE_FILE_ATTRIBUTE = "data-codexhost-workspace-file";
 export const WORKSPACE_PREVIEW_ATTRIBUTE = "data-codexhost-workspace-preview";
 export const TURN_FILES_ATTRIBUTE = "data-codexhost-turn-files";
+export const NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE = "data-codexhost-native-workspace-diff-hidden";
 
 const STYLE_ATTRIBUTE = "data-codexhost-workspace-bar-style";
 const BAR_CLASS = "codexhost-workspace-bar";
@@ -53,42 +54,50 @@ function ensureStyle(ownerDocument: Document): void {
   style.textContent = `
     .${BAR_CLASS} {
       display: flex;
-      flex-direction: column;
-      gap: 8px;
+      align-items: center;
+      gap: 6px;
       width: 100%;
       min-width: 0;
+      min-height: 32px;
+      box-sizing: border-box;
       pointer-events: auto;
-      position: relative;
-      z-index: 12;
+      position: fixed;
+      z-index: 32;
       margin: 0;
-      padding: 8px;
+      padding: 4px 6px;
       border: 1px solid rgb(255 255 255 / 10%);
-      border-radius: 14px;
-      background: rgb(17 17 17 / 92%);
+      border-radius: 10px;
+      background: rgb(17 17 17 / 90%);
+      box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
       backdrop-filter: blur(16px);
+      overflow: visible;
     }
     .${BAR_CLASS}[${WORKSPACE_BAR_ATTRIBUTE}="empty"] {
       display: none;
     }
     .${BAR_CLASS} .codexhost-workspace-chips {
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
+      flex: 1 1 auto;
+      flex-wrap: nowrap;
+      gap: 4px;
+      min-width: 0;
+      overflow: hidden;
     }
     .${BAR_CLASS} [${WORKSPACE_ROW_ATTRIBUTE}] {
       display: inline-flex;
+      flex: 0 1 auto;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
       max-width: 100%;
-      min-height: 30px;
-      padding: 0 10px;
-      border: 1px solid rgb(255 255 255 / 10%);
+      min-height: 24px;
+      padding: 0 7px;
+      border: 1px solid rgb(255 255 255 / 8%);
       border-radius: 999px;
       background: rgb(255 255 255 / 4%);
       color: inherit;
-      font-size: 12px;
-      line-height: 16px;
+      font-size: 11px;
+      line-height: 15px;
     }
     .${BAR_CLASS} [${WORKSPACE_ROW_ATTRIBUTE}] span {
       min-width: 0;
@@ -96,11 +105,10 @@ function ensureStyle(ownerDocument: Document): void {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .${BAR_CLASS} .codexhost-workspace-name {
+    .${BAR_CLASS} .codexhost-workspace-tree {
       font-weight: 650;
     }
-    .${BAR_CLASS} .codexhost-workspace-branch,
-    .${BAR_CLASS} .codexhost-workspace-tree {
+    .${BAR_CLASS} .codexhost-workspace-branch {
       color: rgb(255 255 255 / 62%);
     }
     .${BAR_CLASS} .codexhost-workspace-stats {
@@ -131,11 +139,10 @@ function ensureStyle(ownerDocument: Document): void {
       color: var(--color-codex-git-deleted, #f85149);
     }
     .${BAR_CLASS} [${WORKSPACE_FILES_ATTRIBUTE}] {
+      position: relative;
       display: flex;
-      flex-direction: column;
-      gap: 2px;
-      padding: 6px 2px 2px;
-      border-top: 1px solid rgb(255 255 255 / 8%);
+      flex: 0 0 auto;
+      min-width: 0;
       font-size: 11px;
       line-height: 16px;
     }
@@ -143,27 +150,39 @@ function ensureStyle(ownerDocument: Document): void {
       display: flex;
       align-items: center;
       gap: 6px;
-      width: 100%;
+      min-height: 24px;
       appearance: none;
       border: 0;
-      border-radius: 8px;
+      border-radius: 7px;
       background: transparent;
-      color: rgb(255 255 255 / 62%);
+      color: rgb(255 255 255 / 68%);
       cursor: pointer;
-      padding: 4px 6px;
+      padding: 3px 6px;
       font: inherit;
-      text-align: left;
+      white-space: nowrap;
     }
     .${BAR_CLASS} .codexhost-workspace-files-toggle:hover {
       background: rgb(255 255 255 / 7%);
       color: inherit;
     }
     .${BAR_CLASS} .codexhost-workspace-files-list {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 8px);
+      z-index: 2;
       display: flex;
       flex-direction: column;
       gap: 1px;
-      max-height: 132px;
+      width: min(520px, calc(100vw - 24px));
+      max-height: min(300px, 42vh);
+      box-sizing: border-box;
       overflow: auto;
+      padding: 6px;
+      border: 1px solid rgb(255 255 255 / 12%);
+      border-radius: 10px;
+      background: rgb(17 17 17 / 96%);
+      box-shadow: 0 12px 32px rgb(0 0 0 / 38%);
+      backdrop-filter: blur(18px);
     }
     .${BAR_CLASS} [${WORKSPACE_FILES_ATTRIBUTE}="collapsed"] .codexhost-workspace-files-list {
       display: none;
@@ -190,6 +209,7 @@ function ensureStyle(ownerDocument: Document): void {
       background: rgb(255 255 255 / 12%);
     }
     .${BAR_CLASS} [${WORKSPACE_FILE_ATTRIBUTE}] code {
+      flex: 1;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -231,6 +251,9 @@ function ensureStyle(ownerDocument: Document): void {
       outline-offset: 4px;
       border-radius: 12px;
     }
+    [${NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE}] {
+      display: none !important;
+    }
   `;
   (ownerDocument.head ?? ownerDocument.documentElement).append(style);
 }
@@ -263,6 +286,70 @@ function chineseLocale(ownerDocument: Document): boolean {
 function pathBaseName(path: string): string {
   const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
   return parts.at(-1) ?? path;
+}
+
+function normalizeWorkspacePath(path: string): string {
+  const raw = path.replaceAll("\\", "/");
+  const drive = /^[a-z]:\//i.exec(raw)?.[0]?.toLowerCase() ?? null;
+  const prefix = raw.startsWith("/") ? "/" : (drive ?? "");
+  const source = prefix.length > 0 ? raw.slice(prefix.length) : raw;
+  const parts: string[] = [];
+  for (const part of source.split("/")) {
+    if (part.length === 0 || part === ".") continue;
+    if (part === "..") {
+      if (parts.length > 0 && parts.at(-1) !== "..") parts.pop();
+      else if (prefix.length === 0) parts.push(part);
+      continue;
+    }
+    parts.push(part);
+  }
+  const normalized = `${prefix}${parts.join("/")}`;
+  if (normalized === "/" || /^[a-z]:\/$/i.test(normalized)) return normalized;
+  return normalized.replace(/\/$/u, "") || prefix;
+}
+
+function absoluteWorkspacePath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/");
+  return normalized.startsWith("/") || /^[a-z]:\//i.test(normalized);
+}
+
+function workspacePathContains(root: string, candidate: string): boolean {
+  const normalizedRoot = normalizeWorkspacePath(root);
+  const normalizedCandidate = normalizeWorkspacePath(candidate);
+  const windows = /^[a-z]:/i.test(normalizedRoot);
+  const comparableRoot = windows ? normalizedRoot.toLowerCase() : normalizedRoot;
+  const comparableCandidate = windows ? normalizedCandidate.toLowerCase() : normalizedCandidate;
+  return (
+    comparableCandidate === comparableRoot ||
+    comparableCandidate.startsWith(
+      comparableRoot.endsWith("/") ? comparableRoot : `${comparableRoot}/`,
+    )
+  );
+}
+
+export function workspaceLocationLabel(repository: ThreadWorkspaceRepository): string {
+  if (repository.isWorktree && repository.worktreeName) return repository.worktreeName;
+  return pathBaseName(repository.root) || repository.name;
+}
+
+export function repositoriesForConversationFiles(
+  snapshot: ThreadWorkspaceSnapshot | null,
+  files: readonly ThreadConversationFile[],
+): ThreadWorkspaceRepository[] {
+  if (!snapshot || files.length === 0) return [];
+  const primary = snapshot.repositories.find((repository) => repository.kind === "primary");
+  if (!primary) return [];
+  const involvedRoots = new Set<string>();
+  for (const file of files) {
+    const filePath = absoluteWorkspacePath(file.path)
+      ? normalizeWorkspacePath(file.path)
+      : normalizeWorkspacePath(`${primary.root}/${file.path}`);
+    const owner = snapshot.repositories
+      .filter((repository) => workspacePathContains(repository.root, filePath))
+      .sort((left, right) => right.root.length - left.root.length)[0];
+    if (owner) involvedRoots.add(owner.root);
+  }
+  return snapshot.repositories.filter((repository) => involvedRoots.has(repository.root));
 }
 
 export function repositoryDisplayName(repository: ThreadWorkspaceRepository): string {
@@ -320,10 +407,33 @@ function nativeWorkspaceDiffRank(element: Element): number {
   return 3;
 }
 
+function nativeWorkspaceDiffCandidates(root: ParentNode): Element[] {
+  return [...root.querySelectorAll("button, [role='button'], [data-tab-id='diff']")].filter(
+    (element) => !element.closest(WORKSPACE_BAR_SELECTOR) && isNativeWorkspaceDiffControl(element),
+  );
+}
+
+export function setNativeWorkspaceDiffControlsHidden(root: ParentNode, hidden: boolean): void {
+  const ownerDocument =
+    root instanceof Document ? root : ((root as Element).ownerDocument ?? document);
+  if (!hidden) {
+    for (const element of ownerDocument.querySelectorAll(
+      `[${NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE}]`,
+    )) {
+      element.removeAttribute(NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE);
+    }
+    return;
+  }
+  for (const element of nativeWorkspaceDiffCandidates(root)) {
+    element.setAttribute(NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE, "true");
+  }
+}
+
 export function nativeWorkspaceDiffControl(root: ParentNode): HTMLElement | null {
-  const candidates = [
-    ...root.querySelectorAll("button, [role='button'], [data-tab-id='diff']"),
-  ].filter((element) => isNativeWorkspaceDiffControl(element) && controlVisible(element));
+  const candidates = nativeWorkspaceDiffCandidates(root).filter(
+    (element) =>
+      controlVisible(element) || element.hasAttribute(NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE),
+  );
   candidates.sort((left, right) => nativeWorkspaceDiffRank(left) - nativeWorkspaceDiffRank(right));
   const match = candidates[0];
   if (!match) return null;
@@ -363,49 +473,17 @@ function snapshotSignature(
   });
 }
 
-function renderRow(
-  ownerDocument: Document,
-  repository: ThreadWorkspaceRepository,
-  chinese: boolean,
-): HTMLDivElement {
+function renderRow(ownerDocument: Document, repository: ThreadWorkspaceRepository): HTMLDivElement {
   const row = ownerDocument.createElement("div");
   row.setAttribute(WORKSPACE_ROW_ATTRIBUTE, repository.kind);
-  const name = ownerDocument.createElement("span");
-  name.className = "codexhost-workspace-name";
-  name.textContent = repositoryDisplayName(repository);
+  const location = ownerDocument.createElement("span");
+  location.className = "codexhost-workspace-tree";
+  location.textContent = workspaceLocationLabel(repository);
   const branch = ownerDocument.createElement("span");
   branch.className = "codexhost-workspace-branch";
-  branch.textContent = repository.branch ?? repository.headSha;
-  row.append(name, branch);
-  const tree = worktreeLabel(repository, chinese);
-  if (tree) {
-    const worktree = ownerDocument.createElement("span");
-    worktree.className = "codexhost-workspace-tree";
-    worktree.textContent = tree;
-    row.append(worktree);
-  }
-  const stats = ownerDocument.createElement("button");
-  stats.type = "button";
-  stats.className = "codexhost-workspace-stats";
-  stats.setAttribute("aria-label", chinese ? "打开变更" : "Open review");
-  const tooltip = ownerDocument.createElement("span");
-  tooltip.className = "codexhost-overlay-tooltip";
-  tooltip.setAttribute("aria-hidden", "true");
-  tooltip.textContent = chinese ? "打开官方审查，查看工作区 diff" : "Open the official review diff";
-  stats.append(tooltip);
-  stats.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openNativeWorkspaceDiff(ownerDocument);
-  });
-  const added = ownerDocument.createElement("span");
-  added.className = "codexhost-workspace-added";
-  added.textContent = `+${repository.addedLines.toLocaleString()}`;
-  const deleted = ownerDocument.createElement("span");
-  deleted.className = "codexhost-workspace-deleted";
-  deleted.textContent = `-${repository.deletedLines.toLocaleString()}`;
-  stats.append(added, deleted);
-  row.append(stats);
+  branch.textContent = `· ${repository.branch ?? repository.headSha}`;
+  row.title = `${location.textContent} ${branch.textContent}`;
+  row.append(location, branch);
   return row;
 }
 
@@ -435,12 +513,16 @@ function placePreview(host: HTMLElement, anchor: DOMRect, composer: Element | nu
   const width = Math.min(420, Math.max(240, view?.innerWidth ?? 420) - 24);
   const height = host.offsetHeight || 160;
   const composerTop = composer?.getBoundingClientRect().top ?? view?.innerHeight ?? 800;
+  const viewportWidth = view?.innerWidth ?? width;
+  const rightCandidate = anchor.right + 8;
+  const preferredLeft =
+    rightCandidate + width <= viewportWidth - 12 ? rightCandidate : anchor.left - width - 8;
   const origin = clampFixedBox({
-    left: anchor.left - width - 8,
+    left: preferredLeft,
     top: anchor.top,
     width,
     height,
-    viewportWidth: view?.innerWidth ?? width,
+    viewportWidth,
     maxBottom: composerTop,
   });
   host.style.width = `${width}px`;
@@ -454,26 +536,30 @@ function placeBar(bar: HTMLElement, composer: Element): void {
     if (bar.parentElement !== parent || bar.nextElementSibling !== composer) {
       parent.insertBefore(bar, composer);
     }
-    bar.style.position = "relative";
-    bar.style.left = "";
-    bar.style.top = "";
-    bar.style.width = "100%";
-    bar.style.maxHeight = "min(240px, 42vh)";
-    bar.style.overflowY = "auto";
-    bar.style.zIndex = "12";
-    return;
+  } else {
+    const ownerDocument = bar.ownerDocument;
+    (ownerDocument.body ?? ownerDocument.documentElement).append(bar);
   }
-  const ownerDocument = bar.ownerDocument;
-  (ownerDocument.body ?? ownerDocument.documentElement).append(bar);
   const rect = composer.getBoundingClientRect();
-  const height = bar.offsetHeight || 72;
+  const height = bar.offsetHeight || 32;
+  const top = overlayTopAboveComposer(rect.top, height, 8);
+  const view = bar.ownerDocument.defaultView;
+  const viewportWidth = view?.innerWidth ?? rect.right;
   bar.style.position = "fixed";
-  bar.style.zIndex = "12";
+  bar.style.zIndex = "32";
   bar.style.left = `${Math.round(rect.left)}px`;
   bar.style.width = `${Math.round(rect.width)}px`;
-  bar.style.top = `${overlayTopAboveComposer(rect.top, height, 8)}px`;
-  bar.style.maxHeight = "min(240px, 42vh)";
-  bar.style.overflowY = "auto";
+  bar.style.top = `${top}px`;
+  bar.style.maxHeight = "";
+  bar.style.overflow = "visible";
+  const fileList = bar.querySelector<HTMLElement>("[data-codexhost-workspace-file-list]");
+  if (fileList) {
+    fileList.style.maxHeight = `min(300px, 42vh, ${Math.max(0, top - 20)}px)`;
+    const listWidth = Math.min(520, Math.max(0, viewportWidth - 24));
+    const alignRight = rect.left + listWidth > viewportWidth - 12;
+    fileList.style.left = alignRight ? "auto" : "0";
+    fileList.style.right = alignRight ? "0" : "auto";
+  }
 }
 
 function clearConversationGutter(root: ParentNode): void {
@@ -506,6 +592,13 @@ export function installRendererWorkspaceBar(
   let unsubscribe: (() => void) | null = null;
   let subscribedClient: RendererModelClient | null = null;
 
+  const syncNativeWorkspaceDiffVisibility = (): void => {
+    const replacementAvailable = [...bars.values()].some(
+      (bar) => bar.isConnected && Boolean(bar.querySelector(`[${WORKSPACE_FILES_ATTRIBUTE}]`)),
+    );
+    setNativeWorkspaceDiffControlsHidden(root, replacementAvailable);
+  };
+
   const removeBar = (composer: Element): void => {
     bars.get(composer)?.remove();
     bars.delete(composer);
@@ -515,6 +608,7 @@ export function installRendererWorkspaceBar(
     lastSnapshot.delete(composer);
     filesExpanded.delete(composer);
     clearConversationGutter(root);
+    syncNativeWorkspaceDiffVisibility();
   };
 
   const hidePreview = (): void => {
@@ -585,87 +679,85 @@ export function installRendererWorkspaceBar(
       bars.set(composer, bar);
     }
     bar.replaceChildren();
-    const repositories = snapshot?.repositories ?? [];
-    if (repositories.length === 0 && files.length === 0 && turnFiles === null) {
+    const repositories = repositoriesForConversationFiles(snapshot, files);
+    const fileDisclosureAvailable = files.length > 0 || turnFiles !== null;
+    if (!fileDisclosureAvailable) {
       bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, "empty");
       bar.remove();
       clearConversationGutter(root);
+      syncNativeWorkspaceDiffVisibility();
       return;
     }
     const chinese = chineseLocale(documentNode);
+    const expanded = filesExpanded.get(composer) ?? false;
+    const list = documentNode.createElement("div");
+    list.setAttribute(WORKSPACE_FILES_ATTRIBUTE, expanded ? "open" : "collapsed");
+    const heading = documentNode.createElement("button");
+    heading.type = "button";
+    heading.className = "codexhost-workspace-files-toggle";
+    heading.setAttribute("aria-expanded", expanded ? "true" : "false");
+    const filtered = turnFiles !== null;
+    const changeLabel = chinese
+      ? `${filtered ? "本轮变更" : "文件变更"} ${files.length}`
+      : filtered
+        ? `${files.length} ${files.length === 1 ? "change" : "changes"} this turn`
+        : `${files.length} ${files.length === 1 ? "file change" : "file changes"}`;
+    heading.textContent = `${expanded ? "▾" : "▸"} ${changeLabel}`;
+    heading.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      filesExpanded.set(composer, !(filesExpanded.get(composer) ?? false));
+      signatures.delete(composer);
+      paint(composer, lastSnapshot.get(composer) ?? snapshot);
+    });
+    const rows = documentNode.createElement("div");
+    rows.className = "codexhost-workspace-files-list";
+    rows.setAttribute("data-codexhost-workspace-file-list", "upward");
+    for (const file of files) {
+      const row = documentNode.createElement("button");
+      row.type = "button";
+      row.setAttribute(WORKSPACE_FILE_ATTRIBUTE, file.path);
+      const path = documentNode.createElement("code");
+      path.textContent = file.path;
+      const stats = documentNode.createElement("span");
+      stats.className = "codexhost-workspace-stats";
+      const added = documentNode.createElement("span");
+      added.className = "codexhost-workspace-added";
+      added.textContent = `+${file.addedLines.toLocaleString()}`;
+      const deleted = documentNode.createElement("span");
+      deleted.className = "codexhost-workspace-deleted";
+      deleted.textContent = `-${file.deletedLines.toLocaleString()}`;
+      stats.append(added, deleted);
+      row.append(path, stats);
+      const previewFile = (): void => {
+        showPreview(file, row.getBoundingClientRect(), chinese);
+      };
+      row.addEventListener("mouseenter", previewFile);
+      row.addEventListener("mouseleave", hidePreview);
+      row.addEventListener("focus", previewFile);
+      row.addEventListener("blur", hidePreview);
+      row.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        hidePreview();
+        openConversationFile(file);
+      });
+      rows.append(row);
+    }
+    list.append(heading, rows);
+    bar.append(list);
     if (repositories.length > 0) {
       const chips = documentNode.createElement("div");
       chips.className = "codexhost-workspace-chips";
       for (const repository of repositories) {
-        chips.append(renderRow(documentNode, repository, chinese));
+        chips.append(renderRow(documentNode, repository));
       }
       bar.append(chips);
-    }
-    if (files.length > 0 || turnFiles !== null) {
-      const expanded = filesExpanded.get(composer) ?? false;
-      const list = documentNode.createElement("div");
-      list.setAttribute(WORKSPACE_FILES_ATTRIBUTE, expanded ? "open" : "collapsed");
-      const heading = documentNode.createElement("button");
-      heading.type = "button";
-      heading.className = "codexhost-workspace-files-toggle";
-      heading.setAttribute("aria-expanded", expanded ? "true" : "false");
-      const filtered = turnFiles !== null;
-      heading.textContent = chinese
-        ? `${expanded ? "▾" : "▸"} ${filtered ? "本段" : "本轮"} ${files.length} 个文件`
-        : `${expanded ? "▾" : "▸"} ${files.length} files ${filtered ? "this turn" : "this conversation"}`;
-      heading.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (filtered && threadId) {
-          selectedTurnKey.set(threadId, null);
-          highlightTurns(null);
-          documentNode.defaultView?.dispatchEvent(
-            new CustomEvent("codexhost:turn-files-selected", {
-              detail: { threadId, turnKey: null },
-            }),
-          );
-        } else {
-          filesExpanded.set(composer, !(filesExpanded.get(composer) ?? false));
-        }
-        signatures.delete(composer);
-        paint(composer, lastSnapshot.get(composer) ?? snapshot);
-      });
-      const rows = documentNode.createElement("div");
-      rows.className = "codexhost-workspace-files-list";
-      for (const file of files) {
-        const row = documentNode.createElement("button");
-        row.type = "button";
-        row.setAttribute(WORKSPACE_FILE_ATTRIBUTE, file.path);
-        const path = documentNode.createElement("code");
-        path.textContent = file.path;
-        const stats = documentNode.createElement("span");
-        stats.className = "codexhost-workspace-stats";
-        const added = documentNode.createElement("span");
-        added.className = "codexhost-workspace-added";
-        added.textContent = `+${file.addedLines.toLocaleString()}`;
-        const deleted = documentNode.createElement("span");
-        deleted.className = "codexhost-workspace-deleted";
-        deleted.textContent = `-${file.deletedLines.toLocaleString()}`;
-        stats.append(added, deleted);
-        row.append(path, stats);
-        row.addEventListener("mouseenter", () => {
-          showPreview(file, row.getBoundingClientRect(), chinese);
-        });
-        row.addEventListener("mouseleave", hidePreview);
-        row.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          hidePreview();
-          openConversationFile(file);
-        });
-        rows.append(row);
-      }
-      list.append(heading, rows);
-      bar.append(list);
     }
     bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, snapshot?.threadId ?? "ready");
     placeBar(bar, composer);
     clearConversationGutter(root);
+    syncNativeWorkspaceDiffVisibility();
   };
 
   const load = (composer: Element, threadId: string): void => {
@@ -714,6 +806,7 @@ export function installRendererWorkspaceBar(
       if (!live.has(composer) || !composer.isConnected) removeBar(composer);
     }
     connectNotifications();
+    syncNativeWorkspaceDiffVisibility();
   };
 
   const paintThread = (threadId: string, snapshot: ThreadWorkspaceSnapshot | null): void => {

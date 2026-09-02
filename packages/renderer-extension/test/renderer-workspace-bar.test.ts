@@ -1,3 +1,8 @@
+import {
+  hostThreadIdSchema,
+  type ThreadWorkspaceRepository,
+  type ThreadWorkspaceSnapshot,
+} from "@codexhost/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -11,9 +16,11 @@ import {
 } from "../src/renderer-conversation-files.js";
 import {
   isNativeWorkspaceDiffControl,
+  repositoriesForConversationFiles,
   repositoryDisplayName,
   threadIdForComposer,
   worktreeLabel,
+  workspaceLocationLabel,
 } from "../src/renderer-workspace-bar.js";
 import {
   overlayTopAboveComposer,
@@ -67,12 +74,67 @@ describe("Renderer workspace bar helpers", () => {
       dirty: true,
     };
     expect(repositoryDisplayName(repository)).toBe("app");
+    expect(workspaceLocationLabel(repository)).toBe("app-feature");
     expect(worktreeLabel(repository, false)).toBe("wt app-feature");
     expect(worktreeLabel(repository, true)).toBe("工作树 app-feature");
     expect(worktreeLabel({ ...repository, isWorktree: false, worktreeName: null }, false)).toBe("");
     expect(worktreeLabel({ ...repository, kind: "worktree", worktreeName: "feature" }, false)).toBe(
       "",
     );
+  });
+
+  it("shows only repositories owning conversation-changed files", () => {
+    const primary: ThreadWorkspaceRepository = {
+      root: "/workspace/app",
+      name: "app",
+      kind: "primary" as const,
+      branch: "feature",
+      headSha: "abc1234",
+      isWorktree: true,
+      worktreeName: "app-feature",
+      primaryRoot: "/workspace/source",
+      addedLines: 12,
+      deletedLines: 3,
+      dirty: true,
+    };
+    const vendor: ThreadWorkspaceRepository = {
+      ...primary,
+      root: "/workspace/app/vendor",
+      name: "vendor",
+      kind: "submodule" as const,
+      branch: "lib",
+      isWorktree: false,
+      worktreeName: null,
+      primaryRoot: "/workspace/app/vendor",
+    };
+    const sibling: ThreadWorkspaceRepository = {
+      ...primary,
+      root: "/workspace/app-feature-two",
+      name: "app-feature-two",
+      kind: "worktree" as const,
+      branch: "feature-two",
+      worktreeName: "app-feature-two",
+    };
+    const snapshot: ThreadWorkspaceSnapshot = {
+      threadId: hostThreadIdSchema.parse("thread-workspace"),
+      cwd: primary.root,
+      repositories: [primary, vendor, sibling],
+    };
+    const file = (path: string) => ({
+      path,
+      addedLines: 1,
+      deletedLines: 0,
+      preview: "+change",
+    });
+
+    expect(repositoriesForConversationFiles(snapshot, [file("src/a.ts")])).toEqual([primary]);
+    expect(
+      repositoriesForConversationFiles(snapshot, [
+        file("vendor/src/lib.ts"),
+        file("/workspace/app-feature-two/src/b.ts"),
+      ]),
+    ).toEqual([vendor, sibling]);
+    expect(repositoriesForConversationFiles(snapshot, [])).toEqual([]);
   });
 
   it("recognizes the official Changes and Review controls", () => {
