@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import type { NewSessionResponse } from "@agentclientprotocol/sdk";
@@ -28,11 +29,13 @@ import {
   type ThinkingSelectCompleted,
   type PermissionModeSelectCommand,
   type PermissionModeSelectCompleted,
+  type HostUserMessageItem,
 } from "@codexhost/harness-adapter";
 import {
   harnessIdSchema,
   nativeSessionRefSchema,
   type NativeTurnRef,
+  hostItemIdSchema,
 } from "@codexhost/shared-contracts";
 
 import {
@@ -306,6 +309,25 @@ class CursorSession implements HarnessSession {
       ) {
         const steerText = turn.pendingSteer;
         turn.pendingSteer = undefined;
+        // The re-prompt is the user's steer landing in this Turn: surface it as
+        // an in-turn user item before the continuation streams.
+        const steerItem: HostUserMessageItem = {
+          type: "userMessage",
+          itemId: hostItemIdSchema.parse(randomUUID()),
+          text: steerText,
+        };
+        turn.emit({
+          kind: "event",
+          event: { type: "item.started", turnId: turn.turnId, item: steerItem },
+        });
+        turn.emit({
+          kind: "event",
+          event: {
+            type: "item.completed",
+            turnId: turn.turnId,
+            snapshot: { item: steerItem, outcome: { status: "succeeded" } },
+          },
+        });
         response = await this.transport.runTurn(steerText, {
           update: (update) => turn.update(update),
           permission: (request) => turn.interactions.permission(request),

@@ -1200,6 +1200,16 @@ describe("Claude Code HarnessAdapter", () => {
       { text: "now also do this", userMessageId: expect.any(String) },
     ]);
     expect(transports[0]?.turns).toHaveLength(1);
+    // The pushed steer is an in-turn user item keyed by its transcript uuid.
+    const steerId = transports[0]?.steers[0]?.userMessageId;
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.started",
+      item: { type: "userMessage", itemId: steerId, text: "now also do this" },
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.completed",
+      snapshot: { item: { type: "userMessage", itemId: steerId } },
+    });
     transports[0]?.finish({ status: "succeeded" });
     expect((await nextEvent(iterator)).type).toBe("item.completed");
     expect((await nextEvent(iterator)).type).toBe("turn.completed");

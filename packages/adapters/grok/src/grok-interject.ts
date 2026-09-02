@@ -38,11 +38,13 @@ export function parseGrokInterjectResult(value: unknown): GrokInterjectResult {
 
 /**
  * grok 1.0.13 persists a delivered interjection as a synthetic user message
- * wrapped in its own template. The Host shows the user's words, not the
- * template; an unrecognized shape is kept verbatim rather than dropped.
+ * wrapped in its own template, followed by a trailing instruction line
+ * ("Make sure to complete any unfinished tasks from previous turns.", live
+ * probe 2026-09-02). The Host shows the user's words, not the template; an
+ * unrecognized shape is kept verbatim rather than dropped.
  */
 const GROK_INTERJECTION_WRAPPER =
-  /^\s*The user sent a message while you were working:\s*<user_query>\s*([\s\S]*?)\s*<\/user_query>\s*$/u;
+  /^\s*The user sent a message while you were working:\s*<user_query>\s*([\s\S]*?)\s*<\/user_query>[\s\S]*$/u;
 
 export function unwrapGrokInterjection(text: string): string {
   const match = GROK_INTERJECTION_WRAPPER.exec(text);

@@ -585,11 +585,50 @@ describe("DeepSeekHarnessAdapter local Host", () => {
       source: { kind: "user" },
       content: [{ type: "text", text: "prompt 1" }],
     });
-    connection.sessionEvent(sessionId, 2, "turn/end", { turn: 1, reason: { kind: "completed" } });
+    // The Host echoes the delivered steer as a second user/message inside the
+    // same native Turn: an in-turn user item, not a new Turn.
+    connection.sessionEvent(sessionId, 2, "user/message", {
+      source: { kind: "user" },
+      content: [{ type: "text", text: "actually do this" }],
+    });
+    connection.sessionEvent(sessionId, 3, "turn/end", { turn: 1, reason: { kind: "completed" } });
     const outputs = await collecting;
+    expect(
+      outputs.some(
+        (output) =>
+          output.kind === "event" &&
+          output.event.type === "item.completed" &&
+          output.event.snapshot.item.type === "userMessage" &&
+          output.event.snapshot.item.text === "actually do this",
+      ),
+    ).toBe(true);
     expect(
       outputs.find((output) => output.kind === "event" && output.event.type === "turn.completed"),
     ).toMatchObject({ event: { outcome: { status: "succeeded" } } });
+
+    // History folds the same shape: one Turn, prompt as input, steer as item.
+    connection.history.set(sessionId, [
+      event(0, "turn/start", { turn: 1 }),
+      event(1, "user/message", {
+        source: { kind: "user" },
+        content: [{ type: "text", text: "prompt 1" }],
+      }),
+      event(2, "user/message", {
+        source: { kind: "user" },
+        content: [{ type: "text", text: "actually do this" }],
+      }),
+      event(3, "turn/end", { turn: 1, reason: { kind: "completed" } }),
+    ]);
+    const snapshot = await session.readSnapshot();
+    if (!snapshot.ok) throw new Error(snapshot.error.message);
+    expect(snapshot.value.turns).toHaveLength(1);
+    expect(snapshot.value.turns[0]).toMatchObject({ input: [{ text: "prompt 1" }] });
+    expect(
+      snapshot.value.turns[0]?.items.map(({ item }) => [
+        item.type,
+        "text" in item ? item.text : "",
+      ]),
+    ).toEqual([["userMessage", "actually do this"]]);
   });
 
   it("publishes stable live and historical Checkpoints for every native Turn outcome", async () => {

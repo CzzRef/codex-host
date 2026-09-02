@@ -168,6 +168,8 @@ class FakeOmpTransport implements OmpTurnTransport {
   async steer(text: string): Promise<void> {
     if (!this.onEvent) throw new Error("No active fake OMP Turn to steer");
     this.steered.push(text);
+    // OMP reports the delivery as a user message_start → in-turn user event.
+    this.onEvent({ type: "user.message", text });
   }
 
   async abort(): Promise<void> {
@@ -181,6 +183,8 @@ class FakeOmpTransport implements OmpTurnTransport {
 class SteerableOmpTransport extends FakeOmpTransport {
   #resolveHeld: ((result: OmpTurnResult) => void) | null = null;
   #promptText = "";
+  /** Persist steers the way live Pi-family agents do after a tool-less assistant turn. */
+  steerAfterStop = false;
 
   override runTurn(text: string, onEvent: (event: OmpTurnEvent) => void): Promise<OmpTurnResult> {
     this.onEvent = onEvent;
@@ -198,14 +202,58 @@ class SteerableOmpTransport extends FakeOmpTransport {
       text: this.#promptText,
     });
     let leafId = "assistant-1";
-    // OMP is a Pi fork: a delivered steer is a regular user message persisted
-    // as its own User Entry (Pi evidence; OMP itself not probed on this machine).
+    // OMP (Pi RPC family) delivers a steer after the assistant's tool calls
+    // (`stopReason: "toolUse"` + tool results); history folds it into the Turn.
     this.steered.splice(0).forEach((steerText, offset) => {
+      const assistant = entries.at(-1) as {
+        timestamp?: string;
+        message: { stopReason?: string; content: unknown[] };
+      };
       const ordinal = offset + 2;
-      entries.push(
-        ...historyTurn({
+      if (this.steerAfterStop) {
+        // Tool-less delivery: the assistant keeps stopReason "stop" and the
+        // steer's message.timestamp (queued while streaming) precedes the
+        // assistant Entry timestamp.
+        const persistedAt = Date.now();
+        assistant.timestamp = new Date(persistedAt).toISOString();
+        const [steerUser, steerAssistant] = historyTurn({
           userId: `user-${ordinal}`,
           parentId: leafId,
+          assistantId: `assistant-${ordinal}`,
+          text: steerText,
+        }) as Array<{ timestamp?: string; message: { timestamp?: number } }>;
+        if (!steerUser || !steerAssistant) throw new Error("historyTurn shape changed");
+        steerUser.timestamp = new Date(persistedAt + 200).toISOString();
+        steerUser.message.timestamp = persistedAt - 2_000;
+        steerAssistant.timestamp = new Date(persistedAt + 1_500).toISOString();
+        entries.push(
+          steerUser as OmpSessionHistory["entries"][number],
+          steerAssistant as OmpSessionHistory["entries"][number],
+        );
+        leafId = `assistant-${ordinal}`;
+        return;
+      }
+      assistant.message.stopReason = "toolUse";
+      assistant.message.content = [
+        ...assistant.message.content,
+        { type: "toolCall", id: `call-${offset}`, name: "read", arguments: {} },
+      ];
+      entries.push(
+        {
+          id: `tool-${ordinal}`,
+          parentId: leafId,
+          type: "message",
+          message: {
+            role: "toolResult",
+            toolCallId: `call-${offset}`,
+            toolName: "read",
+            isError: false,
+            content: [{ type: "text", text: "contents" }],
+          },
+        },
+        ...historyTurn({
+          userId: `user-${ordinal}`,
+          parentId: `tool-${ordinal}`,
           assistantId: `assistant-${ordinal}`,
           text: steerText,
         }),
@@ -280,6 +328,55 @@ describe("OMP Adapter Session environment", () => {
     await adapter.close();
   });
 
+  it("keeps a steer delivered after a tool-less assistant message inside the Host Turn", async () => {
+    const transport = new SteerableOmpTransport();
+    transport.steerAfterStop = true;
+    const adapter = new OmpAdapter({}, { createTransport: () => transport });
+    const opened = await adapter.open({ kind: "create", cwd: "/synthetic" });
+    if (!opened.ok) throw new Error(opened.error.message);
+    const session = opened.value;
+    const iterator = session.outputs[Symbol.asyncIterator]();
+    const turnId = "steer-after-stop" as HostTurnId;
+
+    await expect(
+      session.execute({ type: "turn.start", turnId, input: [{ type: "text", text: "first" }] }),
+    ).resolves.toEqual({ ok: true, value: { turnId } });
+    for (let step = 0; step < 4; step += 1) {
+      const next = await iterator.next();
+      if (next.done) throw new Error("Output stream ended");
+      if (next.value.kind === "event" && next.value.event.type === "item.started") break;
+    }
+    await expect(
+      session.execute({ type: "turn.steer", turnId, input: [{ type: "text", text: "second" }] }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+
+    transport.succeed("done");
+    let completed: HarnessOutput | null = null;
+    for (let step = 0; step < 12 && !completed; step += 1) {
+      const next = await iterator.next();
+      if (next.done) throw new Error("Output stream ended");
+      if (next.value.kind === "event" && next.value.event.type === "turn.completed") {
+        completed = next.value;
+      }
+    }
+    expect(completed).toMatchObject({
+      event: {
+        type: "turn.completed",
+        outcome: { status: "succeeded" },
+        nativeTurnRef: { nativeTurnKey: "user-1" },
+      },
+    });
+    const snapshot = await session.readSnapshot();
+    if (!snapshot.ok) throw new Error(snapshot.error.message);
+    expect(snapshot.value.turns).toHaveLength(1);
+    expect(snapshot.value.turns[0]?.items.map(({ item }) => item.type)).toEqual([
+      "agentMessage",
+      "userMessage",
+      "agentMessage",
+    ]);
+    await adapter.close();
+  });
+
   it("steers the active Turn natively and keeps the prompt Entry as the Host Turn identity", async () => {
     const transport = new SteerableOmpTransport();
     const adapter = new OmpAdapter({}, { createTransport: () => transport });
@@ -302,6 +399,22 @@ describe("OMP Adapter Session environment", () => {
       session.execute({ type: "turn.steer", turnId, input: [{ type: "text", text: "second" }] }),
     ).resolves.toEqual({ ok: true, value: { accepted: true } });
     expect(transport.steered).toEqual(["second"]);
+    // The delivered steer is an in-turn user item, live.
+    let liveUserItem: HarnessOutput | null = null;
+    for (let step = 0; step < 8 && !liveUserItem; step += 1) {
+      const next = await iterator.next();
+      if (next.done) throw new Error("Output stream ended");
+      if (
+        next.value.kind === "event" &&
+        next.value.event.type === "item.completed" &&
+        next.value.event.snapshot.item.type === "userMessage"
+      ) {
+        liveUserItem = next.value;
+      }
+    }
+    expect(liveUserItem).toMatchObject({
+      event: { snapshot: { item: { type: "userMessage", text: "second" } } },
+    });
 
     transport.succeed("done");
     let completed: HarnessOutput | null = null;
@@ -312,8 +425,8 @@ describe("OMP Adapter Session environment", () => {
         completed = next.value;
       }
     }
-    // The steer persisted a second User Entry; the Host Turn still succeeds
-    // and its identity/checkpoint stay on the prompt's Entry.
+    // The steer persisted a second User Entry, but history folds it into the
+    // prompt's Turn: one Host Turn, identity and checkpoint on the prompt.
     expect(completed).toMatchObject({
       event: {
         type: "turn.completed",
@@ -321,6 +434,20 @@ describe("OMP Adapter Session environment", () => {
         nativeTurnRef: { nativeTurnKey: "user-1" },
       },
     });
+    const snapshot = await session.readSnapshot();
+    if (!snapshot.ok) throw new Error(snapshot.error.message);
+    expect(snapshot.value.turns).toHaveLength(1);
+    expect(
+      snapshot.value.turns[0]?.items.map(({ item }) => [
+        item.type,
+        "text" in item ? item.text : "",
+      ]),
+    ).toEqual([
+      ["agentMessage", "first response"],
+      ["toolExecution", ""],
+      ["userMessage", "second"],
+      ["agentMessage", "second response"],
+    ]);
     await adapter.close();
   });
 

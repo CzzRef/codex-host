@@ -38,6 +38,7 @@ export interface OmpSessionState {
 }
 
 export type OmpTurnEvent =
+  | { type: "user.message"; text: string }
   | { type: "text.delta"; messageId: string; delta: string }
   | { type: "reasoning.delta"; messageId: string; delta: string }
   | { type: "reasoning.completed"; messageId: string }
@@ -315,6 +316,17 @@ function subagentStatus(value: unknown): OmpSubagentTurnStatus {
   throw new OmpRpcFaultError("protocolError", "Omp RPC Subagent status is invalid");
 }
 
+function userText(value: unknown): string | null {
+  if (!isRecord(value) || value.role !== "user" || !Array.isArray(value.content)) return null;
+  return value.content
+    .filter(
+      (content): content is Record<string, unknown> =>
+        isRecord(content) && content.type === "text" && typeof content.text === "string",
+    )
+    .map((content) => content.text as string)
+    .join("");
+}
+
 function assistantText(value: unknown): string | null {
   if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content)) return null;
   return value.content
@@ -463,6 +475,7 @@ export class OmpRpcSession {
     OmpRpcSessionOptions;
   readonly #processAdapter: OmpRpcProcessAdapter;
   #activeTurn: ActiveTurn | null = null;
+  readonly #queuedSteers: string[] = [];
   #buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   #child: ChildProcessWithoutNullStreams | null = null;
   #closed = false;
@@ -827,6 +840,8 @@ export class OmpRpcSession {
       throw new Error("Omp RPC Session has no active Turn to steer");
     }
     await this.#send("steer", { message: text });
+    // OMP (Pi RPC family) reports the delivery as a user `message_start`.
+    this.#queuedSteers.push(text);
   }
 
   abort(): Promise<void> {
@@ -987,6 +1002,19 @@ export class OmpRpcSession {
     const active = this.#activeTurn;
     if (this.#handleSubagentFrame(active, value)) return;
     if (!active) {
+      return;
+    }
+    if (
+      value.type === "message_start" &&
+      isRecord(value.message) &&
+      value.message.role === "user"
+    ) {
+      const text = userText(value.message);
+      const queued = text === null ? -1 : this.#queuedSteers.indexOf(text);
+      if (queued >= 0 && text !== null) {
+        this.#queuedSteers.splice(queued, 1);
+        active.onEvent({ type: "user.message", text });
+      }
       return;
     }
     if (value.type === "message_start" && assistantText(value.message) !== null) {

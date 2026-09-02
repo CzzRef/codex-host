@@ -225,7 +225,7 @@ class FakeGrokTransport implements GrokAcpTransportLike {
     // with a single turn_completed.
     this.event({
       type: "user.text",
-      text: `The user sent a message while you were working:\n<user_query>\n${text}\n</user_query>`,
+      text: `The user sent a message while you were working:\n<user_query>\n${text}\n</user_query>\nMake sure to complete any unfinished tasks from previous turns.`,
     });
     return { status: "queued" };
   }
