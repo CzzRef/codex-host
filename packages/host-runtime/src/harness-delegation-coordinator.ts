@@ -374,7 +374,30 @@ export class HarnessDelegationCoordinator {
       throw new DelegationControlError("DELEGATION_FAILED", "Thread is read-only");
     }
     if (thread.running || thread.activeTurnId) {
-      throw new DelegationControlError("THREAD_BUSY", "Thread already has an active Turn");
+      // The same wrapped interaction Desktop uses: a caller that opts into
+      // steer rides the active Turn through the Harness's native steer instead
+      // of failing. Without native steer the documented THREAD_BUSY stands.
+      if (
+        input.steer === true &&
+        thread.activeTurnId &&
+        thread.session.capabilities.turns?.steer === true
+      ) {
+        const steered = await thread.session.execute({
+          type: "turn.steer",
+          turnId: thread.activeTurnId,
+          input: [{ type: "text", text: input.message }],
+        });
+        if (!steered.ok) {
+          throw new DelegationControlError("DELEGATION_FAILED", steered.error.message);
+        }
+        return this.#turnResult(thread.id, thread.activeTurnId, thread.harnessId);
+      }
+      throw new DelegationControlError(
+        "THREAD_BUSY",
+        input.steer === true
+          ? "Thread already has an active Turn and its Harness has no native steer"
+          : "Thread already has an active Turn",
+      );
     }
     const turnId = hostTurnIdSchema.parse(randomUUID());
     try {

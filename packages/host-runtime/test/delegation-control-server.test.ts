@@ -34,6 +34,7 @@ describe("delegation control server", () => {
         wait: vi.fn(),
         list: vi.fn(),
         rename: vi.fn(),
+        archive: vi.fn(),
       },
     });
     try {
@@ -86,6 +87,7 @@ describe("delegation control server", () => {
         wait: vi.fn(),
         list: vi.fn(),
         rename: vi.fn(),
+        archive: vi.fn(),
       },
     });
     try {
@@ -125,6 +127,7 @@ describe("delegation control server", () => {
         wait: vi.fn(),
         list: vi.fn(),
         rename: vi.fn(),
+        archive: vi.fn(),
       },
     });
     try {
@@ -153,6 +156,7 @@ describe("delegation control server", () => {
         wait: vi.fn(),
         list: vi.fn(),
         rename,
+        archive: vi.fn(),
       },
     });
     try {
@@ -166,6 +170,35 @@ describe("delegation control server", () => {
         title: "260901-CodexHost完成态",
       });
       expect(rename).toHaveBeenCalledWith({ threadId: "thread-1", name: "260901-CodexHost完成态" });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("dispatches thread archive", async () => {
+    const archive = vi.fn(async () => ({ threadId: "thread-1", archived: true }));
+    const server = await startDelegationControlServer({
+      token,
+      api: {
+        inspect: vi.fn(),
+        start: vi.fn(),
+        send: vi.fn(),
+        cancel: vi.fn(),
+        read: vi.fn(),
+        wait: vi.fn(),
+        list: vi.fn(),
+        rename: vi.fn(),
+        archive,
+      },
+    });
+    try {
+      const response = await fetch(
+        `${server.endpoint}/v1/thread/archive`,
+        authorized({ threadId: "thread-1", archived: true }),
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ threadId: "thread-1", archived: true });
+      expect(archive).toHaveBeenCalledWith({ threadId: "thread-1", archived: true });
     } finally {
       await server.close();
     }
@@ -185,6 +218,7 @@ describe("delegation control server", () => {
         wait: vi.fn(),
         list: vi.fn(),
         rename: vi.fn(),
+        archive: vi.fn(),
       },
     });
     try {

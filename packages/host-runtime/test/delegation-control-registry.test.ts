@@ -67,6 +67,7 @@ function registration(threadId: string): DelegationControlRegistration {
     })),
     list: vi.fn(async () => ({ threads: [], nextCursor: null })),
     rename: vi.fn(async ({ threadId, name }) => ({ threadId, title: name })),
+    archive: vi.fn(async ({ threadId, archived }) => ({ threadId, archived: archived !== false })),
   };
 }
 
@@ -90,8 +91,10 @@ describe("DelegationControlRegistry", () => {
     await registry.read({ threadId: "parent-a", view: "result" });
     await registry.send({ threadId: "parent-b", message: "continue" });
     await registry.cancel({ threadId: "parent-a" });
+    await registry.archive({ threadId: "parent-b", archived: true });
 
     expect(second.start).toHaveBeenCalledOnce();
+    expect(second.archive).toHaveBeenCalledWith({ threadId: "parent-b", archived: true });
     expect(first.read).toHaveBeenCalledOnce();
     expect(second.send).toHaveBeenCalledOnce();
     expect(first.cancel).toHaveBeenCalledOnce();

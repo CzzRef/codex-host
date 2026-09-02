@@ -6,6 +6,7 @@ import {
   type DelegationControlApi,
   type DelegationStartInput,
   type HarnessInspectInput,
+  type ThreadArchiveInput,
   type ThreadCancelInput,
   type ThreadListInput,
   type ThreadSendInput,
@@ -115,6 +116,9 @@ export async function startDelegationControlServer(input: {
           return;
         case "/v1/thread/rename":
           writeJson(response, 200, await input.api.rename(body as unknown as ThreadRenameInput));
+          return;
+        case "/v1/thread/archive":
+          writeJson(response, 200, await input.api.archive(body as unknown as ThreadArchiveInput));
           return;
         default:
           throw new DelegationControlError("INVALID_ARGUMENT", "Unknown Runtime control route");

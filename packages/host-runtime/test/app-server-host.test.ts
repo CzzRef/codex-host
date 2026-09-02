@@ -1520,6 +1520,21 @@ describe("AppServerHost HarnessAdapter projection", () => {
       delegationApi.send({ threadId: "native-child", message: "again" }),
     ).rejects.toMatchObject({ code: "THREAD_BUSY" });
 
+    // Opted-in steer rides the active native Turn through the same turn/steer
+    // Desktop's composer uses, instead of THREAD_BUSY.
+    const steer = delegationApi.send({
+      threadId: "native-child",
+      message: "now do this",
+      steer: true,
+    });
+    const steerRequest = await readJsonLine(fixture.official.stdin);
+    expect(steerRequest).toMatchObject({
+      method: "turn/steer",
+      params: { threadId: "native-child", input: [{ type: "text", text: "now do this" }] },
+    });
+    fixture.official.stdout.write(`${JSON.stringify({ id: steerRequest.id, result: {} })}\n`);
+    await expect(steer).resolves.toMatchObject({ turnId: "native-turn-2", status: "running" });
+
     const cancel = delegationApi.cancel({ threadId: "native-child" });
     const interrupt = await readJsonLine(fixture.official.stdin);
     expect(interrupt).toMatchObject({
@@ -2369,6 +2384,61 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("lists archived External Threads only when archived is requested and marks the row", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    await vi.waitFor(async () => expect(await fixture.mappingStore.listThreads()).toEqual([]));
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    const externalThreadId = await startPiThread(fixture);
+
+    const listExternal = async (archived?: boolean) => {
+      if (!delegationApi) throw new Error("Delegation API was not registered");
+      const pending = delegationApi.list({
+        cwd: "/synthetic",
+        limit: 25,
+        sort: "created-desc",
+        ...(archived === undefined ? {} : { archived }),
+      });
+      const request = await readJsonLine(fixture.official.stdin);
+      expect(request).toMatchObject({ method: "thread/list" });
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: request.id, result: { data: [], nextCursor: null } })}\n`,
+      );
+      const result = await pending;
+      return result.threads.find((thread) => thread.threadId === externalThreadId);
+    };
+
+    // A live external row carries its archive state explicitly.
+    expect(await listExternal()).toMatchObject({ threadId: externalThreadId, archived: false });
+
+    writeRequest(fixture.desktopInput, {
+      id: 60,
+      method: "thread/archive",
+      params: { threadId: externalThreadId },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 60))).resolves.toEqual({
+      id: 60,
+      result: {},
+    });
+
+    // Desktop archive: gone from the live listing, present and marked in the
+    // archived listing, so a polling consumer can retire the row.
+    expect(await listExternal()).toBeUndefined();
+    expect(await listExternal(false)).toBeUndefined();
+    expect(await listExternal(true)).toMatchObject({
+      threadId: externalThreadId,
+      harnessId: "pi",
+      archived: true,
+    });
+    await stopFixture(fixture);
+  });
+
   it("archives and unarchives an active External Thread without closing its Session", async () => {
     const fixture = createFixture();
     const threadId = await startPiThread(fixture);
@@ -2730,6 +2800,50 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await expect(
       fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
     ).resolves.toMatchObject({ title: "260901-CodexHost完成态", titleSource: "native" });
+    await stopFixture(fixture);
+  });
+
+  it("archives and unarchives an extra process through the delegation API and notifies Desktop", async () => {
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    const threadId = await startPiThread(fixture);
+    await completePiTurn(fixture, threadId, 2);
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    await expect(delegationApi.archive({ threadId })).resolves.toEqual({
+      threadId,
+      archived: true,
+    });
+    await expect(
+      fixture.collector.waitFor(
+        (message) =>
+          method(message, "thread/archived") && messageParams(message).threadId === threadId,
+      ),
+    ).resolves.toMatchObject({ params: { threadId } });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ archived: true });
+    await expect(delegationApi.archive({ threadId, archived: false })).resolves.toEqual({
+      threadId,
+      archived: false,
+    });
+    await expect(
+      fixture.collector.waitFor(
+        (message) =>
+          method(message, "thread/unarchived") && messageParams(message).threadId === threadId,
+      ),
+    ).resolves.toMatchObject({ params: { threadId } });
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ archived: false });
+    await expect(delegationApi.archive({ threadId: "missing-thread" })).rejects.toMatchObject({
+      code: "THREAD_NOT_FOUND",
+    });
     await stopFixture(fixture);
   });
 

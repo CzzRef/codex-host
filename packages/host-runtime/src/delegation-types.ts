@@ -88,6 +88,12 @@ export interface DelegationStartResult {
 export interface ThreadSendInput {
   threadId: string;
   message: string;
+  /**
+   * Inject into the active Turn through the Harness's native steer instead of
+   * failing with THREAD_BUSY. Only honored while a Turn runs and the Session
+   * declares `turns.steer`; an idle Thread starts a new Turn as usual.
+   */
+  steer?: boolean;
 }
 
 export interface ThreadSendResult {
@@ -130,9 +136,26 @@ export interface ThreadRenameResult {
   title: string;
 }
 
+export interface ThreadArchiveInput {
+  threadId: string;
+  /** Defaults to true; false restores the Thread to the live listing. */
+  archived?: boolean;
+}
+
+export interface ThreadArchiveResult {
+  threadId: string;
+  archived: boolean;
+}
+
 export interface ThreadListInput {
   cwd?: string;
   parentThreadId?: string;
+  /**
+   * List archived Threads instead of live ones. Defaults to false like the
+   * Desktop's `thread/list`; an archived external Thread never appears in the
+   * live listing, so a consumer reconciles archive state with a second call.
+   */
+  archived?: boolean;
   limit: number;
   cursor?: string;
   sort:
@@ -157,6 +180,9 @@ export interface DelegationThreadListItem {
    * pending Desktop question (`input`) or approval (`approval`). A pending
    * question wins when both exist. */
   attention?: "approval" | "input";
+  /** External Threads only: the Host-persisted archive state of the row.
+   * Native Codex rows omit it; the Desktop stays their archive authority. */
+  archived?: boolean;
   cwd?: string;
   title?: string;
   createdAt?: string;
@@ -177,6 +203,7 @@ export interface DelegationControlApi {
   wait(input: ThreadWaitInput): Promise<DelegationThreadSnapshot & { timedOut: boolean }>;
   list(input: ThreadListInput): Promise<DelegationThreadListResult>;
   rename(input: ThreadRenameInput): Promise<ThreadRenameResult>;
+  archive(input: ThreadArchiveInput): Promise<ThreadArchiveResult>;
 }
 
 export interface DelegationControlRegistration extends DelegationControlApi {

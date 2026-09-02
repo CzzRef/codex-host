@@ -149,6 +149,39 @@ describe("delegation CLI", () => {
     expect(JSON.parse(String(cancelCall[1]?.body))).toEqual({ threadId: "child-1" });
   });
 
+  it("passes --steer true through to the Runtime send and rejects other values", async () => {
+    const fetchImpl = successfulFetch({ ok: true });
+    const environment = {
+      [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+      [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+    };
+    await expect(
+      runDelegationCli({
+        arguments: ["thread", "send", "child-1", "--message", "now do this", "--steer", "true"],
+        environment,
+        output: new PassThrough(),
+        fetchImpl,
+      }),
+    ).resolves.toBe(0);
+    const sendCall = vi.mocked(fetchImpl).mock.calls[0];
+    if (!sendCall) throw new Error("Expected a send Runtime call");
+    expect(JSON.parse(String(sendCall[1]?.body))).toEqual({
+      threadId: "child-1",
+      message: "now do this",
+      steer: true,
+    });
+    const errorOutput = new PassThrough();
+    await expect(
+      runDelegationCli({
+        arguments: ["thread", "send", "child-1", "--message", "x", "--steer", "maybe"],
+        environment,
+        output: errorOutput,
+        fetchImpl,
+      }),
+    ).resolves.not.toBe(0);
+    expect(vi.mocked(fetchImpl).mock.calls).toHaveLength(1);
+  });
+
   it("rejects message cursors on the default result view", async () => {
     const diagnosticOutput = new PassThrough();
     await expect(
@@ -207,6 +240,7 @@ describe("delegation CLI", () => {
     ["invalid list limit", ["thread", "list", "--limit", "101"]],
     ["invalid sort", ["thread", "list", "--sort", "newest"]],
     ["invalid all flag", ["thread", "list", "--all", "yes"]],
+    ["invalid archived flag", ["thread", "list", "--archived", "yes"]],
     ["all true with cwd", ["thread", "list", "--all", "true", "--cwd", "/synthetic"]],
   ])("rejects %s before contacting Runtime", async (_name, arguments_) => {
     const diagnosticOutput = new PassThrough();
@@ -218,6 +252,51 @@ describe("delegation CLI", () => {
       error: { code: "INVALID_ARGUMENT" },
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("requests archived Threads when --archived true", async () => {
+    const fetchImpl = successfulFetch({ threads: [], nextCursor: null });
+    const output = new PassThrough();
+    await expect(
+      runDelegationCli({
+        arguments: ["thread", "list", "--all", "true", "--archived", "true"],
+        environment: {
+          [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+          [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+        },
+        output,
+        fetchImpl,
+      }),
+    ).resolves.toBe(0);
+    const firstCall = vi.mocked(fetchImpl).mock.calls[0];
+    if (!firstCall) throw new Error("Runtime fetch was not called");
+    expect(JSON.parse(String(firstCall[1]?.body))).toEqual({
+      archived: true,
+      limit: 25,
+      sort: "created-desc",
+    });
+  });
+
+  it("keeps the live listing when --archived false", async () => {
+    const fetchImpl = successfulFetch({ threads: [], nextCursor: null });
+    const output = new PassThrough();
+    await expect(
+      runDelegationCli({
+        arguments: ["thread", "list", "--all", "true", "--archived", "false"],
+        environment: {
+          [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+          [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+        },
+        output,
+        fetchImpl,
+      }),
+    ).resolves.toBe(0);
+    const firstCall = vi.mocked(fetchImpl).mock.calls[0];
+    if (!firstCall) throw new Error("Runtime fetch was not called");
+    expect(JSON.parse(String(firstCall[1]?.body))).toEqual({
+      limit: 25,
+      sort: "created-desc",
+    });
   });
 
   it("lists every extra process when --all true omits cwd", async () => {
@@ -291,6 +370,69 @@ describe("delegation CLI", () => {
     expect(JSON.parse(outputText(output))).toEqual({
       threadId: "thread-1",
       title: "260901-CodexHost完成态",
+    });
+  });
+
+  it("archives and unarchives an extra process through the Runtime", async () => {
+    const cases = [
+      { arguments: ["thread", "archive"], threadId: "thread-1", archived: true },
+      { arguments: ["thread", "unarchive"], threadId: "thread-1", archived: false },
+      {
+        arguments: ["thread", "archive", "codex://threads/thread-2"],
+        threadId: "thread-2",
+        archived: true,
+      },
+    ];
+    for (const testCase of cases) {
+      const fetchImpl = successfulFetch({
+        threadId: testCase.threadId,
+        archived: testCase.archived,
+      });
+      const output = new PassThrough();
+      await expect(
+        runDelegationCli({
+          arguments: testCase.arguments,
+          environment: {
+            [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+            [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+            [DELEGATION_THREAD_ID_ENV]: "thread-1",
+          },
+          output,
+          fetchImpl,
+        }),
+      ).resolves.toBe(0);
+      const firstCall = vi.mocked(fetchImpl).mock.calls[0];
+      if (!firstCall) throw new Error("Runtime fetch was not called");
+      expect(String(firstCall[0])).toContain("/v1/thread/archive");
+      expect(JSON.parse(String(firstCall[1]?.body))).toEqual({
+        threadId: testCase.threadId,
+        archived: testCase.archived,
+      });
+      expect(JSON.parse(outputText(output))).toEqual({
+        threadId: testCase.threadId,
+        archived: testCase.archived,
+      });
+    }
+  });
+
+  it("rejects thread archive without a Thread identifier before contacting the Runtime", async () => {
+    const fetchImpl = successfulFetch({});
+    const diagnosticOutput = new PassThrough();
+    await expect(
+      runDelegationCli({
+        arguments: ["thread", "archive"],
+        environment: {
+          [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+          [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+        },
+        output: new PassThrough(),
+        diagnosticOutput,
+        fetchImpl,
+      }),
+    ).resolves.toBe(1);
+    expect(vi.mocked(fetchImpl)).not.toHaveBeenCalled();
+    expect(JSON.parse(outputText(diagnosticOutput))).toMatchObject({
+      error: { code: "INVALID_ARGUMENT" },
     });
   });
 

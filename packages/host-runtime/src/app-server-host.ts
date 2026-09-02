@@ -98,6 +98,8 @@ import type {
   DelegationThreadStatus,
   HarnessInspectInput,
   HarnessInspectResult,
+  ThreadArchiveInput,
+  ThreadArchiveResult,
   ThreadCancelInput,
   ThreadCancelResult,
   ThreadListInput,
@@ -549,6 +551,7 @@ export class AppServerHost {
       wait: (input) => this.#delegationCoordinator.wait(input),
       list: (input) => this.#delegationCoordinator.list(input),
       rename: (input) => this.#renameDelegationThread(input),
+      archive: (input) => this.#archiveDelegationThread(input),
       canHandleStart: (input) => this.#canHandleDelegationStart(input),
       ownsThread: (threadId) => this.#ownsDelegationThread(threadId),
     });
@@ -1446,7 +1449,9 @@ export class AppServerHost {
     if (!input.message?.trim()) {
       throw new DelegationControlError("INVALID_ARGUMENT", "Message must not be empty");
     }
-    if (this.#activeOfficialTurns.has(input.threadId)) {
+    const activeTurnId = this.#activeOfficialTurns.get(input.threadId);
+    if (activeTurnId !== undefined) {
+      if (input.steer === true) return this.#steerOfficialDelegationThread(input, activeTurnId);
       throw new DelegationControlError("THREAD_BUSY", "Thread already has an active Turn");
     }
     const current = await this.#officialRequestBroker.request("thread/read", {
@@ -1465,6 +1470,11 @@ export class AppServerHost {
       (isRecord(latestTurn) &&
         (latestTurn.status === "inProgress" || latestTurn.status === "running"))
     ) {
+      if (input.steer === true) {
+        const latestTurnId =
+          isRecord(latestTurn) && typeof latestTurn.id === "string" ? latestTurn.id : null;
+        if (latestTurnId) return this.#steerOfficialDelegationThread(input, latestTurnId);
+      }
       throw new DelegationControlError("THREAD_BUSY", "Thread already has an active Turn");
     }
     const response = await this.#officialRequestBroker.request("turn/start", {
@@ -1482,6 +1492,33 @@ export class AppServerHost {
     const turnId = turn && typeof turn.id === "string" ? turn.id : null;
     if (!turnId) throw new Error("Official turn/start returned no Turn identity");
     this.#activeOfficialTurns.set(input.threadId, turnId);
+    return {
+      threadId: input.threadId,
+      turnId,
+      harnessId: "codex",
+      status: "running",
+      next: {
+        read: `codexhost thread read ${input.threadId}`,
+        wait: `codexhost thread wait ${input.threadId} --timeout-ms 30000`,
+      },
+    };
+  }
+
+  /** Official Codex steers through the same `turn/steer` Desktop's composer uses. */
+  async #steerOfficialDelegationThread(
+    input: ThreadSendInput,
+    turnId: string,
+  ): Promise<ThreadSendResult> {
+    const response = await this.#officialRequestBroker.request("turn/steer", {
+      threadId: input.threadId,
+      input: [{ type: "text", text: input.message }],
+    });
+    if (isRecord(response.error)) {
+      throw new DelegationControlError(
+        "DELEGATION_FAILED",
+        typeof response.error.message === "string" ? response.error.message : "Turn steer failed",
+      );
+    }
     return {
       threadId: input.threadId,
       turnId,
@@ -1583,6 +1620,7 @@ export class AppServerHost {
         cwd: input.cwd ? [input.cwd] : null,
         limit: input.limit,
         cursor: input.cursor ?? null,
+        archived: input.archived ?? false,
         sortKey: `${sortKey}_at`,
         sortDirection,
       },
@@ -1627,6 +1665,10 @@ export class AppServerHost {
             ...(record && typeof record.unread === "boolean"
               ? { hasUnreadTurn: record.unread }
               : {}),
+            // Host-persisted archive state; a Desktop archive removes the row
+            // from the live listing, and only this field tells a consumer why.
+            // Native rows keep the Desktop's archive authority and omit it.
+            ...(record ? { archived: record.archived } : {}),
             // A Turn blocked on a Desktop question or approval is
             // caller-visible attention; consumers surface it instead of a
             // plain "running". Questions map to input; approvals stay
@@ -1679,27 +1721,52 @@ export class AppServerHost {
     location: Extract<ExternalThreadLocation, { kind: "external" }>,
     archived: boolean,
   ): Promise<void> {
-    if (location.record.state !== "ready" || !location.record.nativeSessionRef) {
-      await this.#writer.json(rpcError(request, -32079, "External Native Session is unavailable"));
+    const applied = await this.#applyExternalArchiveState(location, archived);
+    if (!applied.ok) {
+      await this.#writer.json(rpcError(request, applied.code, applied.message));
       return;
+    }
+    await this.#writer.json(
+      rpcEnvelope(request, { result: archived ? {} : { thread: applied.projected } }),
+    );
+    await this.#notifyExternalArchiveState(applied.record.hostThreadId, archived);
+  }
+
+  /**
+   * Persists one external Thread's archive state and refreshes the loaded
+   * projection. Shared by the Desktop `thread/archive` request path and the
+   * delegation CLI, so both leave the record, the loaded Thread and the
+   * Desktop notification in the same shape; only the reply envelope differs.
+   */
+  async #applyExternalArchiveState(
+    location: Extract<ExternalThreadLocation, { kind: "external" }>,
+    archived: boolean,
+  ): Promise<
+    | { ok: true; record: StoredThreadRecordV1; projected: ReturnType<typeof externalThreadValue> }
+    | { ok: false; code: number; message: string }
+  > {
+    if (location.record.state !== "ready" || !location.record.nativeSessionRef) {
+      return { ok: false, code: -32079, message: "External Native Session is unavailable" };
     }
     const sessionId =
       location.thread?.sessionId ??
       (await this.#repository.sessionTreeId(location.record).catch(() => null));
     if (!sessionId) {
-      await this.#writer.json(
-        rpcError(request, -32081, "External Thread metadata could not be projected"),
-      );
-      return;
+      return {
+        ok: false,
+        code: -32081,
+        message: "External Thread metadata could not be projected",
+      };
     }
     let record: StoredThreadRecordV1;
     try {
       record = await this.#repository.setArchived(location.record.hostThreadId, archived);
     } catch {
-      await this.#writer.json(
-        rpcError(request, -32081, "External Thread archive state could not be persisted"),
-      );
-      return;
+      return {
+        ok: false,
+        code: -32081,
+        message: "External Thread archive state could not be persisted",
+      };
     }
     const projected = externalThreadValue({
       record,
@@ -1715,12 +1782,13 @@ export class AppServerHost {
         turns: location.thread.thread.turns ?? [],
       };
     }
-    await this.#writer.json(
-      rpcEnvelope(request, { result: archived ? {} : { thread: projected } }),
-    );
-    await this.#writer.json({
+    return { ok: true, record, projected };
+  }
+
+  #notifyExternalArchiveState(threadId: string, archived: boolean): Promise<void> {
+    return this.#writer.json({
       method: archived ? "thread/archived" : "thread/unarchived",
-      params: { threadId: record.hostThreadId },
+      params: { threadId },
     });
   }
 
@@ -2901,6 +2969,33 @@ export class AppServerHost {
       );
     }
     return { threadId: location.record.hostThreadId, title };
+  }
+
+  /**
+   * Delegation CLI `thread archive|unarchive`. Mirrors the Desktop
+   * `thread/archive` semantics exactly — the row leaves the live listing and
+   * the sidebar, a running Turn is not stopped — so a polling consumer such
+   * as EyPc can archive an extra process without a Desktop round trip.
+   */
+  async #archiveDelegationThread(input: ThreadArchiveInput): Promise<ThreadArchiveResult> {
+    if (typeof input.threadId !== "string" || input.threadId.length === 0) {
+      throw new DelegationControlError("INVALID_ARGUMENT", "Thread identifier is required");
+    }
+    if (input.archived !== undefined && typeof input.archived !== "boolean") {
+      throw new DelegationControlError("INVALID_ARGUMENT", "archived must be a boolean");
+    }
+    const archived = input.archived !== false;
+    const location = await this.#locateExternalThread(input.threadId);
+    if (location.kind !== "external") {
+      throw new DelegationControlError(
+        "THREAD_NOT_FOUND",
+        "Thread is not a Host-managed extra process",
+      );
+    }
+    const applied = await this.#applyExternalArchiveState(location, archived);
+    if (!applied.ok) throw new DelegationControlError("INTERNAL_ERROR", applied.message);
+    await this.#notifyExternalArchiveState(applied.record.hostThreadId, archived);
+    return { threadId: applied.record.hostThreadId, archived };
   }
 
   async #applyHostTitleOverlay(threadId: string, title: string): Promise<void> {
