@@ -60,8 +60,8 @@ class FakeGrokTransport implements GrokAcpTransportLike {
   readonly compactCalls: Array<string | undefined> = [];
   readonly promptTexts: string[] = [];
   readonly interjectTexts: string[] = [];
-  /** Interjections Grok accepted natively; each is persisted as its own Native Turn on finish. */
-  readonly persistedInterjections: string[] = [];
+  /** Terminal record held back by `finishLagging` until `appendLaggingTerminal`. */
+  laggingTerminal: GrokTransportEvent | null = null;
   interjectImpl?: (text: string) => Promise<GrokInterjectResult>;
   readonly cancel = vi.fn(async () => undefined);
   readonly close = vi.fn(async () => undefined);
@@ -220,8 +220,47 @@ class FakeGrokTransport implements GrokAcpTransportLike {
   async interject(text: string): Promise<GrokInterjectResult> {
     if (this.interjectImpl) return this.interjectImpl(text);
     this.interjectTexts.push(text);
-    this.persistedInterjections.push(text);
-    return {};
+    // grok 1.0.13 delivers the interjection inside the running prompt as a
+    // synthetic user message; the same Native Turn persists it and still ends
+    // with a single turn_completed.
+    this.event({
+      type: "user.text",
+      text: `The user sent a message while you were working:\n<user_query>\n${text}\n</user_query>`,
+    });
+    return { status: "queued" };
+  }
+
+  /**
+   * Live Grok answers the prompt before it appends `turn_completed`; this
+   * resolves the prompt with only the user/agent records persisted and holds
+   * the terminal record until `appendLaggingTerminal`.
+   */
+  finishLagging(response: PromptResponse = { stopReason: "end_turn" }): void {
+    if (this.#activePromptText === null) throw new Error("No active Grok Prompt");
+    const ordinal = this.replay.filter(({ type }) => type === "turn.completed").length + 1;
+    this.replay.push(
+      {
+        type: "user.text",
+        text: this.#activePromptText,
+        metadata: { eventId: `grok-session-user-${ordinal}` },
+      },
+      ...this.#activePromptEvents,
+    );
+    this.laggingTerminal = {
+      type: "turn.completed",
+      nativeTurnKey: `grok-prompt-${ordinal}`,
+      stopReason: response.stopReason,
+    };
+    this.#activePromptText = null;
+    this.#activePromptEvents = [];
+    this.#resolve?.(response);
+    this.#resolve = null;
+  }
+
+  appendLaggingTerminal(): void {
+    if (!this.laggingTerminal) throw new Error("No lagging terminal record");
+    this.replay.push(this.laggingTerminal);
+    this.laggingTerminal = null;
   }
 
   finish(response: PromptResponse = { stopReason: "end_turn" }, historyUsage?: unknown): void {
@@ -241,24 +280,6 @@ class FakeGrokTransport implements GrokAcpTransportLike {
           ...(historyUsage !== undefined ? { usage: historyUsage } : {}),
         },
       );
-      // Live Grok persists an accepted interjection as a further Native Turn
-      // inside the same Host Turn (observed 2026-09-02: "persisted 2 new
-      // Native Turns; exactly one is required" failed every steered Turn).
-      this.persistedInterjections.splice(0).forEach((text, offset) => {
-        const interjectionOrdinal = ordinal + offset + 1;
-        this.replay.push(
-          {
-            type: "user.text",
-            text,
-            metadata: { eventId: `grok-session-user-${interjectionOrdinal}` },
-          },
-          {
-            type: "turn.completed",
-            nativeTurnKey: `grok-prompt-${interjectionOrdinal}`,
-            stopReason: response.stopReason,
-          },
-        );
-      });
     }
     this.#activePromptText = null;
     this.#activePromptEvents = [];
@@ -271,16 +292,14 @@ async function openedSession(
   transport: FakeGrokTransport,
   kind: "create" | "resume" = "create",
   knownTurnRefs?: NativeTurnRef[],
+  adapterOptions: ConstructorParameters<typeof GrokAdapter>[0] = {},
 ) {
   let uuid = 0;
-  const adapter = new GrokAdapter(
-    {},
-    {
-      randomUUID: () => `grok-id-${++uuid}`,
-      createTransport: () => transport,
-      fetchCredits: async () => null,
-    },
-  );
+  const adapter = new GrokAdapter(adapterOptions, {
+    randomUUID: () => `grok-id-${++uuid}`,
+    createTransport: () => transport,
+    fetchCredits: async () => null,
+  });
   const opened = await adapter.open(
     kind === "create"
       ? { kind: "create", cwd: "/synthetic" }
@@ -501,15 +520,112 @@ describe("Grok Adapter ACP projection", () => {
     expect((await nextEvent(iterator)).type).toBe("item.updated");
     transport.finish();
     expect((await nextEvent(iterator)).type).toBe("item.completed");
-    // The interjection persisted a second Native Turn; the Host Turn still
-    // succeeds and keeps the prompt's Native Turn as its identity/checkpoint.
+    // The interjection lands inside the prompt's Native Turn: one
+    // turn_completed, and the Host Turn keeps that prompt as its identity.
     expect(await nextEvent(iterator)).toMatchObject({
       type: "turn.completed",
       outcome: { status: "succeeded" },
       nativeTurnRef: { nativeTurnKey: "grok-prompt-1" },
     });
     expect(transport.promptTexts).toEqual(["first"]);
+    expect(transport.replay.filter(({ type }) => type === "turn.completed")).toHaveLength(1);
+    expect(
+      transport.replay.flatMap((event) => (event.type === "user.text" ? [event.text] : [])),
+    ).toEqual(["first", expect.stringContaining("second")]);
+    await opened.adapter.close();
+  });
+
+  it("waits for the cancelled Prompt's terminal record before continuing a steer fallback", async () => {
+    const transport = new FakeGrokTransport();
+    transport.interjectImpl = async () => {
+      throw Object.assign(new Error("Method not found"), { code: -32601 });
+    };
+    transport.cancel.mockImplementation(async () => {
+      transport.finishLagging({ stopReason: "cancelled" });
+    });
+    const opened = await openedSession(transport);
+    const iterator = opened.session.outputs[Symbol.asyncIterator]();
+    const turnId = hostTurnIdSchema.parse("turn-steer-lagging-terminal");
+
+    await opened.session.execute({
+      type: "turn.start",
+      turnId,
+      input: [{ type: "text", text: "first" }],
+    });
+    expect((await nextEvent(iterator)).type).toBe("turn.started");
+    await expect(
+      opened.session.execute({
+        type: "turn.steer",
+        turnId,
+        input: [{ type: "text", text: "second" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+    expect(transport.cancel).toHaveBeenCalledOnce();
+    // The prompt resolved but Grok has not persisted turn_completed yet: the
+    // follow-up must not start on the pre-terminal snapshot.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(transport.promptTexts).toEqual(["first"]);
+    transport.appendLaggingTerminal();
+    await vi.waitFor(() => expect(transport.promptTexts).toEqual(["first", "second"]));
+    transport.event({ type: "agent.text", text: "second-answer", messageId: "agent-2" });
+    transport.finish();
+    let event = await nextEvent(iterator);
+    while (event.type !== "turn.completed") event = await nextEvent(iterator);
+    expect(event).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+      nativeTurnRef: { nativeTurnKey: "grok-prompt-2" },
+    });
     expect(transport.replay.filter(({ type }) => type === "turn.completed")).toHaveLength(2);
+    await opened.adapter.close();
+  });
+
+  it("settles a plain Turn on the persisted prompt id once the terminal record lands", async () => {
+    const transport = new FakeGrokTransport();
+    const opened = await openedSession(transport);
+    const iterator = opened.session.outputs[Symbol.asyncIterator]();
+    const turnId = hostTurnIdSchema.parse("turn-lagging-terminal");
+
+    await opened.session.execute({
+      type: "turn.start",
+      turnId,
+      input: [{ type: "text", text: "first" }],
+    });
+    expect((await nextEvent(iterator)).type).toBe("turn.started");
+    transport.event({ type: "agent.text", text: "answer", messageId: "agent-1" });
+    expect((await nextEvent(iterator)).type).toBe("item.started");
+    expect((await nextEvent(iterator)).type).toBe("item.updated");
+    transport.finishLagging();
+    setTimeout(() => transport.appendLaggingTerminal(), 80);
+    expect((await nextEvent(iterator)).type).toBe("item.completed");
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+      nativeTurnRef: { nativeTurnKey: "grok-prompt-1" },
+    });
+    await opened.adapter.close();
+  });
+
+  it("falls back to the user-event identity when the terminal record never lands in time", async () => {
+    const transport = new FakeGrokTransport();
+    const opened = await openedSession(transport, "create", undefined, {
+      nativeHistorySettleTimeoutMs: 0,
+    });
+    const iterator = opened.session.outputs[Symbol.asyncIterator]();
+    const turnId = hostTurnIdSchema.parse("turn-terminal-timeout");
+
+    await opened.session.execute({
+      type: "turn.start",
+      turnId,
+      input: [{ type: "text", text: "first" }],
+    });
+    expect((await nextEvent(iterator)).type).toBe("turn.started");
+    transport.finishLagging();
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+      nativeTurnRef: { nativeTurnKey: "grok-session-user-1" },
+    });
     await opened.adapter.close();
   });
 
