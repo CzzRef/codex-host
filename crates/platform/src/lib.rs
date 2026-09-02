@@ -20,6 +20,11 @@ mod process_termination;
 mod proxy_environment;
 #[cfg(target_os = "macos")]
 mod system_proxy;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[allow(unsafe_code)]
+mod termination_signal;
+#[cfg(target_os = "windows")]
+mod termination_signal;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 mod windows_desktop;
@@ -60,6 +65,7 @@ pub use process_termination::{terminate_process_group_instance, terminate_proces
 pub use proxy_environment::proxy_environment;
 #[cfg(target_os = "macos")]
 pub use system_proxy::{SystemProxySettings, system_proxy_settings};
+pub use termination_signal::{install_termination_signal_flag, termination_requested};
 #[cfg(target_os = "windows")]
 pub use windows_desktop::resume_packaged_application;
 #[cfg(target_os = "windows")]

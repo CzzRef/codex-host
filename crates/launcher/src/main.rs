@@ -34,8 +34,8 @@ use codexhost_platform::{
 use codexhost_platform::{
     DesktopIdentity, DesktopInstallation, DesktopLaunchMode, SupervisedChild,
     canonical_existing_file, configure_background_command,
-    desktop_root_process_ids_for_installation, discover_codex_desktop, node_entrypoint_path,
-    spawn_supervised,
+    desktop_root_process_ids_for_installation, discover_codex_desktop,
+    install_termination_signal_flag, node_entrypoint_path, spawn_supervised, termination_requested,
 };
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use codexhost_platform::{DesktopSession, launch_desktop_session};
@@ -650,7 +650,7 @@ fn validate_source_launch_preconditions(
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn stop_managed_desktop_for_update(
+fn stop_managed_desktop(
     desktop: &mut DesktopSession,
     controller: &mut SupervisedChild,
 ) -> Result<(), Box<dyn Error>> {
@@ -662,7 +662,7 @@ fn stop_managed_desktop_for_update(
 }
 
 #[cfg(target_os = "windows")]
-fn stop_managed_desktop_for_update(
+fn stop_managed_desktop(
     desktop: &mut DesktopProcess,
     controller: &mut SupervisedChild,
 ) -> Result<(), Box<dyn Error>> {
@@ -736,10 +736,19 @@ fn supervise_desktop(
     let _runtime = publish_runtime_descriptor(descriptor_path, control)?;
     startup_trace("runtime descriptor published");
     notify_ready_and_detach()?;
+    // Detached now, so terminal signals no longer arrive; an explicit
+    // SIGTERM/SIGINT/SIGHUP from here on must tear the managed Desktop down
+    // through the same path an update uses instead of orphaning the Controller.
+    install_termination_signal_flag()?;
     #[cfg(target_os = "macos")]
     let mut started_update_request = None;
     let mut last_desktop_tree_refresh = Instant::now();
     loop {
+        if termination_requested() {
+            startup_trace("termination signal received; stopping managed Desktop");
+            stop_managed_desktop(&mut desktop, &mut controller)?;
+            return Ok(());
+        }
         #[cfg(target_os = "macos")]
         if let Err(error) = start_pending_update(&mut started_update_request) {
             eprintln!("codexhost launcher: pending update could not be started: {error}");
@@ -749,7 +758,7 @@ fn supervise_desktop(
         #[cfg(target_os = "linux")]
         let helper_started = false;
         if should_stop_desktop_for_update(helper_started) {
-            if let Err(error) = stop_managed_desktop_for_update(&mut desktop, &mut controller) {
+            if let Err(error) = stop_managed_desktop(&mut desktop, &mut controller) {
                 eprintln!(
                     "codexhost launcher: managed Desktop could not be stopped for update: {error}"
                 );
@@ -833,9 +842,15 @@ fn supervise_desktop(
     };
     startup_trace("runtime descriptor published");
     notify_ready_and_detach()?;
+    install_termination_signal_flag()?;
     loop {
+        if termination_requested() {
+            startup_trace("termination signal received; stopping managed Desktop");
+            stop_managed_desktop(&mut desktop, &mut controller)?;
+            return Ok(());
+        }
         if should_stop_desktop_for_update(false) {
-            if let Err(error) = stop_managed_desktop_for_update(&mut desktop, &mut controller) {
+            if let Err(error) = stop_managed_desktop(&mut desktop, &mut controller) {
                 eprintln!(
                     "codexhost launcher: managed Desktop could not be stopped for update: {error}"
                 );

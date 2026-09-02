@@ -61,6 +61,16 @@ export { installRendererDraftPrewarmPolicy } from "./renderer-draft-prewarm-poli
 export type { RendererDraftPrewarmPolicyStatus } from "./renderer-draft-prewarm-policy.js";
 
 export {
+  PARENT_WATCH_INTERVAL_MS,
+  isProcessAlive,
+  parentProcessLost,
+  watchParentProcess,
+} from "./parent-process-watch.js";
+export type {
+  ParentProcessObservation,
+  WatchParentProcessOptions,
+} from "./parent-process-watch.js";
+export {
   parseDesktopControllerArguments,
   runDesktopController,
   serializeDesktopControllerReadiness,
