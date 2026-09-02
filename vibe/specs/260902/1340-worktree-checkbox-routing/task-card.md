@@ -48,16 +48,16 @@ The product requirement delta belongs to the active [Composer workspace surface 
       "base_sha": "40e890fd18d44d8577fcf9c90833abb600d54040",
       "worktree_branch": "codex/260902-worktree-checkbox-routing",
       "task_owner": "vibe/specs/260902/1340-worktree-checkbox-routing/task-card.md",
-      "head": "c5c825c9d7952a6e7b7dae3082d13595a70843a1",
+      "head": "154d079fe21e5f3fbe97d0883a41131f8ccbf6ed",
       "upstream": null
     }
   ],
   "commit_mode": "verified-milestone",
   "push_mode": "current-message-only",
-  "verification_state": "verified",
+  "verification_state": "verified-commit",
   "push_state": "not-authorized",
   "integration_state": "not-started",
-  "next_action": "commit the verified compact changed-files workspace surface milestone"
+  "next_action": "integrate the verified milestones into czz-dev when the control checkout is idle, then rebuild Desktop for live verification"
 }
 ```
 
@@ -86,6 +86,8 @@ The product requirement delta belongs to the active [Composer workspace surface 
 
 ## Follow-up verification evidence
 
+- Verified implementation milestone: `c860512` (`feat(composer): compact changed-file workspace surface`).
+- Process-memory milestone: `154d079` (`docs(memory): guard managed Worktree command cwd`).
 - Renderer unit suite: 32 files, 226 tests passed.
 - Composer Playwright E2E: 1 passed; verifies one changed-file owner, unrelated-root filtering, single-line content, native duplicate suppression/restoration, upward list placement, hover preview, and hidden-native Review routing.
 - Full root `npm run typecheck` passed from the child Worktree using the complete temporary dependency mirror.
