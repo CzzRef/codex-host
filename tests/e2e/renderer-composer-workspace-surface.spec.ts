@@ -61,6 +61,31 @@ const { outputFiles } = await build({
       branch.type = "button";
       branch.setAttribute("aria-label", "Switch branch main");
       branch.textContent = "main";
+      const runLocation = document.createElement("button");
+      runLocation.type = "button";
+      runLocation.setAttribute("aria-haspopup", "menu");
+      runLocation.setAttribute("data-composer-navigation-target", "run-location");
+      runLocation.textContent = "Local";
+      const modeOwner = {
+        memoizedProps: {
+          composerMode: "local",
+          conversationId: null,
+          setComposerMode(mode) {
+            modeOwner.memoizedProps.composerMode = mode;
+            runLocation.textContent = mode === "worktree" ? "Worktree" : "Local";
+          },
+        },
+        return: null,
+      };
+      Object.defineProperty(runLocation, "__reactFiber$fixture", {
+        value: {
+          memoizedProps: {
+            "aria-haspopup": "menu",
+            "data-composer-navigation-target": "run-location",
+          },
+          return: modeOwner,
+        },
+      });
       const changes = document.createElement("button");
       changes.type = "button";
       changes.setAttribute("data-slot", "thread-summary-panel-item-button");
@@ -79,7 +104,7 @@ const { outputFiles } = await build({
       document.body.style.display = "flex";
       document.body.style.flexDirection = "column";
       document.body.style.minHeight = "100vh";
-      document.body.append(turn, parent, branch, changes);
+      document.body.append(turn, parent, branch, runLocation, changes);
 
       const unavailable = async () => {
         throw new Error("unused fixed control");
@@ -239,7 +264,18 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
   // Rollback still confirms before dropping anything (nothing later here, so disabled).
   await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeDisabled();
 
-  await expect(page.locator("[data-codexhost-branch-worktree-toggle] input")).toBeChecked();
+  const worktreeToggle = page.locator("[data-codexhost-branch-worktree-toggle] input");
+  const runLocation = page.locator('[data-composer-navigation-target="run-location"]');
+  await expect(worktreeToggle).toBeChecked();
+  await expect(worktreeToggle).toBeEnabled();
+  await expect(runLocation).toHaveText("Worktree");
+  await worktreeToggle.uncheck();
+  await expect(runLocation).toHaveText("Local");
+  await expect
+    .poll(async () => page.evaluate("localStorage.getItem('codexhost.switch-branch-worktree')"))
+    .toBe("0");
+  await worktreeToggle.check();
+  await expect(runLocation).toHaveText("Worktree");
   await page.getByRole("button", { name: "Open review" }).first().click({ force: true });
   await expect.poll(async () => page.evaluate("globalThis.__changesClicks ?? 0")).toBe(1);
 

@@ -41,11 +41,18 @@ Mount a renderer-owned node as the previous sibling of the verified Composer roo
 
 Host watches Git identity files for inspected Thread cwds and notifies `codexhost/thread/workspace/updated`. The Renderer re-inspects that Thread, matching Usage.
 
+### 6. Worktree checkbox drives Desktop-owned Composer mode
+
+The checkbox is an alternative control for Codex Desktop's existing new-chat run-location state, not a Git operation. The Renderer accepts exactly one `button[data-composer-navigation-target="run-location"]` whose reviewed React ownership chain exposes `composerMode`, `setComposerMode`, and a null `conversationId`. It calls the official state setter with `worktree` or `local`, then lets Desktop provision the selected destination on submission.
+
+Existing Threads, ambiguous ownership, unsupported modes, and label-only DOM matches fail closed without rendering the checkbox. This avoids moving an active Thread, scraping localized menu labels, or taking Worktree lifecycle away from Desktop.
+
 ## Risks / Trade-offs
 
 - Desktop DOM contract changes hide the bar; the Composer remains usable.
 - Official Thread cwd depends on `thread/read`; missing cwd renders nothing.
 - File watchers are cwd-refcounted so many Threads sharing a repo share one watch.
+- The run-location binding is version-locked to a reviewed React ownership chain; Desktop contract drift hides the checkbox instead of leaving a misleading checked control.
 
 ## Migration Plan
 

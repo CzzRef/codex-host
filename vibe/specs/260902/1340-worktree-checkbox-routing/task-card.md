@@ -2,7 +2,7 @@
 
 Tool: pi
 Date: 2026-09-02
-Status: active
+Status: implemented / focused-verified
 
 ## User request
 
@@ -48,7 +48,7 @@ The product requirement delta belongs to the active [Composer workspace surface 
   "verification_state": "planned",
   "push_state": "not-authorized",
   "integration_state": "not-started",
-  "next_action": "inspect the official branch menu contract and implement checkbox routing"
+  "next_action": "review the verified implementation and integrate it into czz-dev"
 }
 ```
 
@@ -59,3 +59,26 @@ The product requirement delta belongs to the active [Composer workspace surface 
 - TypeScript typecheck.
 - OpenSpec strict validation for `add-composer-workspace-bar`.
 - Live Desktop check only if the official control can be exercised without changing unrelated user work.
+
+## Implementation
+
+- The checkbox now binds to the official `run-location` React owner and calls Desktop's `setComposerMode("worktree" | "local")` state setter.
+- Binding requires one semantic run-location trigger, one branch control, a unique mode owner, and `conversationId: null`; existing Threads and contract drift render no checkbox.
+- Branch detection no longer treats descendant transcript/tool text containing “Switch branch” as a branch control.
+- Worktree creation remains owned by Codex Desktop at new-chat submission.
+
+## Verification evidence
+
+- Renderer unit suite: 32 files, 225 tests passed.
+- Composer Playwright E2E: 1 passed; checked selects Worktree, unchecked selects Local and persists `0`, re-check selects Worktree.
+- Focused TypeScript build: `shared-contracts` + `renderer-extension` passed.
+- Renderer production bundle build passed.
+- Focused ESLint and package-boundary checks passed.
+- Prettier check passed.
+- OpenSpec `add-composer-workspace-bar --strict` passed with `@fission-ai/openspec@1.10.0`.
+- Full root TypeScript build remains blocked by absent optional/private `@deepseek-ai/dsh-*` declarations in the shared dependency installation; the focused affected projects passed.
+
+## Documentation impact
+
+- `doc_drift: resolved` — OpenSpec requirement, design, tasks, implementation, unit tests, and E2E now agree.
+- Memory routing: no reusable product knowledge or ADR; the build-environment blocker is reported, not treated as feature failure.
