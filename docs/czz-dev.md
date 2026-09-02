@@ -71,6 +71,8 @@ Codex Desktop 的 side chat 在协议层是「`thread/fork`（带 `ephemeral`、
 
 2026-09-01 修复：`thread/inject_items` 进入显式集合，外部线程校验 `items` 为数组后以空结果确认。外部 Fork 派生的原生 Session 本就携带完整父上下文，注入的 Codex 边界条目没有原生表示，因此不投影进外部历史、不转发官方 app-server、不发给 Harness；契约见 [external-thread-fork-routing](../openspec/specs/external-thread-fork-routing/spec.md)。该修复需要在下一次正常退出后经 `codexhost launch` 重启 Desktop 才生效。
 
+2026-09-02：ephemeral 派生 Side Chat 仍走派生 Native Session 接 Turn，但导航留在主对话。默认 `thread/list` 不列出带 `forkSource` 的 ephemeral 行；projectless Fork 后 Renderer 不再点进子 Thread 侧栏行。跳转 / deep link 指向 `forkSource` 主 Thread，避免子对话变成没有项目归属的独立会话。跨 Harness 把主对话可见消息注入 Pi 仍未做。进行中变更：[add-sidechat-parent-navigation](../openspec/changes/add-sidechat-parent-navigation/proposal.md)。
+
 已知边界：Cursor 会话仍无法打开 side chat——历史已是 native transcript，但 `fork: false`，fork 会先被 `-32076` 拒绝，这是 Cursor 缺稳定 checkpoint API 的既有能力限制。若外部会话最后一轮缺 `nativeCheckpointRef`（如 mapping-store 写入失败），fork 仍会以 `-32080` 显式失败。
 
 ## 外部会话的 Pin、标题同步与排队消息（2026-09-01）
