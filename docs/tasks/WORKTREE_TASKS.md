@@ -21,5 +21,5 @@ Markers and timestamps are quick-resume hints. Integration still requires live G
 <!-- worktree-task-index:260902-cursor-native-history:start -->
 | Task ID | Repository | Child Branch | Detail | Source Head | Target Head | Worktree | Milestone | Merge | Push | Marker | State At | Next Action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `260902-cursor-native-history` | `codex-host` | `codex/260902-cursor-native-history` | [task owner](../../vibe/specs/260902/1502-cursor-native-history/spec.md#L1) | `df0176458caf` | `czz-dev@df0176458caf` | dirty | in-progress | unmerged 0/0 | not-authorized | `2044820d4bc6` | `2026-09-02T07:09:13Z` | isolated implementation still uncommitted; do not merge into czz-dev |
+| `260902-cursor-native-history` | `codex-host` | `codex/260902-cursor-native-history` | [task owner](../../vibe/specs/260902/1502-cursor-native-history/spec.md#L1) | `d9809a5bef5c` | `czz-dev@467d491639a6` | dirty | verified-commit | integrated 1/1 | not-authorized | `46ff419e7dff` | `2026-09-02T07:34:08Z` | retain worktrees until exact cleanup authorization names the child path and branch |
 <!-- worktree-task-index:260902-cursor-native-history:end -->
