@@ -78,11 +78,36 @@ interface PendingInteraction {
   toolUseId: string;
 }
 
+const DEFAULT_STEER_SETTLE_TIMEOUT_MS = 3_000;
+
+/** Messages that show the CLI is running a further turn after a held result. */
+function isTurnProgress(message: unknown): boolean {
+  if (!isRecord(message)) return false;
+  return (
+    message.type === "assistant" ||
+    message.type === "stream_event" ||
+    (message.type === "system" && (message.subtype === "init" || message.subtype === "status"))
+  );
+}
+
+/**
+ * Claude Code reports each stdin user message through `command_lifecycle`
+ * (`msg_lifecycle_v1`): `queued` on receipt, `started` when the CLI consumes
+ * it, `completed` after its result. A steer pushed while a Turn runs is
+ * consumed either inside that Turn (`started` before the Turn's result, one
+ * `result` covers both) or, when no safe boundary remained, as a further CLI
+ * turn right after the result (`started` after it, a second `result` follows).
+ */
+type SteerLifecycle = "queued" | "started" | "completed";
+
 interface ActiveTurn {
   accumulator: ClaudeNativeTurnAccumulator;
   controlRequestIds: Set<string>;
   interactions: Map<string, PendingInteraction>;
-  pendingSteers: number;
+  steers: Map<string, SteerLifecycle>;
+  /** Terminal held while queued steers may still run as further CLI turns. */
+  heldTerminal: ClaudeTransportTurnResult | null;
+  settleTimer: NodeJS.Timeout | null;
   onEvent(event: ClaudeTurnEvent): void;
   resolve(result: ClaudeTransportTurnResult): void;
   reject(error: unknown): void;
@@ -98,6 +123,13 @@ export interface ClaudeSdkTransportOptions {
   thinkingOptionId: HarnessThinkingOptionId;
   permissionMode: ClaudePermissionMode;
   closeTimeoutMs: number;
+  /**
+   * How long a Turn whose result arrived while a steer was still queued waits
+   * for the CLI to start that steer as a further turn before settling. Guards
+   * CLIs without `msg_lifecycle_v1`, where a mid-turn steer would otherwise
+   * hold the Turn open forever.
+   */
+  steerSettleTimeoutMs?: number;
   onPermissionModeChanged(permissionMode: ClaudePermissionMode): void;
   onFault(error: unknown): void;
   onPlanLimit(planLimit: ClaudePlanLimitEvent): void;
@@ -321,6 +353,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
   readonly sessionId: string;
   readonly #children: ChildProcessWithoutNullStreams[] = [];
   readonly #closeTimeoutMs: number;
+  readonly #steerSettleTimeoutMs: number;
   readonly #command: string | undefined;
   readonly #cwd: string;
   readonly #environment: NodeJS.ProcessEnv;
@@ -355,6 +388,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     this.sessionId = options.sessionId;
     this.#cwd = options.cwd;
     this.#closeTimeoutMs = options.closeTimeoutMs;
+    this.#steerSettleTimeoutMs = options.steerSettleTimeoutMs ?? DEFAULT_STEER_SETTLE_TIMEOUT_MS;
     this.#command = options.command;
     this.#environment = options.environment ?? process.env;
     this.#model = options.model;
@@ -505,7 +539,9 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
         ),
         controlRequestIds: new Set(),
         interactions: new Map(),
-        pendingSteers: 0,
+        steers: new Map(),
+        heldTerminal: null,
+        settleTimer: null,
         onEvent,
         resolve,
         reject,
@@ -521,7 +557,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
       throw new Error("Claude SDK transport has no active Turn");
     }
     if (text.length === 0) throw new Error("Claude SDK steer text must not be empty");
-    active.pendingSteers += 1;
+    active.steers.set(userMessageId, "queued");
     this.#pushUser(text, userMessageId);
   }
 
@@ -736,7 +772,46 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     this.#autonomous = null;
     this.#idleAccumulator = null;
     this.#idleLive = false;
+    if (active) this.#clearSettleTimer(active);
     active?.reject(new Error("Claude SDK transport closed"));
+  }
+
+  #observeSteerLifecycle(active: ActiveTurn, message: unknown): void {
+    if (!isRecord(message) || message.type !== "command_lifecycle") return;
+    const uuid = message.command_uuid;
+    const state = message.state;
+    if (typeof uuid !== "string" || !active.steers.has(uuid)) return;
+    if (state !== "queued" && state !== "started" && state !== "completed") return;
+    active.steers.set(uuid, state);
+    if (state === "started" && active.heldTerminal) this.#clearSettleTimer(active);
+  }
+
+  #hasQueuedSteer(active: ActiveTurn): boolean {
+    for (const state of active.steers.values()) if (state === "queued") return true;
+    return false;
+  }
+
+  #holdTerminal(active: ActiveTurn, terminal: ClaudeTransportTurnResult): void {
+    active.heldTerminal = terminal;
+    this.#clearSettleTimer(active);
+    active.settleTimer = setTimeout(() => {
+      active.settleTimer = null;
+      if (this.#active === active && active.heldTerminal) {
+        this.#settle(active, active.heldTerminal);
+      }
+    }, this.#steerSettleTimeoutMs);
+  }
+
+  #clearSettleTimer(active: ActiveTurn): void {
+    if (active.settleTimer) clearTimeout(active.settleTimer);
+    active.settleTimer = null;
+  }
+
+  #settle(active: ActiveTurn, terminal: ClaudeTransportTurnResult): void {
+    this.#clearSettleTimer(active);
+    active.heldTerminal = null;
+    this.#active = null;
+    active.resolve(terminal);
   }
 
   async #consume(activeQuery: Query): Promise<void> {
@@ -751,21 +826,25 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
         if (planLimit) this.#onPlanLimit(planLimit);
         const active = this.#active;
         if (active) {
+          this.#observeSteerLifecycle(active, message);
           const interpreted = active.accumulator.consume(message);
           for (const event of interpreted.events) active.onEvent(event);
           if (interpreted.terminal) {
             this.#closeInteractions(active, "superseded");
-            const continueSteer =
-              interpreted.terminal.status === "succeeded" && active.pendingSteers > 0;
-            if (continueSteer) {
-              active.pendingSteers -= 1;
+            if (interpreted.terminal.status === "succeeded" && this.#hasQueuedSteer(active)) {
+              // A steer the CLI has not started yet runs as a further turn of
+              // this Host Turn right after this result; wait for it, bounded.
               active.accumulator = new ClaudeNativeTurnAccumulator(
                 this.#provider ? { provider: this.#provider } : {},
               );
+              this.#holdTerminal(active, interpreted.terminal);
               continue;
             }
-            this.#active = null;
-            active.resolve(interpreted.terminal);
+            this.#settle(active, interpreted.terminal);
+          } else if (active.heldTerminal && isTurnProgress(message)) {
+            // The CLI opened the further turn: stop the settle timer and let
+            // that turn's own result settle the Host Turn.
+            this.#clearSettleTimer(active);
           }
           continue;
         }
