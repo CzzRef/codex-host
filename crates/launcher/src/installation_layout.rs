@@ -11,6 +11,26 @@ pub struct InstalledResources {
     pub renderer_extension: PathBuf,
 }
 
+/// Host Runtime entry for a Launcher running straight out of a source checkout
+/// (`<root>/target/{debug,release}/codexhost`) instead of an install tree.
+///
+/// It mirrors the development layout `tools/dev-desktop/run.mjs` already owns:
+/// `npm start` hands those paths to `launch` on the command line, but the
+/// delegation CLI is invoked by other processes through `CODEXHOST_CLI_PATH`
+/// with no flags to carry them, so it has to recognise the layout itself.
+/// Returns `None` whenever the shape does not match or the bundle is absent,
+/// so an installed Launcher keeps using its own resources.
+pub fn source_checkout_host_runtime(executable: &Path) -> Option<PathBuf> {
+    let profile_directory = executable.parent()?;
+    let profile = profile_directory.file_name()?;
+    if profile != OsStr::new("debug") && profile != OsStr::new("release") {
+        return None;
+    }
+    let source_root = profile_directory.parent()?.parent()?;
+    let host_runtime = source_root.join("packages/host-runtime/dist/main.js");
+    host_runtime.is_file().then_some(host_runtime)
+}
+
 impl InstalledResources {
     pub fn from_current_executable() -> Result<Self, String> {
         let executable = env::current_exe()
@@ -66,6 +86,7 @@ mod tests {
     use std::path::Path;
 
     use super::InstalledResources;
+    use super::source_checkout_host_runtime;
 
     #[test]
     fn resolves_resources_from_a_release_bin_directory() {
@@ -103,6 +124,24 @@ mod tests {
                 .host_runtime,
             contents.join("Resources/app/host-runtime.mjs")
         );
+    }
+
+    #[test]
+    fn ignores_a_source_checkout_layout_without_a_built_host_runtime() {
+        let executable = env::temp_dir()
+            .join("codexhost-missing-bundle/target/debug")
+            .join(format!("codexhost{}", env::consts::EXE_SUFFIX));
+
+        assert_eq!(source_checkout_host_runtime(&executable), None);
+    }
+
+    #[test]
+    fn ignores_an_installed_layout_that_is_not_a_cargo_profile_directory() {
+        let executable = env::temp_dir()
+            .join("codexhost-install/bin")
+            .join(format!("codexhost{}", env::consts::EXE_SUFFIX));
+
+        assert_eq!(source_checkout_host_runtime(&executable), None);
     }
 
     #[test]

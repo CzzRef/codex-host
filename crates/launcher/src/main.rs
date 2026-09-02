@@ -50,6 +50,7 @@ use desktop_attachment::{
     endpoint_ready, publish_runtime_descriptor, stop_stale_launcher, wait_for_host_chain,
 };
 use installation_layout::InstalledResources;
+use installation_layout::source_checkout_host_runtime;
 use runtime_instance::{
     StartupObservation, StartupState, classify_startup, default_descriptor_path, read_descriptor,
     remove_matching_descriptor,
@@ -126,11 +127,51 @@ fn usage() {
     );
 }
 
+/// Node interpreter for the source-checkout fallback. A Launcher built into a
+/// checkout ships no bundled runtime, so it takes the explicit override the
+/// development wrappers already set, then the first `node` on `PATH`.
+fn source_checkout_node() -> Option<PathBuf> {
+    if let Some(value) = env::var_os(HOST_NODE_PATH_ENV) {
+        let candidate = PathBuf::from(value);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    env::split_paths(&env::var_os("PATH")?)
+        .map(|directory| directory.join(format!("node{}", env::consts::EXE_SUFFIX)))
+        .find(|candidate| candidate.is_file())
+}
+
 fn run_delegation_cli(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     let executable = env::current_exe()?.canonicalize()?;
     let resources = InstalledResources::from_executable(&executable)?;
-    let status = Command::new(&resources.node)
-        .arg(&resources.host_runtime)
+    // A Launcher built into a source checkout has no install tree beside it, so
+    // the installed node/Host Runtime pair does not exist and every delegation
+    // call died with a bare ENOENT — which reached callers as an empty Thread
+    // list rather than a broken CLI. `npm start` passes those paths to `launch`
+    // explicitly; the delegation CLI has no flags to carry them, so it falls
+    // back to the same development layout here.
+    let (node, host_runtime) = if resources.host_runtime.is_file() {
+        (resources.node, resources.host_runtime)
+    } else {
+        match (
+            source_checkout_node(),
+            source_checkout_host_runtime(&executable),
+        ) {
+            (Some(node), Some(host_runtime)) => (node, host_runtime),
+            _ => {
+                return Err(format!(
+                    "codexhost delegation CLI needs a built Host Runtime; \
+                     neither {} nor a source checkout beside {} provides one",
+                    resources.host_runtime.display(),
+                    executable.display()
+                )
+                .into());
+            }
+        }
+    };
+    let status = Command::new(&node)
+        .arg(&host_runtime)
         .arg("--codexhost-delegation-cli")
         .args(arguments)
         .env(CODEXHOST_CLI_PATH_ENV, &executable)
