@@ -452,6 +452,20 @@ export function lateConversationTargetResolution(
     : "inspect";
 }
 
+export function retainExternalOverlayAfterConversationRebind(input: {
+  hostChanged: boolean;
+  previousAgent: RendererAgent;
+  reboundAgent: RendererAgent;
+  reboundPhase: ComposerAgentPhase;
+}): boolean {
+  return (
+    !input.hostChanged &&
+    input.previousAgent !== "codex" &&
+    input.reboundAgent === "codex" &&
+    input.reboundPhase === "draft"
+  );
+}
+
 export function scopedComposerTarget(
   target: readonly unknown[] | null,
   hostId: string | null,
@@ -951,6 +965,23 @@ export function installRendererBindingProbe(
     if (resolution === "none") return false;
 
     const previousTarget = mounted.modelTarget;
+    const previousHostId = mounted.hostId;
+    const previousState = controller.get(mounted.composer);
+    const previousAgent = previousState.agent;
+    const previousModel =
+      previousAgent === "codex"
+        ? undefined
+        : controller.modelForAgent(mounted.composer, previousAgent);
+    const previousThinkingOptionId =
+      previousAgent === "codex"
+        ? undefined
+        : controller.thinkingOptionForAgent(mounted.composer, previousAgent);
+    const previousPermissionModeId =
+      previousAgent === "codex"
+        ? undefined
+        : controller.permissionModeForAgent(mounted.composer, previousAgent);
+    const previousModelView = mounted.modelView;
+    const previousThreadConfiguration = mounted.threadConfiguration;
     const retainedPermissionModeView = retainPermissionModeView(mounted.permissionModeView)
       ? mounted.permissionModeView
       : { status: "idle" as const };
@@ -974,16 +1005,36 @@ export function installRendererBindingProbe(
         scheduleThreadUsageRefresh(mounted);
       }
     } else {
+      const reboundState = controller.get(mounted.composer);
+      const retainOverlay = retainExternalOverlayAfterConversationRebind({
+        hostChanged: nextHostId !== previousHostId,
+        previousAgent,
+        reboundAgent: reboundState.agent,
+        reboundPhase: reboundState.phase,
+      });
+      if (retainOverlay) {
+        controller.restore(
+          mounted.composer,
+          previousAgent,
+          previousModel,
+          previousThinkingOptionId,
+          previousPermissionModeId,
+        );
+        mounted.modelView = previousModelView;
+        mounted.threadConfiguration = previousThreadConfiguration;
+        mounted.permissionModeView = retainedPermissionModeView;
+      } else {
+        mounted.modelView = { status: "idle" };
+        mounted.permissionModeView = retainedPermissionModeView;
+        mounted.threadConfiguration = undefined;
+      }
       mounted.composerId = controller.get(mounted.composer).composerId;
-      mounted.modelView = { status: "idle" };
-      mounted.permissionModeView = retainedPermissionModeView;
-      mounted.threadConfiguration = undefined;
       mounted.ownershipStatus = "loading";
       mounted.usage = null;
       mounted.accountCredits = null;
       mounted.usageRequestGeneration += 1;
       usageRefreshAttempts.delete(mounted.composer);
-      if (previousTarget?.[0] === "conversation") renderMounted(mounted);
+      if (previousTarget?.[0] === "conversation" || retainOverlay) renderMounted(mounted);
       void loadThreadOwnership(mounted);
     }
     sidebarAgentIcons.refresh();

@@ -126,7 +126,7 @@ describe("Renderer external Thread Fork control", () => {
     expect(rendererForkTargetFromButton(forkButton({ projectlessSignature: false }))).toBeNull();
   });
 
-  it("intercepts a projectless external Fork and opens the derived Thread", async () => {
+  it("intercepts a projectless external Fork and stays on the source Thread", async () => {
     const dom = new FakeForkDom();
     const client = clientWith({
       owner: "external",
@@ -144,7 +144,7 @@ describe("Renderer external Thread Fork control", () => {
       threadId: "source-thread",
       lastTurnId: "source-turn",
     });
-    expect(dom.openThread).toHaveBeenCalledWith("derived-thread");
+    expect(dom.openThread).not.toHaveBeenCalled();
     expect(dom.replay).not.toHaveBeenCalled();
     control.dispose();
   });

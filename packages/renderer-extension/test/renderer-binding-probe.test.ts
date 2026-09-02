@@ -16,6 +16,7 @@ import {
   isOwnershipSubmissionBlocked,
   lockedPermissionMode,
   lateConversationTargetResolution,
+  retainExternalOverlayAfterConversationRebind,
   passiveHarnessAvailabilityAgents,
   refreshConnectionHosts,
   restoredThreadOwnership,
@@ -1054,6 +1055,41 @@ describe("Renderer Composer DOM behavior", () => {
     ).toBe("inspect");
     expect(isLateConversationTarget(null, conversationTarget)).toBe(true);
     expect(lateConversationTargetResolution(null, conversationTarget, "draft")).toBe("inspect");
+  });
+
+  it("keeps the Pi overlay when a conversation rebind lands on a Codex placeholder", () => {
+    expect(
+      retainExternalOverlayAfterConversationRebind({
+        hostChanged: false,
+        previousAgent: "pi",
+        reboundAgent: "codex",
+        reboundPhase: "draft",
+      }),
+    ).toBe(true);
+    expect(
+      retainExternalOverlayAfterConversationRebind({
+        hostChanged: true,
+        previousAgent: "pi",
+        reboundAgent: "codex",
+        reboundPhase: "draft",
+      }),
+    ).toBe(false);
+    expect(
+      retainExternalOverlayAfterConversationRebind({
+        hostChanged: false,
+        previousAgent: "pi",
+        reboundAgent: "codex",
+        reboundPhase: "locked",
+      }),
+    ).toBe(false);
+    expect(
+      retainExternalOverlayAfterConversationRebind({
+        hostChanged: false,
+        previousAgent: "codex",
+        reboundAgent: "codex",
+        reboundPhase: "draft",
+      }),
+    ).toBe(false);
   });
 
   it("does not transfer an unsubmitted default draft when an existing conversation opens", () => {
