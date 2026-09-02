@@ -73,8 +73,13 @@ const { outputFiles } = await build({
       const turn = document.createElement("div");
       turn.setAttribute("data-turn-key", "history-content:turn:turn-a");
       turn.textContent = "You said: hello";
-      turn.style.minHeight = "24px";
-      document.body.append(parent, branch, changes, turn);
+      turn.style.minHeight = "120px";
+      turn.style.flex = "1";
+      document.body.style.margin = "0";
+      document.body.style.display = "flex";
+      document.body.style.flexDirection = "column";
+      document.body.style.minHeight = "100vh";
+      document.body.append(turn, parent, branch, changes);
 
       const unavailable = async () => {
         throw new Error("unused fixed control");
@@ -194,13 +199,11 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
   await expect(bar).toContainText("vendor");
   await expect(bar).toContainText("wt app-feature");
   const composer = page.locator("[data-codex-composer-root]");
-  await expect
-    .poll(async () =>
-      composer.evaluate((node) =>
-        node.previousElementSibling?.hasAttribute("data-codexhost-workspace-bar"),
-      ),
-    )
-    .toBe(true);
+  expect(
+    await bar.evaluate(
+      (node) => node.nextElementSibling?.hasAttribute("data-codex-composer-root") === true,
+    ),
+  ).toBe(true);
 
   await page.evaluate("globalThis.emitWorkspaceFiles()");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText(
@@ -216,6 +219,20 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
   await expect(page.locator("[data-codexhost-turn-files]")).toHaveCount(1);
   await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Edit");
   await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Rollback");
+  await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Redo");
+  await expect(page.locator('[data-codexhost-turn-action="edit"]')).toHaveAttribute(
+    "aria-label",
+    /Rollback later turns/,
+  );
+  await page.locator('[data-codexhost-turn-action="edit"]').click();
+  await expect(page.locator("[data-codexhost-turn-confirm]")).toContainText(
+    "Editing will first roll back",
+  );
+  await page
+    .locator("[data-codexhost-turn-confirm]")
+    .getByRole("button", { name: "Cancel" })
+    .click();
+  await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(0);
 
   await expect(page.locator("[data-codexhost-branch-worktree-toggle] input")).toBeChecked();
   await page.getByRole("button", { name: "Open review" }).first().click({ force: true });

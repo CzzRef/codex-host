@@ -11,10 +11,16 @@ import {
 } from "../src/renderer-conversation-files.js";
 import {
   isNativeWorkspaceDiffControl,
+  repositoryDisplayName,
   threadIdForComposer,
   worktreeLabel,
 } from "../src/renderer-workspace-bar.js";
-import { turnsAfterKey } from "../src/renderer-turn-actions.js";
+import {
+  overlayTopAboveComposer,
+  rectsOverlap,
+  turnActionOrigin,
+} from "../src/renderer-overlay-layout.js";
+import { turnActionCopy, turnsAfterKey } from "../src/renderer-turn-actions.js";
 
 function element(attributes: Record<string, string>, children: Element[] = []): Element {
   return {
@@ -58,9 +64,13 @@ describe("Renderer workspace bar helpers", () => {
       deletedLines: 0,
       dirty: true,
     };
+    expect(repositoryDisplayName(repository)).toBe("app");
     expect(worktreeLabel(repository, false)).toBe("wt app-feature");
     expect(worktreeLabel(repository, true)).toBe("工作树 app-feature");
     expect(worktreeLabel({ ...repository, isWorktree: false, worktreeName: null }, false)).toBe("");
+    expect(worktreeLabel({ ...repository, kind: "worktree", worktreeName: "feature" }, false)).toBe(
+      "",
+    );
   });
 
   it("recognizes the official Changes and Review controls", () => {
@@ -110,6 +120,54 @@ describe("conversation file-change notifications", () => {
     expect(filesForTurnSelection(byTurn, "missing")).toEqual([]);
     expect(turnsAfterKey(["a", "b", "c"], "b")).toBe(1);
     expect(turnsAfterKey(["history-content:turn:abc"], "abc")).toBe(0);
+    expect(turnActionCopy({ chinese: true, rolledBack: false, laterTurns: 2 }).editTitle).toContain(
+      "先回滚",
+    );
+    expect(
+      turnActionCopy({ chinese: true, rolledBack: false, laterTurns: 2 }).editConfirm,
+    ).toContain("确定继续");
+    expect(turnActionCopy({ chinese: true, rolledBack: true, laterTurns: 0 }).editTitle).toContain(
+      "已回滚",
+    );
+    expect(turnActionCopy({ chinese: false, rolledBack: true, laterTurns: 0 }).redoLabel).toBe(
+      "Redo",
+    );
+    expect(turnActionCopy({ chinese: true, rolledBack: false, laterTurns: 2 }).rollbackLabel).toBe(
+      "回滚",
+    );
+    expect(
+      turnActionCopy({ chinese: true, rolledBack: false, laterTurns: 2 }).rollbackConfirmAction,
+    ).toBe("确认回滚");
+    expect(overlayTopAboveComposer(400, 80, 8)).toBe(312);
+    expect(
+      turnActionOrigin({
+        turn: { left: 40, top: 80, right: 520 },
+        size: { width: 180, height: 32 },
+        composerTop: 640,
+        viewportWidth: 900,
+      }),
+    ).toEqual({ left: 332, top: 88 });
+    expect(
+      turnActionOrigin({
+        turn: { left: 40, top: 80, right: 520 },
+        size: { width: 180, height: 32 },
+        composerTop: 640,
+        viewportWidth: 900,
+        avoid: { left: 400, top: 80, right: 520, bottom: 110 },
+      }),
+    ).toEqual({ left: 212, top: 88 });
+    expect(
+      rectsOverlap(
+        { left: 0, top: 0, width: 10, height: 10 },
+        { left: 8, top: 8, width: 10, height: 10 },
+      ),
+    ).toBe(true);
+    expect(
+      rectsOverlap(
+        { left: 0, top: 0, width: 10, height: 10 },
+        { left: 20, top: 20, width: 10, height: 10 },
+      ),
+    ).toBe(false);
     expect(diffPreview("diff --git a/x b/x\n+keep\n")).toBe("+keep");
     expect(reviewPathMatches("/workspace/app/src/a.ts", "src/a.ts")).toBe(true);
     expect(reviewPathMatches("/workspace/app/src/a.ts", "src/b.ts")).toBe(false);
