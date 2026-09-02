@@ -13,7 +13,7 @@
   - Pi / OMP：紧跟在 `stopReason=toolUse` 的 assistant 条目之后的 user 条目是插队（steer 在工具调用结束、下一次模型调用前投递）；紧跟 `stop` 之后的才是新 prompt。
   - Claude Code：adapter 记住它通过 PushableInput 推送的 steer `uuid`，随 Turn 身份持久化；历史映射按 uuid 折叠，缺失时回退到「前一条 assistant 仍有未回填的 tool_use」启发式。
   - DeepSeek Harness：实测 steer 消息的 `source.kind`（当前只收 `user`），把 steer 来源折叠为 Turn 内条目。
-  - Cursor：live-only，无历史；打断-重载的第二段 prompt 在实时路径上作为 Turn 内 `userMessage` 条目发出。
+  - Cursor：原生 `acp-sessions` 历史按 user/assistant 对投影；实时打断-重载的第二段 prompt 仍作为同一 Host Turn 的 `userMessage` 条目发出，历史折叠留给本变更。
 - 结算与边界：折叠后一条 Host Turn 在 Pi / OMP 历史里重新回到「恰好一条」，`1 + deliveredSteers` 的放宽退回为兼容容差或移除；Fork / 回滚 / Redo 的边界只认 prompt 条目，跳过折叠进 Turn 的插队条目。
 
 ## Capabilities

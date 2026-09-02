@@ -29,7 +29,11 @@ import {
   type PermissionModeSelectCommand,
   type PermissionModeSelectCompleted,
 } from "@codexhost/harness-adapter";
-import { harnessIdSchema, nativeSessionRefSchema } from "@codexhost/shared-contracts";
+import {
+  harnessIdSchema,
+  nativeSessionRefSchema,
+  type NativeTurnRef,
+} from "@codexhost/shared-contracts";
 
 import {
   CursorAcpTransport,
@@ -37,12 +41,25 @@ import {
   type CursorTransport,
   type CursorTransportOptions,
 } from "./acp-transport.js";
+import {
+  cursorNativeTurnKeys,
+  latestCursorNativeTurn,
+  mapCursorHistory,
+} from "./cursor-history.js";
 import { cursorCapabilities, cursorConfiguration, cursorNativeModelId } from "./cursor-models.js";
 import { CursorTurn } from "./cursor-turn.js";
 
 const cursorId = harnessIdSchema.parse("cursor");
-const HISTORY_MESSAGE =
-  "Cursor ACP exposes no replayable native transcript. This live-only task cannot be restored after codexhost exits; start a new task. Cursor's native session data is left untouched.";
+const UNSUPPORTED_HISTORY_MESSAGE =
+  "Cursor does not support Fork, last-turn rollback, or unattended-full-access";
+
+type CursorNativeConfig = Pick<NewSessionResponse, "configOptions" | "modes"> & {
+  sessionId?: string;
+};
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 type Accepted =
   | TurnStartAccepted
@@ -59,7 +76,7 @@ function failure<T>(code: HarnessError["code"], message: string): HarnessResult<
 
 async function selectNative(
   transport: CursorTransport,
-  response: NewSessionResponse,
+  response: CursorNativeConfig,
   id: "model" | "mode",
   value: string,
 ): Promise<void> {
@@ -85,30 +102,79 @@ class CursorSession implements HarnessSession {
   readonly #channel = new HarnessOutputChannel<HarnessOutput>();
   readonly outputs = this.#channel.outputs;
   #active: CursorTurn | undefined;
+  #runTask: Promise<void> | undefined;
   #closed = false;
   #configuring = false;
   #closeTask: Promise<void> | undefined;
+  readonly #sessionId: string;
+  readonly #knownTurnRefs: readonly NativeTurnRef[];
+  readonly #settleTimeoutMs: number;
 
   constructor(
     readonly transport: CursorTransport,
-    readonly native: NewSessionResponse,
+    readonly native: CursorNativeConfig,
+    sessionId: string,
     readonly onClose: () => void,
+    knownTurnRefs: readonly NativeTurnRef[] = [],
+    settleTimeoutMs = 2_000,
   ) {
+    this.#sessionId = sessionId;
+    this.#knownTurnRefs = knownTurnRefs;
+    this.#settleTimeoutMs = settleTimeoutMs;
     const configuration = cursorConfiguration(native);
     this.capabilities = cursorCapabilities(configuration);
     this.initialState = {
       ...configuration.state,
       nativeRef: nativeSessionRefSchema.parse({
         harnessId: cursorId,
-        nativeSessionId: native.sessionId,
+        nativeSessionId: sessionId,
         formatVersion: 1,
-        locator: { transcript: "live-only", protocol: "cursor-acp" },
+        locator: { protocol: "cursor-acp", transcript: "native" },
       }),
     };
   }
 
+  async #readHistorySnapshot(): Promise<HostThreadSnapshot> {
+    const messages = await this.transport.readHistory(this.#sessionId);
+    return mapCursorHistory(messages, cursorId, this.#sessionId, this.#knownTurnRefs);
+  }
+
+  async #settleNativeTurn(previousKeys: ReadonlySet<string>): Promise<NativeTurnRef | undefined> {
+    const deadline = Date.now() + this.#settleTimeoutMs;
+    while (Date.now() <= deadline) {
+      const snapshot = await this.#readHistorySnapshot();
+      const next = latestCursorNativeTurn(snapshot, previousKeys);
+      if (next && !previousKeys.has(next.nativeTurnKey)) return next;
+      await wait(50);
+    }
+    const snapshot = await this.#readHistorySnapshot();
+    return latestCursorNativeTurn(snapshot, previousKeys);
+  }
+
   async readSnapshot(): Promise<HarnessResult<HostThreadSnapshot>> {
-    return failure("unsupported", HISTORY_MESSAGE);
+    if (this.#closed) return failure("invalidState", "Cursor session is closed");
+    if (this.#active || this.#configuring) {
+      return {
+        ok: false,
+        error: {
+          code: "sessionBusy",
+          message: "Cursor Session cannot read history during another operation",
+          retryable: true,
+        },
+      };
+    }
+    try {
+      const snapshot = await this.#readHistorySnapshot();
+      return {
+        ok: true,
+        value: {
+          ...snapshot,
+          state: { ...this.initialState, ...cursorConfiguration(this.native).state },
+        },
+      };
+    } catch (error) {
+      return { ok: false, error: cursorError(error) };
+    }
   }
 
   fault(error: HarnessError): void {
@@ -190,7 +256,7 @@ class CursorSession implements HarnessSession {
     const turn = new CursorTurn(command.turnId, (output) => this.#channel.emit(output));
     this.#active = turn;
     this.#channel.emit({ kind: "event", event: { type: "turn.started", turnId: command.turnId } });
-    void this.#run(turn, text);
+    this.#runTask = this.#run(turn, text);
     return { ok: true, value: { turnId: command.turnId } };
   }
 
@@ -222,6 +288,9 @@ class CursorSession implements HarnessSession {
 
   async #run(turn: CursorTurn, text: string): Promise<void> {
     try {
+      const previousKeysTask = this.#readHistorySnapshot()
+        .then(cursorNativeTurnKeys)
+        .catch(() => new Set<string>());
       let response = await this.transport.runTurn(text, {
         update: (update) => turn.update(update),
         permission: (request) => turn.interactions.permission(request),
@@ -243,8 +312,11 @@ class CursorSession implements HarnessSession {
           extension: (method, params) => turn.interactions.extension(method, params),
         });
       }
-      if (this.#active !== turn) return;
+      turn.acpTerminal = true;
       const reason = response.stopReason;
+      const previousKeys = await previousKeysTask;
+      const nativeTurnRef =
+        reason === "end_turn" ? await this.#settleNativeTurn(previousKeys) : undefined;
       turn.finish(
         reason === "cancelled"
           ? { status: "cancelled", reason: "Cursor turn cancelled" }
@@ -258,6 +330,7 @@ class CursorSession implements HarnessSession {
                   retryable: false,
                 },
               },
+        nativeTurnRef,
       );
     } catch (error) {
       if (this.#active === turn)
@@ -276,12 +349,15 @@ class CursorSession implements HarnessSession {
     this.#closed = true;
     this.#closeTask = (async () => {
       const active = this.#active;
-      if (active) {
+      if (active && !active.acpTerminal) {
         active.cancellationRequested = true;
         active.interactions.close();
       }
       await this.transport.close();
-      active?.finish({ status: "cancelled", reason: "Cursor session closed" });
+      if (active && !active.acpTerminal) {
+        active.finish({ status: "cancelled", reason: "Cursor session closed" });
+      }
+      await this.#runTask?.catch(() => undefined);
       this.#active = undefined;
       this.#channel.end();
       this.onClose();
@@ -294,6 +370,7 @@ export interface CursorAdapterOptions {
   command?: string;
   environment?: NodeJS.ProcessEnv;
   commandTimeoutMs?: number;
+  nativeHistorySettleTimeoutMs?: number;
 }
 
 export class CursorAdapter implements HarnessAdapter {
@@ -350,16 +427,24 @@ export class CursorAdapter implements HarnessAdapter {
 
   async open(input: OpenSessionInput): Promise<HarnessResult<HarnessSession>> {
     if (this.#closed) return failure("invalidState", "Cursor adapter is closed");
-    if (input.kind !== "create") return failure("unsupported", HISTORY_MESSAGE);
-    if (input.executionPolicy === "unattended-full-access")
+    if (input.kind === "fork" || input.kind === "rollbackLastTurn") {
+      return failure("unsupported", UNSUPPORTED_HISTORY_MESSAGE);
+    }
+    if (input.kind === "create" && input.executionPolicy === "unattended-full-access")
       return failure(
         "unsupported",
         "Cursor integration preserves native permissions; unattended-full-access is not supported",
       );
-    if (input.thinkingOptionId)
+    if (input.kind === "create" && input.thinkingOptionId)
       return failure("unsupported", "Cursor has no independent Thinking selector");
     if (!path.isAbsolute(input.cwd))
       return failure("invalidRequest", "Cursor cwd must be absolute");
+    if (input.kind === "resume") {
+      const parsed = nativeSessionRefSchema.safeParse(input.nativeRef);
+      if (!parsed.success || parsed.data.harnessId !== cursorId) {
+        return failure("invalidRequest", "Cursor cannot resume another Harness's Native Session");
+      }
+    }
     let session: CursorSession | undefined;
     let fault: HarnessError | undefined;
     const transport = this.createTransport({
@@ -372,10 +457,13 @@ export class CursorAdapter implements HarnessAdapter {
       },
     });
     try {
-      const response = await transport.open();
-      if (input.model)
+      const response =
+        input.kind === "resume"
+          ? await transport.open({ kind: "resume", sessionId: input.nativeRef.nativeSessionId })
+          : await transport.open({ kind: "create" });
+      if (input.kind === "create" && input.model)
         await selectNative(transport, response, "model", cursorNativeModelId(input.model));
-      if (input.permissionModeId)
+      if (input.kind === "create" && input.permissionModeId)
         await selectNative(transport, response, "mode", input.permissionModeId);
       if (fault) {
         await transport.close();
@@ -383,9 +471,26 @@ export class CursorAdapter implements HarnessAdapter {
       }
       this.#configuration = cursorConfiguration(response);
       this.#inspection = this.#ready();
-      session = new CursorSession(transport, response, () => {
-        if (session) this.#sessions.delete(session);
-      });
+      const sessionId =
+        input.kind === "resume"
+          ? input.nativeRef.nativeSessionId
+          : "sessionId" in response && typeof response.sessionId === "string"
+            ? response.sessionId
+            : undefined;
+      if (!sessionId) {
+        await transport.close();
+        return failure("protocolError", "Cursor ACP returned no Session identity");
+      }
+      session = new CursorSession(
+        transport,
+        response,
+        sessionId,
+        () => {
+          if (session) this.#sessions.delete(session);
+        },
+        input.kind === "resume" ? (input.knownTurnRefs ?? []) : [],
+        this.options.nativeHistorySettleTimeoutMs ?? 2_000,
+      );
       this.#sessions.add(session);
       return { ok: true, value: session };
     } catch (error) {
