@@ -34,6 +34,7 @@ export type {
   HarnessThinkingOption,
   HarnessThinkingOptionId,
   HostAgentMessageItem,
+  HostUserMessageItem,
   HostApprovalAction,
   HostApprovalEffect,
   HostApprovalInteraction,

@@ -146,6 +146,49 @@ describe("Codex UI projector", () => {
     });
   });
 
+  it("projects an in-turn user item as an additional userMessage after the prompt", () => {
+    const snapshot: HostThreadSnapshot["turns"][number] = {
+      nativeTurnRef: nativeTurnRefSchema.parse({
+        harnessId: "grok",
+        nativeSessionId: "session-1",
+        nativeTurnKey: "native-turn-1",
+        formatVersion: 1,
+      }),
+      input: [{ type: "text", text: "first" }],
+      items: [
+        {
+          item: { type: "agentMessage", itemId: itemId("agent-a"), text: "working" },
+          outcome: { status: "succeeded" },
+        },
+        {
+          item: { type: "userMessage", itemId: itemId("steer-1"), text: "second" },
+          outcome: { status: "succeeded" },
+        },
+        {
+          item: { type: "agentMessage", itemId: itemId("agent-b"), text: "done" },
+          outcome: { status: "succeeded" },
+        },
+      ],
+      outcome: { status: "succeeded" },
+    };
+
+    const projected = projectHistoricalTurn({ turnId, cwd: "/workspace", snapshot });
+    expect(
+      (projected.items as Array<{ id: string; type: string }>).map(({ id, type }) => [id, type]),
+    ).toEqual([
+      ["turn-1-user", "userMessage"],
+      ["agent-a", "agentMessage"],
+      ["steer-1", "userMessage"],
+      ["agent-b", "agentMessage"],
+    ]);
+    expect((projected.items as Array<Record<string, unknown>>)[2]).toEqual({
+      id: "steer-1",
+      type: "userMessage",
+      clientId: null,
+      content: [{ type: "text", text: "second" }],
+    });
+  });
+
   it("projects Agent Message and Command Execution lifecycles", () => {
     const value = projector();
     const agentId = itemId("agent-1");

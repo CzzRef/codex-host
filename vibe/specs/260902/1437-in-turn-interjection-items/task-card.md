@@ -11,7 +11,7 @@ Task: 1437-in-turn-interjection-items
 - Group key: `dsg:codex-host:1437-in-turn-interjection-items`
 - Group owner: this `task-card.md`
 - Git document prefixes: `vibe/specs/260902/1437-in-turn-interjection-items/`, `openspec/changes/add-in-turn-interjection-items/`, `vibe/specs/PROJECT_STATUS.md`
-- Declared code/config dependencies: `packages/harness-adapter/src/text-session.ts`, `packages/protocol-core/src/codex-ui-projector.ts`, `packages/adapters/grok/src/grok-history.ts`, `packages/adapters/pi/src/pi-history.ts`, `packages/adapters/claude-code/src/claude-history.ts`, `packages/adapters/deepseek-harness/src/history.ts`
+- Declared code/config dependencies: `packages/harness-adapter/src/text-session.ts`, `packages/harness-adapter/src/testing.ts`, `packages/protocol-core/src/codex-ui-projector.ts`, `packages/adapters/grok/src/grok-adapter.ts`, `packages/adapters/grok/src/grok-history.ts`, `packages/adapters/grok/src/grok-interject.ts`, `packages/adapters/pi/src/pi-history.ts`, `packages/adapters/claude-code/src/claude-history.ts`, `packages/adapters/deepseek-harness/src/history.ts`
 - Linked authorities: [proposal](../../../../openspec/changes/add-in-turn-interjection-items/proposal.md), [steer queue change](../../../../openspec/changes/add-external-turn-steer-queue/proposal.md), [1400 task card](../1400-grok-interject-archived-list/task-card.md)
 - Excluded unrelated dirty documents: `docs/tasks/WORKTREE_TASKS.md`（并行 Pi 会话）
 
@@ -30,8 +30,11 @@ Task: 1437-in-turn-interjection-items
   ],
   "dependencies": [
     "packages/harness-adapter/src/text-session.ts",
+    "packages/harness-adapter/src/testing.ts",
     "packages/protocol-core/src/codex-ui-projector.ts",
+    "packages/adapters/grok/src/grok-adapter.ts",
     "packages/adapters/grok/src/grok-history.ts",
+    "packages/adapters/grok/src/grok-interject.ts",
     "packages/adapters/pi/src/pi-history.ts",
     "packages/adapters/claude-code/src/claude-history.ts",
     "packages/adapters/deepseek-harness/src/history.ts"
@@ -39,7 +42,8 @@ Task: 1437-in-turn-interjection-items
   "validators": [],
   "git_scope_prefixes": [
     "vibe/specs/260902/1437-in-turn-interjection-items",
-    "openspec/changes/add-in-turn-interjection-items"
+    "openspec/changes/add-in-turn-interjection-items",
+    "vibe/specs/PROJECT_STATUS.md"
   ]
 }
 ```
@@ -61,8 +65,10 @@ Task: 1437-in-turn-interjection-items
 
 ## Work And Verification
 
-- Status: `planned / decision-recorded / not-started`.
-- Planned verification: 每家历史折叠与实时条目的聚焦测试；projector 多 `userMessage` id 稳定；`thread read --view messages` 顺序；Desktop 重载真机查看（用户执行）。
+- Status: `implemented-partial / this-commit`.
+- Done: `HostItem.userMessage` 契约、testing fake `emitUserMessage`、projector 额外官方 `userMessage`（id 用 Host `itemId`）、Grok 实时投递 + 历史剥壳、Pi 历史折叠（`toolUse` 后的 user 为 steer；`model_change` 仍是新 prompt）与 Fork 边界跳过折叠条目。
+- Remaining: OMP 历史（与 Pi 同规则）、Claude uuid / DSH `source.kind` / Cursor re-prompt、Pi/OMP 实时条目与 `1+deliveredSteers` 回收、Grok 实时 UUID 与历史 stableId 对齐、Desktop 重载真机。
+- Verification: focused vitest grok-adapter/history、pi-history、codex-ui-projector、harness-adapter text-session 101 pass / 1 prior fail fixed; `npm run typecheck` pass.
 
 ## Closeout
 

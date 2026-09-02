@@ -6,6 +6,7 @@ import type {
   HostThreadSnapshot,
   HostToolExecutionItem,
   HostToolOutput,
+  HostUserMessageItem,
   HistoricalTurnOutcome,
 } from "@codexhost/harness-adapter";
 import {
@@ -110,6 +111,61 @@ function messageRole(entry: PiEntry): string | null {
   return typeof value === "string" ? value : null;
 }
 
+/**
+ * Pi delivers a queued steer as a user Entry after `stopReason=toolUse` and
+ * any tool results, before the next model call. A `model_change` after that
+ * assistant is a turn boundary (new prompt), not a steer.
+ */
+function isFoldedSteer(preceding: PiEntry[]): boolean {
+  let modelChangedAfterAssistant = false;
+  for (let index = preceding.length - 1; index >= 0; index -= 1) {
+    const entry = preceding[index] as PiEntry;
+    if (modelChange(entry)) {
+      modelChangedAfterAssistant = true;
+      continue;
+    }
+    const role = messageRole(entry);
+    if (role === "toolResult") continue;
+    if (role === "assistant") {
+      return !modelChangedAfterAssistant && message(entry)?.stopReason === "toolUse";
+    }
+    if (role === "user") return false;
+  }
+  return false;
+}
+
+function promptUserEntries(active: PiEntry[]): PiEntry[] {
+  return groupedPiTurns(active).map((entries) => entries[0] as PiEntry);
+}
+
+function groupedPiTurns(active: PiEntry[]): PiEntry[][] {
+  const turns: PiEntry[][] = [];
+  for (let index = 0; index < active.length;) {
+    if (modelChange(active[index] as PiEntry)) {
+      index += 1;
+      continue;
+    }
+    if (messageRole(active[index] as PiEntry) !== "user") {
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < active.length) {
+      if (messageRole(active[end] as PiEntry) === "user") {
+        if (isFoldedSteer(active.slice(index, end))) {
+          end += 1;
+          continue;
+        }
+        break;
+      }
+      end += 1;
+    }
+    turns.push(active.slice(index, end));
+    index = end;
+  }
+  return turns;
+}
+
 function itemId(entryId: string, kind: string, ordinal: number) {
   return hostItemIdSchema.parse(`pi-item-v1-${entryId}-${kind}-${ordinal}`);
 }
@@ -161,6 +217,7 @@ function toolOutput(value: unknown): HostToolOutput | undefined {
 
 function snapshotItems(entries: PiEntry[], outcome: HistoricalTurnOutcome): HostItemSnapshot[] {
   const snapshots: HostItemSnapshot[] = [];
+  const promptId = entries[0]?.id;
   const toolCalls = new Map<
     string,
     { entryId: string; ordinal: number; name: string; arguments: JsonValue }
@@ -169,6 +226,17 @@ function snapshotItems(entries: PiEntry[], outcome: HistoricalTurnOutcome): Host
     const nativeMessage = message(entry);
     if (!nativeMessage) continue;
     const content = Array.isArray(nativeMessage.content) ? nativeMessage.content : [];
+    if (nativeMessage.role === "user") {
+      if (entry.id === promptId) continue;
+      const text = textContent(nativeMessage.content);
+      const item: HostUserMessageItem = {
+        type: "userMessage",
+        itemId: itemId(entry.id, "user", 0),
+        text,
+      };
+      snapshots.push({ item, outcome: { status: "succeeded" } });
+      continue;
+    }
     if (nativeMessage.role === "assistant") {
       const text = textContent(content);
       const reasoning = thinkingContent(content);
@@ -264,21 +332,14 @@ export function mapPiSnapshot(
   const active = activePiEntries(history);
   const turns: HostThreadSnapshot["turns"] = [];
   let effectiveModel = state.model;
-  for (let index = 0; index < active.length;) {
-    const model = modelChange(active[index] as PiEntry);
-    if (model) {
-      effectiveModel = model;
-      index += 1;
-      continue;
+  let cursor = 0;
+  for (const entries of groupedPiTurns(active)) {
+    const user = entries[0] as PiEntry;
+    while (cursor < active.length && active[cursor]?.id !== user.id) {
+      const changed = modelChange(active[cursor] as PiEntry);
+      if (changed) effectiveModel = changed;
+      cursor += 1;
     }
-    const user = active[index] as PiEntry;
-    if (messageRole(user) !== "user") {
-      index += 1;
-      continue;
-    }
-    let end = index + 1;
-    while (end < active.length && messageRole(active[end] as PiEntry) !== "user") end += 1;
-    const entries = active.slice(index, end);
     const outcome = assistantOutcome(entries);
     const userText = textContent(message(user)?.content);
     const nativeTurnRef = nativeTurnRefSchema.parse({
@@ -304,8 +365,8 @@ export function mapPiSnapshot(
     for (const entry of entries) {
       const changed = modelChange(entry);
       if (changed) effectiveModel = changed;
+      cursor += 1;
     }
-    index = end;
   }
   return { turns };
 }
@@ -313,7 +374,7 @@ export function mapPiSnapshot(
 export function resolvePiLastTurnBoundary(
   history: PiSessionHistory,
 ): { lastUserEntryId: string; sourceTurnCount: number } | null {
-  const users = activePiEntries(history).filter((entry) => messageRole(entry) === "user");
+  const users = promptUserEntries(activePiEntries(history));
   const last = users.at(-1);
   return last ? { lastUserEntryId: last.id, sourceTurnCount: users.length } : null;
 }
@@ -322,8 +383,7 @@ export function resolvePiForkBoundary(
   history: PiSessionHistory,
   checkpointId: string,
 ): { targetTurnIndex: number; nextUserEntryId: string | null } {
-  const active = activePiEntries(history);
-  const users = active.filter((entry) => messageRole(entry) === "user");
+  const users = promptUserEntries(activePiEntries(history));
   const targetTurnIndex = users.findIndex((entry) => entry.id === checkpointId);
   if (targetTurnIndex < 0) throw new Error("Pi Checkpoint is not on the active branch");
   return {

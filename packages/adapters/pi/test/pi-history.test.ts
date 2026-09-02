@@ -4,6 +4,7 @@ import {
   activePiEntries,
   mapPiSnapshot,
   resolvePiForkBoundary,
+  resolvePiLastTurnBoundary,
   type PiSessionHistory,
 } from "../src/pi-history.js";
 import { encodePiModelRef } from "../src/pi-model-catalog.js";
@@ -234,6 +235,106 @@ describe("Pi active-branch history", () => {
     expect(turn).toMatchObject({
       outcome: { status: "unknown" },
       items: [{ item: { type: "reasoning", text: "visible but not terminal" } }],
+    });
+  });
+
+  it("folds a delivered steer into its Turn and keeps Fork boundaries on prompts", () => {
+    const steered: PiSessionHistory = {
+      entries: [
+        {
+          id: "user-1",
+          parentId: null,
+          type: "message",
+          message: { role: "user", content: [{ type: "text", text: "first" }] },
+        },
+        {
+          id: "assistant-1",
+          parentId: "user-1",
+          type: "message",
+          message: {
+            role: "assistant",
+            stopReason: "toolUse",
+            content: [
+              { type: "text", text: "checking" },
+              { type: "toolCall", id: "call-1", name: "read", arguments: { path: "a.txt" } },
+            ],
+          },
+        },
+        {
+          id: "tool-1",
+          parentId: "assistant-1",
+          type: "message",
+          message: {
+            role: "toolResult",
+            toolCallId: "call-1",
+            toolName: "read",
+            isError: false,
+            content: [{ type: "text", text: "contents" }],
+          },
+        },
+        // Pi delivers the queued steer after the tool calls, before the next
+        // model call: a user message following a toolUse stop.
+        {
+          id: "user-steer",
+          parentId: "tool-1",
+          type: "message",
+          message: { role: "user", content: [{ type: "text", text: "actually check tests" }] },
+        },
+        {
+          id: "assistant-2",
+          parentId: "user-steer",
+          type: "message",
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "done" }],
+          },
+        },
+        {
+          id: "user-2",
+          parentId: "assistant-2",
+          type: "message",
+          message: { role: "user", content: [{ type: "text", text: "next" }] },
+        },
+        {
+          id: "assistant-3",
+          parentId: "user-2",
+          type: "message",
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "ok" }],
+          },
+        },
+      ],
+      leafId: "assistant-3",
+    };
+    const snapshot = mapPiSnapshot(steered, { sessionId: "session-1", model: null });
+
+    expect(snapshot.turns).toHaveLength(2);
+    expect(snapshot.turns[0]).toMatchObject({
+      nativeTurnRef: { nativeTurnKey: "user-1" },
+      checkpoint: { checkpointId: "user-1" },
+      input: [{ text: "first" }],
+      outcome: { status: "succeeded" },
+    });
+    expect(
+      snapshot.turns[0]?.items.map(({ item }) => [item.type, "text" in item ? item.text : ""]),
+    ).toEqual([
+      ["agentMessage", "checking"],
+      ["toolExecution", ""],
+      ["userMessage", "actually check tests"],
+      ["agentMessage", "done"],
+    ]);
+    expect(snapshot.turns[1]).toMatchObject({ nativeTurnRef: { nativeTurnKey: "user-2" } });
+    // Fork / rollback boundaries skip the folded steer entry.
+    expect(resolvePiForkBoundary(steered, "user-1")).toEqual({
+      targetTurnIndex: 0,
+      nextUserEntryId: "user-2",
+    });
+    expect(resolvePiLastTurnBoundary(steered)).toEqual({
+      lastUserEntryId: "user-2",
+      sourceTurnCount: 2,
     });
   });
 

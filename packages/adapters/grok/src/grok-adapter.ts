@@ -32,6 +32,7 @@ import {
   type HostItemOutcome,
   type HostItemSnapshot,
   type HostReasoningItem,
+  type HostUserMessageItem,
   type HostThreadSnapshot,
   type HostUsage,
   type InspectHarnessInput,
@@ -80,7 +81,7 @@ import {
   type GrokTransportEvent,
 } from "./acp-transport.js";
 import type { GrokCompactResult } from "./grok-manual-compaction.js";
-import type { GrokInterjectResult } from "./grok-interject.js";
+import { unwrapGrokInterjection, type GrokInterjectResult } from "./grok-interject.js";
 import { GROK_CODEXHOST_TITLE_OVERLAY_FILE } from "./grok-title-overlay.js";
 import { projectGrokFileChanges } from "./grok-file-change.js";
 import { forkGrokSession } from "./grok-fork.js";
@@ -187,6 +188,8 @@ interface ActiveTurn {
   approvals: Map<HostInteractionId, ActiveApproval>;
   cancellationRequested: boolean;
   pendingSteers: string[];
+  /** Interjections Grok accepted (`status: queued`) that have not yet been delivered as a user message. */
+  queuedInterjections: number;
   /** Identities of the Native Turns already persisted before this prompt ran. */
   beforeNativeTurnIds: Set<string>;
   completion: Promise<void>;
@@ -510,6 +513,7 @@ class GrokHarnessSession implements HarnessSession {
       approvals: new Map(),
       cancellationRequested: false,
       pendingSteers: [],
+      queuedInterjections: 0,
       beforeNativeTurnIds: new Set(this.#snapshot.turns.map(nativeTurnIdentity)),
       completion,
       resolveCompletion,
@@ -602,6 +606,7 @@ class GrokHarnessSession implements HarnessSession {
       approvals: new Map(),
       cancellationRequested: false,
       pendingSteers: [],
+      queuedInterjections: 0,
       beforeNativeTurnIds: new Set(),
       completion,
       resolveCompletion,
@@ -833,12 +838,16 @@ class GrokHarnessSession implements HarnessSession {
   }
 
   async #injectSteer(active: ActiveTurn, text: string): Promise<void> {
+    // Grok may deliver the interjection back before the RPC even answers,
+    // so it is counted as queued before the call and un-counted on failure.
+    active.queuedInterjections += 1;
     try {
       await this.#transport.interject(text);
       if (this.#active !== active || active.cancellationRequested) return;
       const index = active.pendingSteers.indexOf(text);
       if (index >= 0) active.pendingSteers.splice(index, 1);
     } catch {
+      active.queuedInterjections = Math.max(0, active.queuedInterjections - 1);
       if (this.#active !== active || active.cancellationRequested) return;
       await this.#transport.cancel().catch(() => undefined);
     }
@@ -941,6 +950,7 @@ class GrokHarnessSession implements HarnessSession {
     );
     if (contextUsage) this.#publishUsage(contextUsage, active.command.turnId);
     if (event.type === "agent.text") this.#appendAgent(active, event.text, event.messageId);
+    else if (event.type === "user.text") this.#deliverInterjection(active, event);
     else if (event.type === "agent.thought")
       this.#appendReasoning(active, event.text, event.messageId);
     else if (event.type === "tool.call") this.#startTool(active, event);
@@ -950,6 +960,29 @@ class GrokHarnessSession implements HarnessSession {
       active.compactionTerminal = event;
       this.#completeCompaction(active, event);
     } else if (event.type === "usage" || event.type === "turn.completed") return;
+  }
+
+  /**
+   * Grok delivers an accepted interjection back as a synthetic user message
+   * inside the running prompt. Only a message we queued counts: the prompt's
+   * own echo (if any) and Host-tagged events are not interjections.
+   */
+  #deliverInterjection(
+    active: ActiveTurn,
+    event: Extract<GrokTransportEvent, { type: "user.text" }>,
+  ): void {
+    if (active.queuedInterjections <= 0) return;
+    if (event.metadata?.hostTurn === true || event.metadata?.host_turn === true) return;
+    active.queuedInterjections -= 1;
+    this.#completeReasoning(active, { status: "succeeded" });
+    this.#completeAgent(active, { status: "succeeded" });
+    const item: HostUserMessageItem = {
+      type: "userMessage",
+      itemId: hostItemIdSchema.parse(this.#randomUUID()),
+      text: unwrapGrokInterjection(event.text),
+    };
+    this.#event({ type: "item.started", turnId: active.command.turnId, item });
+    this.#completeItem(active, item, { status: "succeeded" });
   }
 
   #startCompaction(

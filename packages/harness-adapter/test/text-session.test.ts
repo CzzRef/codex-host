@@ -99,6 +99,34 @@ describe("minimal Harness text Session", () => {
     });
   });
 
+  it("emits an in-turn user message as a completed item", async () => {
+    const session = new FakeHarnessSession(harnessIdSchema.parse("fake"));
+    const collected = collect(session.outputs);
+
+    await session.execute(textTurn("steer-turn"));
+    const itemId = session.emitUserMessage("second");
+    session.appendText("done");
+    session.succeedTurn();
+    await session.close();
+
+    const hostEvents = events(await collected);
+    expect(hostEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "item.started",
+          item: { type: "userMessage", itemId, text: "second" },
+        }),
+        expect.objectContaining({
+          type: "item.completed",
+          snapshot: {
+            item: { type: "userMessage", itemId, text: "second" },
+            outcome: { status: "succeeded" },
+          },
+        }),
+      ]),
+    );
+  });
+
   it("publishes complete Session Usage replacements after a Turn terminal", async () => {
     const initialUsage = {
       totalTokens: 10,

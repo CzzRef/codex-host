@@ -515,6 +515,15 @@ describe("Grok Adapter ACP projection", () => {
     expect(transport.promptTexts).toEqual(["first"]);
     expect(transport.interjectTexts).toEqual(["second"]);
     expect(transport.cancel).not.toHaveBeenCalled();
+    // The delivered interjection is an in-turn user item at its position.
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.started",
+      item: { type: "userMessage", text: "second" },
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.completed",
+      snapshot: { item: { type: "userMessage", text: "second" } },
+    });
     transport.event({ type: "agent.text", text: "first-answer", messageId: "agent-1" });
     expect((await nextEvent(iterator)).type).toBe("item.started");
     expect((await nextEvent(iterator)).type).toBe("item.updated");
@@ -626,6 +635,76 @@ describe("Grok Adapter ACP projection", () => {
       outcome: { status: "succeeded" },
       nativeTurnRef: { nativeTurnKey: "grok-session-user-1" },
     });
+    await opened.adapter.close();
+  });
+
+  it("shows a delivered interjection as an in-turn user item live and after reload", async () => {
+    const transport = new FakeGrokTransport();
+    const opened = await openedSession(transport);
+    const iterator = opened.session.outputs[Symbol.asyncIterator]();
+    const turnId = hostTurnIdSchema.parse("turn-interjection-item");
+
+    await opened.session.execute({
+      type: "turn.start",
+      turnId,
+      input: [{ type: "text", text: "first" }],
+    });
+    expect((await nextEvent(iterator)).type).toBe("turn.started");
+    transport.event({ type: "agent.text", text: "working", messageId: "agent-1" });
+    expect((await nextEvent(iterator)).type).toBe("item.started");
+    expect((await nextEvent(iterator)).type).toBe("item.updated");
+
+    // The fake delivers the interjection inside the prompt as Grok does, so
+    // the open agent message closes and a user item follows at that position.
+    await expect(
+      opened.session.execute({
+        type: "turn.steer",
+        turnId,
+        input: [{ type: "text", text: "second" }],
+      }),
+    ).resolves.toEqual({ ok: true, value: { accepted: true } });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.completed",
+      snapshot: { item: { type: "agentMessage", text: "working" } },
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.started",
+      item: { type: "userMessage", text: "second" },
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.completed",
+      snapshot: { item: { type: "userMessage", text: "second" } },
+    });
+
+    transport.event({ type: "agent.text", text: "done", messageId: "agent-2" });
+    expect((await nextEvent(iterator)).type).toBe("item.started");
+    expect((await nextEvent(iterator)).type).toBe("item.updated");
+    transport.finish();
+    expect((await nextEvent(iterator)).type).toBe("item.completed");
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+    });
+
+    // Reload from the persisted replay: same Turn, same order, no wrapper text.
+    const resumedTransport = new FakeGrokTransport();
+    resumedTransport.replay = [...transport.replay];
+    const resumed = await openedSession(resumedTransport, "resume");
+    const snapshot = await resumed.session.readSnapshot();
+    if (!snapshot.ok) throw new Error(snapshot.error.message);
+    expect(snapshot.value.turns).toHaveLength(1);
+    expect(snapshot.value.turns[0]).toMatchObject({ input: [{ text: "first" }] });
+    expect(
+      snapshot.value.turns[0]?.items.map(({ item }) => [
+        item.type,
+        "text" in item ? item.text : "",
+      ]),
+    ).toEqual([
+      ["agentMessage", "working"],
+      ["userMessage", "second"],
+      ["agentMessage", "done"],
+    ]);
+    await resumed.adapter.close();
     await opened.adapter.close();
   });
 

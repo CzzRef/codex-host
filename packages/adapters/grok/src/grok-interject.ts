@@ -35,3 +35,16 @@ export function parseGrokInterjectResult(value: unknown): GrokInterjectResult {
     ? { status: payload.status }
     : {};
 }
+
+/**
+ * grok 1.0.13 persists a delivered interjection as a synthetic user message
+ * wrapped in its own template. The Host shows the user's words, not the
+ * template; an unrecognized shape is kept verbatim rather than dropped.
+ */
+const GROK_INTERJECTION_WRAPPER =
+  /^\s*The user sent a message while you were working:\s*<user_query>\s*([\s\S]*?)\s*<\/user_query>\s*$/u;
+
+export function unwrapGrokInterjection(text: string): string {
+  const match = GROK_INTERJECTION_WRAPPER.exec(text);
+  return match?.[1] !== undefined && match[1].length > 0 ? match[1] : text;
+}
