@@ -1,6 +1,7 @@
 import type { HarnessThinkingOptionId, JsonValue } from "@codexhost/shared-contracts";
 
 import type { ClaudeNativeFileChange } from "./file-change.js";
+import type { ClaudeInstallationIdentity } from "./command.js";
 import type { ClaudeModelInspectionSnapshot } from "./model-catalog.js";
 import type { ClaudePermissionMode } from "./permission-modes.js";
 
@@ -232,7 +233,12 @@ export interface ClaudeAdapterDependencies {
     sourceSessionId: string;
   }): Promise<{ sessionId: string }>;
   getSessionInfo(input: { sessionId: string }): Promise<{ cwd?: string } | undefined>;
-  inspectInstallation(): void;
+  /**
+   * Resolves the Claude Code executable and reports which build it is, so a
+   * cached catalog can be dropped once the CLI beside it is updated. May
+   * return `undefined` when the identity is unknown.
+   */
+  inspectInstallation(): ClaudeInstallationIdentity | undefined;
   readSessionMessages(input: { cwd: string; sessionId: string }): Promise<unknown[]>;
   readSubagentMessages(input: {
     cwd: string;

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resolveClaudeCodeExecutable } from "../src/command.js";
+import { claudeInstallationIdentity, resolveClaudeCodeExecutable } from "../src/command.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -120,5 +120,36 @@ describe("Claude Code executable resolution", () => {
         platform: "linux",
       }),
     ).toThrow("not installed");
+  });
+});
+
+describe("Claude Code installation identity", () => {
+  it("follows the version link and changes with the build behind it", () => {
+    const { directory, executable } = fakeExecutable();
+    const link = path.join(directory, "claude-link");
+    fs.symlinkSync(executable, link);
+    const before = claudeInstallationIdentity(link);
+    expect(before.executable).toBe(fs.realpathSync(executable));
+    expect(claudeInstallationIdentity(link)).toEqual(before);
+
+    // A new build: different content size, same command path.
+    fs.writeFileSync(executable, "#!/bin/sh\necho updated\nexit 0\n", { mode: 0o700 });
+    const after = claudeInstallationIdentity(link);
+    expect(after.executable).toBe(before.executable);
+    expect(after.fingerprint).not.toBe(before.fingerprint);
+  });
+
+  it("still yields a comparable identity when the file cannot be inspected", () => {
+    const missing = path.join(os.tmpdir(), "codexhost-claude-missing", "claude");
+    expect(claudeInstallationIdentity(missing)).toEqual({
+      executable: missing,
+      fingerprint: missing,
+    });
+    expect(
+      claudeInstallationIdentity("/x/claude", {
+        realpath: () => "/real/claude",
+        stat: () => ({ size: 10, mtimeMs: 1234.9 }),
+      }),
+    ).toEqual({ executable: "/real/claude", fingerprint: "/real/claude|10|1234" });
   });
 });

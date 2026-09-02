@@ -1,3 +1,4 @@
+import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -76,4 +77,44 @@ export function resolveClaudeCodeExecutable(
   return targetPath(platform).isAbsolute(resolution.executable)
     ? resolution.executable
     : path.resolve(resolution.executable);
+}
+
+export interface ClaudeInstallationIdentity {
+  /** Resolved executable path with symlinks (the native installer's version link) followed. */
+  executable: string;
+  /** Changes whenever a different Claude Code build sits behind the same command. */
+  fingerprint: string;
+}
+
+/**
+ * Identifies the Claude Code build behind an executable path. The native
+ * installer swaps a version symlink under `~/.local/bin`, npm rewrites the
+ * package in place; following symlinks plus size and mtime catches both
+ * without spawning the CLI. Falls back to the plain path when the file cannot
+ * be inspected so callers still get a stable, comparable value.
+ */
+export function claudeInstallationIdentity(
+  executable: string,
+  dependencies: {
+    realpath?: (target: string) => string;
+    stat?: (target: string) => { size: number; mtimeMs: number };
+  } = {},
+): ClaudeInstallationIdentity {
+  const realpath = dependencies.realpath ?? ((target: string) => realpathSync(target));
+  const stat = dependencies.stat ?? ((target: string) => statSync(target));
+  let resolved = executable;
+  try {
+    resolved = realpath(executable);
+  } catch {
+    // Keep the unresolved path; a missing link still yields a comparable identity.
+  }
+  try {
+    const metadata = stat(resolved);
+    return {
+      executable: resolved,
+      fingerprint: `${resolved}|${metadata.size}|${Math.trunc(metadata.mtimeMs)}`,
+    };
+  } catch {
+    return { executable: resolved, fingerprint: resolved };
+  }
 }

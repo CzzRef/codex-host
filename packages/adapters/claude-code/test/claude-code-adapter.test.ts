@@ -522,6 +522,8 @@ describe("Claude Code HarnessAdapter", () => {
       },
     });
     await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toEqual(first);
+    // With no installation identity to compare, the cached catalog is served
+    // without probing the installation again.
     expect(dependencies.inspectInstallation).toHaveBeenCalledOnce();
     expect(dependencies.createInspector).toHaveBeenCalledOnce();
     expect(inspectors[0]?.close).toHaveBeenCalledOnce();
@@ -659,6 +661,36 @@ describe("Claude Code HarnessAdapter", () => {
     });
     expect(dependencies.createInspector).toHaveBeenCalledTimes(4);
     expect(close).toHaveBeenCalledTimes(4);
+  });
+
+  it("re-inspects the Model catalog once the Claude Code build behind the command changes", async () => {
+    const { adapter, dependencies, inspectInstallation } = fixture();
+    inspectInstallation.mockReturnValue({ executable: "/claude/2.1.252", fingerprint: "252" });
+
+    const first = await adapter.inspect({ cwd: "/synthetic" });
+    await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toEqual(first);
+    expect(dependencies.createInspector).toHaveBeenCalledOnce();
+
+    // `claude update` swaps the version link: same command, different build.
+    inspectInstallation.mockReturnValue({ executable: "/claude/2.1.258", fingerprint: "258" });
+    await adapter.inspect({ cwd: "/synthetic" });
+    expect(dependencies.createInspector).toHaveBeenCalledTimes(2);
+    await adapter.inspect({ cwd: "/synthetic" });
+    expect(dependencies.createInspector).toHaveBeenCalledTimes(2);
+
+    // An unknown identity keeps whatever is cached rather than thrashing the CLI.
+    inspectInstallation.mockReturnValue(undefined);
+    await adapter.inspect({ cwd: "/synthetic" });
+    expect(dependencies.createInspector).toHaveBeenCalledTimes(2);
+
+    // A command that stops resolving must surface the failure, not the old catalog.
+    inspectInstallation.mockImplementation(() => {
+      throw new ClaudeCodeExecutableError("Claude Code is not installed");
+    });
+    await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toMatchObject({
+      status: "notInstalled",
+    });
+    await adapter.close();
   });
 
   it("reports a missing installation without starting a Transport", async () => {
