@@ -1137,6 +1137,35 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("omits hasUnreadTurn while the Host has no unread record for the Thread", async () => {
+    // "No record" must stay distinguishable from "read": a consumer falls back
+    // to the Desktop's own unread only when the Host reports nothing.
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+    const threadId = await startPiThread(fixture);
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.not.toHaveProperty("unread");
+
+    const pending = delegationApi.list({ cwd: "/synthetic", limit: 25, sort: "created-desc" });
+    const request = await readJsonLine(fixture.official.stdin);
+    fixture.official.stdout.write(
+      `${JSON.stringify({ id: request.id, result: { data: [], nextCursor: null } })}\n`,
+    );
+    const listed = (await pending).threads.find((thread) => thread.threadId === threadId);
+
+    expect(listed).toBeDefined();
+    expect(listed).not.toHaveProperty("hasUnreadTurn");
+    await stopFixture(fixture);
+  });
+
   it("keeps external unread across a Host restart", async () => {
     // The unread mark used to live in a process-local Set, so restarting the
     // Host reported every extra process as read without anyone viewing it.

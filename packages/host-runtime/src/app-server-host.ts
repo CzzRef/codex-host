@@ -1620,7 +1620,13 @@ export class AppServerHost {
             status,
             // Only external Threads carry Host-owned unread; official rows
             // keep the Desktop's own unread authority and omit the field.
-            ...(record ? { hasUnreadTurn: record.unread === true } : {}),
+            // A record written before external unread was persisted has no
+            // value to report — omit it there too, so a consumer can tell
+            // "the Host says read" from "the Host has no record" and fall
+            // back to the Desktop's own unread instead of assuming read.
+            ...(record && typeof record.unread === "boolean"
+              ? { hasUnreadTurn: record.unread }
+              : {}),
             // A Turn blocked on a Desktop question or approval is
             // caller-visible attention; consumers surface it instead of a
             // plain "running". Questions map to input; approvals stay
