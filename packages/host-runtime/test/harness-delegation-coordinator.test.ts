@@ -5,7 +5,13 @@ import path from "node:path";
 import { FakeHarnessAdapter } from "@codexhost/harness-adapter/testing";
 import type { FakeHarnessSession } from "@codexhost/harness-adapter/testing";
 import { MappingStore } from "@codexhost/mapping-store";
-import { harnessIdSchema, hostThreadIdSchema, hostTurnIdSchema } from "@codexhost/shared-contracts";
+import {
+  harnessIdSchema,
+  harnessPermissionModeCatalogSchema,
+  harnessPermissionModeIdSchema,
+  hostThreadIdSchema,
+  hostTurnIdSchema,
+} from "@codexhost/shared-contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import { HarnessDelegationCoordinator } from "../src/harness-delegation-coordinator.js";
@@ -157,6 +163,114 @@ describe("HarnessDelegationCoordinator", () => {
       expect(adapter.openInputs[0]).toMatchObject({ model, thinkingOptionId });
       expect(result.configuration?.requested).toEqual({ model, thinkingOptionId });
       expect((await value.repository.list())[0]?.transportModelId).not.toBe("codexhost/pi-native");
+    } finally {
+      await value.close();
+    }
+  });
+
+  it("inspects and applies an explicit Permission Mode without a Model", async () => {
+    const permissionModes = harnessPermissionModeCatalogSchema.parse({
+      modes: [
+        { id: "default", label: "Default" },
+        { id: "always-approve", label: "Always approve", dangerous: true },
+      ],
+      defaultModeId: "default",
+    });
+    const adapter = new RecordingAdapter(
+      harnessIdSchema.parse("pi"),
+      undefined,
+      true,
+      true,
+      null,
+      permissionModes,
+    );
+    const value = await fixture(adapter);
+    try {
+      const permissionModeId = permissionModes.modes[1]?.id;
+      if (!permissionModeId) throw new Error("Fake catalog has no dangerous mode");
+      const result = await value.coordinator.start({
+        harnessId: "pi",
+        task: "review auth",
+        cwd: "/synthetic",
+        parentThreadId: "parent-thread",
+        permissionModeId,
+      });
+      expect(adapter.openInputs[0]).toMatchObject({
+        kind: "create",
+        executionPolicy: "default",
+        permissionModeId,
+      });
+      expect(adapter.openInputs[0]).not.toHaveProperty("model");
+      expect(result.configuration?.requested).toEqual({ permissionModeId });
+      expect(result.configuration?.effective).toMatchObject({
+        effectivePermissionModeId: permissionModeId,
+      });
+      expect((await value.repository.list())[0]?.transportModelId).not.toBe("codexhost/pi-native");
+    } finally {
+      await value.close();
+    }
+  });
+
+  it("rejects a Permission Mode outside the catalog with the valid ids", async () => {
+    const permissionModes = harnessPermissionModeCatalogSchema.parse({
+      modes: [{ id: "default", label: "Default" }],
+      defaultModeId: "default",
+    });
+    const adapter = new RecordingAdapter(
+      harnessIdSchema.parse("pi"),
+      undefined,
+      true,
+      true,
+      null,
+      permissionModes,
+    );
+    const value = await fixture(adapter);
+    try {
+      await expect(
+        value.coordinator.start({
+          harnessId: "pi",
+          task: "review auth",
+          cwd: "/synthetic",
+          parentThreadId: "parent-thread",
+          permissionModeId: harnessPermissionModeIdSchema.parse("bypassPermissions"),
+        }),
+      ).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+        details: { validPermissionModeIds: ["default"] },
+      });
+      expect(adapter.openInputs).toHaveLength(0);
+      expect(await value.repository.list()).toHaveLength(0);
+    } finally {
+      await value.close();
+    }
+  });
+
+  it("rejects a Permission Mode for a Harness without a catalog and for native Codex", async () => {
+    const adapter = new RecordingAdapter(harnessIdSchema.parse("pi"));
+    const value = await fixture(adapter);
+    try {
+      await expect(
+        value.coordinator.start({
+          harnessId: "pi",
+          task: "review auth",
+          cwd: "/synthetic",
+          parentThreadId: "parent-thread",
+          permissionModeId: harnessPermissionModeIdSchema.parse("always-approve"),
+        }),
+      ).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+        message: "Harness does not support Permission Mode selection",
+      });
+      await expect(
+        value.coordinator.start({
+          harnessId: "codex",
+          task: "review auth",
+          cwd: "/synthetic",
+          parentThreadId: "parent-thread",
+          permissionModeId: harnessPermissionModeIdSchema.parse("never"),
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+      expect(adapter.openInputs).toHaveLength(0);
     } finally {
       await value.close();
     }

@@ -70,6 +70,8 @@ describe("delegation CLI", () => {
           "model-ref",
           "--thinking",
           "high",
+          "--permission-mode",
+          "acceptEdits",
           "--parent-thread",
           "codex://threads/parent-1",
           "--request-id",
@@ -90,6 +92,7 @@ describe("delegation CLI", () => {
       requestId: "request-1",
       model: { id: "model-ref" },
       thinkingOptionId: "high",
+      permissionModeId: "acceptEdits",
     });
     expect(JSON.parse(outputText(output))).toEqual({ threadId: "child-1" });
   });

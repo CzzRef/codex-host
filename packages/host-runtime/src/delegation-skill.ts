@@ -46,6 +46,11 @@ When the user asks for a specific Model or Thinking level, inspect the target
 Harness first and use the exact opaque IDs returned by the authoritative CLI.
 When they do not specify either setting, omit it so the target keeps its default.
 
+A child started from this CLI has no Desktop approver: under the target's default
+Permission Mode a protected tool call is denied and the Turn ends interrupted.
+When the task needs tools and the user accepts unattended execution, pass
+--permission-mode with a mode id from the harness inspect permissionModes catalog.
+
 Create an independent child session and submit the requested task.
 
 After starting the task, choose the appropriate next action based on the

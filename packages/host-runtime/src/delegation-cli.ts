@@ -70,7 +70,7 @@ function rejectUnknown(parsed: ReturnType<typeof options>, allowed: readonly str
 
 export const DELEGATION_HELP = `usage:
   codexhost harness inspect <harness> [--cwd <path>] [--refresh true|false]
-  codexhost delegate start --harness <id> --task <text> [--model <opaque-ref>] [--thinking <option-id>] [--parent-thread <thread>] [--request-id <id>]
+  codexhost delegate start --harness <id> --task <text> [--model <opaque-ref>] [--thinking <option-id>] [--permission-mode <mode-id>] [--parent-thread <thread>] [--request-id <id>]
   codexhost thread send <thread> --message <text> [--steer true|false]
   codexhost thread cancel <thread>
   codexhost thread read <thread> [--view result|messages] [--cursor <cursor>] [--limit <n>]
@@ -81,8 +81,8 @@ export const DELEGATION_HELP = `usage:
   codexhost thread unarchive [<thread>]
 
 Thread identifiers accept a bare ID or codex://threads/<id>. Output is JSON by default.
-harness inspect returns the target Model catalog, default Model, Thinking options, and configuration capabilities without creating a Thread. Use opaque IDs exactly as returned.
-delegate start requires --harness and --task, creates and submits the child Thread, then returns immediately. --model and --thinking select values returned by harness inspect. Omit either option to preserve that target's current default behavior. --parent-thread overrides caller inference. Reuse --request-id for idempotent retries; without it, identical recent parent/target/task/configuration requests are deduplicated briefly.
+harness inspect returns the target Model catalog, default Model, Thinking options, Permission Modes, and configuration capabilities without creating a Thread. Use opaque IDs exactly as returned.
+delegate start requires --harness and --task, creates and submits the child Thread, then returns immediately. --model and --thinking select values returned by harness inspect. Omit either option to preserve that target's current default behavior. --permission-mode selects a Permission Mode id from harness inspect permissionModes for the whole child Thread; a child started from the CLI has no Desktop approver, so a protected tool call under the default mode is denied and interrupts the Turn. Harnesses without a Permission Mode catalog, and native Codex, reject the option with INVALID_ARGUMENT. --parent-thread overrides caller inference. Reuse --request-id for idempotent retries; without it, identical recent parent/target/task/configuration requests are deduplicated briefly.
 Successful start fields: delegationId, threadId, turnId, harnessId, deepLink, status, next.read, next.wait.
 thread send starts a new Turn in an idle writable Thread and returns immediately. It fails with THREAD_BUSY instead of queueing or starting a concurrent Turn. --steer true injects the message into the running Turn through the Harness's native steer (same Host Turn, delivered at its next safe gap) and returns that Turn; a Harness without native steer still fails with THREAD_BUSY.
 thread cancel requests cancellation of the current Turn while preserving the Thread. An idle Thread returns cancelled=false.
@@ -213,6 +213,7 @@ export async function runDelegationCli(input: {
         "--task",
         "--model",
         "--thinking",
+        "--permission-mode",
         "--parent-thread",
         "--request-id",
       ]);
@@ -239,6 +240,9 @@ export async function runDelegationCli(input: {
             ...(value(parsed, "--model") ? { model: { id: value(parsed, "--model") } } : {}),
             ...(value(parsed, "--thinking")
               ? { thinkingOptionId: value(parsed, "--thinking") }
+              : {}),
+            ...(value(parsed, "--permission-mode")
+              ? { permissionModeId: value(parsed, "--permission-mode") }
               : {}),
             ...(parentThread ? { parentThreadId: normalizeThreadId(parentThread) } : {}),
             ...(value(parsed, "--request-id") ? { requestId: value(parsed, "--request-id") } : {}),

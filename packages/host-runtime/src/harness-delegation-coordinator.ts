@@ -4,6 +4,7 @@ import path from "node:path";
 import type {
   HarnessAdapter,
   HarnessModelRef,
+  HarnessPermissionModeId,
   HarnessSession,
   HarnessSessionState,
   HarnessThinkingOptionId,
@@ -57,7 +58,10 @@ function terminal(status: DelegationThreadSnapshot["status"]): boolean {
 }
 
 function taskDigest(
-  input: Pick<DelegationStartInput, "task" | "cwd" | "model" | "thinkingOptionId">,
+  input: Pick<
+    DelegationStartInput,
+    "task" | "cwd" | "model" | "thinkingOptionId" | "permissionModeId"
+  >,
 ): string {
   return createHash("sha256")
     .update(
@@ -66,6 +70,7 @@ function taskDigest(
         cwd: path.resolve(input.cwd),
         modelId: input.model?.id ?? null,
         thinkingOptionId: input.thinkingOptionId ?? null,
+        ...(input.permissionModeId ? { permissionModeId: input.permissionModeId } : {}),
       }),
     )
     .digest("hex");
@@ -102,6 +107,7 @@ export class HarnessDelegationCoordinator {
     turns: JsonObject[];
     requestedModel?: HarnessModelRef;
     requestedThinkingOptionId?: HarnessThinkingOptionId;
+    requestedPermissionModeId?: HarnessPermissionModeId;
     restoredState?: HarnessSessionState;
   }) => ExternalThread;
   readonly #startExternalTurn: (
@@ -133,6 +139,7 @@ export class HarnessDelegationCoordinator {
       turns: JsonObject[];
       requestedModel?: HarnessModelRef;
       requestedThinkingOptionId?: HarnessThinkingOptionId;
+      requestedPermissionModeId?: HarnessPermissionModeId;
       restoredState?: HarnessSessionState;
     }): ExternalThread;
     startExternalTurn(thread: ExternalThread, text: string, turnId: string): Promise<void>;
@@ -192,7 +199,15 @@ export class HarnessDelegationCoordinator {
   async start(input: DelegationStartInput): Promise<DelegationStartResult> {
     validateStart(input);
     const parentThreadId = await this.#resolveParent(input.parentThreadId);
-    if (input.harnessId === "codex") return this.#startOfficial({ ...input, parentThreadId });
+    if (input.harnessId === "codex") {
+      if (input.permissionModeId) {
+        throw new DelegationControlError(
+          "INVALID_ARGUMENT",
+          "Native Codex does not support Permission Mode selection through delegate start",
+        );
+      }
+      return this.#startOfficial({ ...input, parentThreadId });
+    }
     if (!EXTERNAL_HARNESS_IDS.includes(input.harnessId as ExternalHarnessId)) {
       throw new DelegationControlError(
         "HARNESS_NOT_FOUND",
@@ -234,12 +249,25 @@ export class HarnessDelegationCoordinator {
         },
       );
     }
-    if (input.model || input.thinkingOptionId) {
+    const configured = Boolean(input.model || input.thinkingOptionId || input.permissionModeId);
+    // The transport id encodes the selection for Desktop restore and needs a
+    // Model Ref; an option-only start borrows the catalog default so a
+    // Permission Mode or Thinking choice survives without an explicit --model.
+    let transportModel = input.model;
+    if (configured) {
       const inspected = await this.inspect({
         harnessId: targetHarnessId,
         cwd: input.cwd,
       });
-      this.#validateConfiguration(inspected.inspection, input.model, input.thinkingOptionId);
+      this.#validateConfiguration(
+        inspected.inspection,
+        input.model,
+        input.thinkingOptionId,
+        input.permissionModeId,
+      );
+      if (!transportModel && inspected.inspection.status === "ready") {
+        transportModel = inspected.inspection.catalog.defaultModel;
+      }
     }
     const parent = await this.#parentMetadata(parentThreadId);
     const delegationId = hostThreadIdSchema.parse(randomUUID());
@@ -254,10 +282,11 @@ export class HarnessDelegationCoordinator {
         cwd: path.resolve(input.cwd),
         title: input.task.trim().slice(0, 120),
         transportModelId:
-          input.model || input.thinkingOptionId
+          configured && transportModel
             ? encodeExternalTransportSelection(targetHarnessId, {
-                ...(input.model ? { model: input.model } : {}),
+                model: transportModel,
                 ...(input.thinkingOptionId ? { thinkingOptionId: input.thinkingOptionId } : {}),
+                ...(input.permissionModeId ? { permissionModeId: input.permissionModeId } : {}),
               })
             : transportModelIdForHarness(targetHarnessId),
         ephemeral: false,
@@ -284,6 +313,7 @@ export class HarnessDelegationCoordinator {
         executionPolicy: "default",
         ...(input.model ? { model: input.model } : {}),
         ...(input.thinkingOptionId ? { thinkingOptionId: input.thinkingOptionId } : {}),
+        ...(input.permissionModeId ? { permissionModeId: input.permissionModeId } : {}),
       });
       if (!opened.ok) throw new DelegationControlError("DELEGATION_FAILED", opened.error.message);
       session = opened.value;
@@ -307,6 +337,7 @@ export class HarnessDelegationCoordinator {
         turns: [],
         ...(input.model ? { requestedModel: input.model } : {}),
         ...(input.thinkingOptionId ? { requestedThinkingOptionId: input.thinkingOptionId } : {}),
+        ...(input.permissionModeId ? { requestedPermissionModeId: input.permissionModeId } : {}),
         ...(session.initialState.nativeRef ? {} : { restoredState: session.initialState }),
       });
       const beforeRevision = thread.stateObserver.revision;
@@ -329,6 +360,7 @@ export class HarnessDelegationCoordinator {
         requested: {
           ...(input.model ? { model: input.model } : {}),
           ...(input.thinkingOptionId ? { thinkingOptionId: input.thinkingOptionId } : {}),
+          ...(input.permissionModeId ? { permissionModeId: input.permissionModeId } : {}),
         },
         effective: {
           ...(thread.stateObserver.state.effectiveModel
@@ -339,6 +371,9 @@ export class HarnessDelegationCoordinator {
             : {}),
           ...(thread.stateObserver.state.effectiveThinkingOptionId
             ? { effectiveThinkingOptionId: thread.stateObserver.state.effectiveThinkingOptionId }
+            : {}),
+          ...(thread.stateObserver.state.effectivePermissionModeId
+            ? { effectivePermissionModeId: thread.stateObserver.state.effectivePermissionModeId }
             : {}),
         },
       });
@@ -576,6 +611,7 @@ export class HarnessDelegationCoordinator {
     inspection: Awaited<ReturnType<HarnessAdapter["inspect"]>>,
     model: HarnessModelRef | undefined,
     thinkingOptionId: HarnessThinkingOptionId | undefined,
+    permissionModeId: HarnessPermissionModeId | undefined,
   ): void {
     if (inspection.status !== "ready") {
       throw new DelegationControlError("DELEGATION_FAILED", inspection.error.message, {
@@ -598,6 +634,7 @@ export class HarnessDelegationCoordinator {
         },
       );
     }
+    this.#validatePermissionMode(inspection, permissionModeId);
     if (!thinkingOptionId) return;
     if (!inspection.capabilities.configuration.selectThinkingOption) {
       throw new DelegationControlError(
@@ -614,6 +651,28 @@ export class HarnessDelegationCoordinator {
         "INVALID_ARGUMENT",
         "Thinking option is unavailable for the selected Model",
         { validThinkingOptionIds },
+      );
+    }
+  }
+
+  #validatePermissionMode(
+    inspection: Extract<Awaited<ReturnType<HarnessAdapter["inspect"]>>, { status: "ready" }>,
+    permissionModeId: HarnessPermissionModeId | undefined,
+  ): void {
+    if (!permissionModeId) return;
+    const catalog = inspection.permissionModes;
+    if (!inspection.capabilities.configuration.selectPermissionMode || !catalog) {
+      throw new DelegationControlError(
+        "INVALID_ARGUMENT",
+        "Harness does not support Permission Mode selection",
+      );
+    }
+    const validPermissionModeIds = catalog.modes.map((mode) => mode.id);
+    if (!validPermissionModeIds.includes(permissionModeId)) {
+      throw new DelegationControlError(
+        "INVALID_ARGUMENT",
+        "Permission Mode is unavailable for the Harness",
+        { validPermissionModeIds },
       );
     }
   }
