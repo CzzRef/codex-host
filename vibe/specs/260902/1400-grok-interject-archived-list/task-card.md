@@ -11,7 +11,7 @@ Task: 1400-grok-interject-archived-list
 - Group key: `dsg:codex-host:1400-grok-interject-archived-list`
 - Group owner: this `task-card.md`
 - Git document prefixes: `vibe/specs/260902/1400-grok-interject-archived-list/`, `vibe/specs/PROJECT_STATUS.md`, `openspec/changes/add-delegation-thread-list-archived/`, `openspec/changes/add-external-turn-steer-queue/`, `docs/czz-dev.md`, `vibe/knowledge/error-memory/`
-- Declared code/config dependencies: `packages/adapters/grok/src/grok-interject.ts`, `packages/adapters/grok/src/grok-adapter.ts`, `packages/host-runtime/src/delegation-types.ts`, `packages/host-runtime/src/delegation-cli.ts`, `packages/host-runtime/src/app-server-host.ts`
+- Declared code/config dependencies: `packages/adapters/grok/src/grok-interject.ts`, `packages/adapters/grok/src/grok-adapter.ts`, `packages/adapters/pi/src/pi-history.ts`, `packages/adapters/claude-code/src/sdk-transport.ts`, `packages/host-runtime/src/delegation-types.ts`, `packages/host-runtime/src/delegation-cli.ts`, `packages/host-runtime/src/app-server-host.ts`
 - Linked authorities: [steer queue change](../../../../openspec/changes/add-external-turn-steer-queue/proposal.md), [archived list change](../../../../openspec/changes/add-delegation-thread-list-archived/proposal.md), [error memory](../../../knowledge/error-memory/grok-interjection-persists-extra-native-turn.md)
 - Excluded unrelated dirty documents: peer session hunks (Claude catalog refresh, Launcher controller reap, Pi/OMP/DeepSeek native steer, delegation `thread send --steer`), `docs/tasks/WORKTREE_TASKS.md`
 
@@ -30,11 +30,14 @@ Task: 1400-grok-interject-archived-list
     "openspec/changes/add-external-turn-steer-queue/tasks.md",
     "docs/czz-dev.md",
     "vibe/knowledge/error-memory/grok-interjection-persists-extra-native-turn.md",
+    "vibe/knowledge/error-memory/harness-steer-settle-assumptions.md",
     "vibe/knowledge/error-memory/README.md"
   ],
   "dependencies": [
     "packages/adapters/grok/src/grok-interject.ts",
     "packages/adapters/grok/src/grok-adapter.ts",
+    "packages/adapters/pi/src/pi-history.ts",
+    "packages/adapters/claude-code/src/sdk-transport.ts",
     "packages/host-runtime/src/delegation-types.ts",
     "packages/host-runtime/src/delegation-cli.ts",
     "packages/host-runtime/src/app-server-host.ts"
@@ -65,7 +68,9 @@ Task: 1400-grok-interject-archived-list
 
 - Changed surface: `grok-interject.ts` (method, params, result), `grok-adapter.ts` (`nativeTurnIdentity`, `#awaitPersistedTurn`, option plumbing), `delegation-types.ts`, `delegation-cli.ts` (`--archived`), `app-server-host.ts` (`#listDelegationThreads`), tests in `grok-adapter.test.ts` (+3), `grok-interject.test.ts` (rewritten), `delegation-cli.test.ts` (+2 and one rejection row), `app-server-host.test.ts` (+1).
 - Verification 2026-09-02: `vitest run` 187 files / 1601 pass / 7 skipped (whole workspace, including peer dirty files); `npm run typecheck` pass; `node tools/check-boundaries.mjs` pass; eslint + prettier on changed files pass; live grok 1.0.13 ACP probes (`x.ai/interject` → -32601, `_x.ai/interject` → `{"result":{"status":"queued"}}`, same-prompt injection, one `turn_completed`); built `GrokAdapter` (dist) against the real binary in a scratch cwd: `turn.steer` accepted 2.5s into a running Turn without cancel, Turn completed `succeeded` with a prompt-id `nativeTurnRef` and checkpoint `0`, agent text ended with `INTERJECTED`, snapshot held one Native Turn (session deleted afterwards).
-- Unverified gaps: Desktop relaunch to activate `dist`; `codexhost thread list --archived true` against a restarted Host; EyPc side.
+- Cross-harness steer probes (2026-09-02 14:45, 18:10 and 19:05, same scratch method): Pi 0.84.4 delivers a steer inside one agent run even after a tool-less assistant message, persisting it as its own user entry; the `f3b2e58` toolUse-only fold rule failed the Host Turn, and the queued-timestamp fold (`queuedBeforeEntry` in pi-history / omp-history) makes the same probe succeed with one folded Turn. Claude Code 2.1.258 injects the pushed steer inside the same query after the running tool with one `result` (late steers run as a further CLI turn with a second `result`); `sdk-transport` now tracks each steer through `command_lifecycle` and settles at the first result unless a steer is still queued, so the mid-turn probe completes in 16.8s and the late probe after the second result. DSH 0.1.1-rc.2 delivers at the next step inside `turn:1`; OMP is not installed on this machine; Cursor has no native primitive.
+- Side Chat cross-harness check (2026-09-02 18:40): recorded in [1649 spec](../1649-sidechat-parent-binding/spec.md); Pi/Grok/DSH/Claude pass, Cursor rejects fork by design.
+- Unverified gaps: Composer-level steer / Side Chat on the 19:15 Desktop (launcher 91215, runs the fixed dist); `codexhost thread list --archived true` against that Host; EyPc side; the Pi adapter-level `steerAfterStop` test stays in the working tree with the third session's fake-transport rework.
 
 ## Closeout
 

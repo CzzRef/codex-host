@@ -118,6 +118,7 @@ Acceptance:
 - Verification-command provenance: `impact-trace`
 - Affected modules: `packages/host-runtime` list projection, `packages/renderer-extension` fork control
 - Checked: vitest renderer-fork-control + external-thread-list 14 pass
+- Cross-harness live check (2026-09-02 18:40, claude session codex-host-bf): a standalone Host Runtime (`packages/host-runtime/dist/main.js app-server`, real stock codex, `CODEXHOST_DATA_DIR` scratch) driven over stdio ran `thread/start` → `turn/start` → `thread/fork {ephemeral, excludeTurns, lastTurnId}` → `thread/inject_items` → child `turn/start` → `thread/list` → `thread/read` for `codexhost/pi-native`, `codexhost/grok-native`, `codexhost/deepseek-harness-native`, `codexhost/claude-code-native`: every child carried `forkedFromId` = source, answered with the parent context (ALPHA), was absent from the default list and readable by id; `codexhost/cursor-native` answered `thread/fork` with `-32076 External Harness does not support fork` as documented. Native probe sessions were deleted or archived afterwards.
 - Skipped: full `npm test`; `gate:*`; live Desktop Side Chat
 - Full-suite escalation: `none`
 - Owner: this Spec

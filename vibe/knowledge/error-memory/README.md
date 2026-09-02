@@ -9,6 +9,7 @@ Use this directory for reusable, verified failure patterns.
 | Record | Fingerprint | Status |
 | --- | --- | --- |
 | [Grok 插队后 Host Turn 被判 failed](grok-interjection-persists-extra-native-turn.md#L1) | `x.ai/interject` Method not found → cancel-and-resend fallback; settle read history before Grok persisted `turn_completed`, so one Native Turn counted twice | verified 2026-09-02 (root cause corrected same day) |
+| [Pi 无工具插队判 failed / Claude 插队后 Turn 不结束](harness-steer-settle-assumptions.md#L1) | steer settle assumed toolUse-only delivery (Pi/OMP) or a second `result` per steer (Claude); live delivery differs | verified 2026-09-02 |
 | [Managed-worktree Bash can default to the control checkout](managed-worktree-bash-defaults-to-control-checkout.md#L1) | managed child Worktree + harness cwd remains control checkout + relative Bash verifies the wrong tree | verified 2026-09-02 |
 | [`mark-verified` rejects lifecycle-mode drift](managed-worktree-mark-verified-rejects-lifecycle-mode-drift.md#L1) | verified child milestone + manually changed lifecycle mode + `task_contract_identity` block | verified 2026-09-02 |
 | [Root `node_modules` symlink misses workspace-local dependencies](worktree-root-node-modules-symlink-misses-workspace-nested-deps.md#L1) | fresh worktree + root-only dependency symlink + TS2307 for package-local workspace modules | verified 2026-09-02 |

@@ -59,6 +59,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 
 ## Open Risk Or Deploy Gates
 
+- Steer regressions found by live probes 2026-09-02 18:10 were fixed at 19:05 in the working tree (uncommitted): Pi/OMP history folds a steer by `stopReason: "toolUse"` or by its queued `message.timestamp`, and Claude `sdk-transport` settles by `command_lifecycle` instead of waiting for a second `result` (see [task card](260902/1400-grok-interject-archived-list/task-card.md) and [steer tasks](../../openspec/changes/add-external-turn-steer-queue/tasks.md) 1.9/1.10/2.5). The 19:15 relaunch (launcher 91215 / host 91347, done by the launcher-reap session) runs the dist rebuilt with these fixes; UI steer / Side Chat check on it is the remaining gate.
 - Gate: `app-server-host.ts` mixes Redo, unread fallback, and workspace `extraRoots` hunks; `renderer-turn-actions.ts` mixes Host-first Redo with overlay layout
 - Blocking condition: resolved 2026-09-02 by patch-staged batches `3b0275d` / `18cfa10` / `43b6ca0`; overlay `2f3a53b` is the rollback point for the Turn-action redesign
 - Worktree control: `codex/260901-composer-workspace-bar` worktree removed, branch `0cd7997` kept and contained by `czz-dev`/`origin/czz-dev`; `codex/260902-worktree-checkbox-routing` is contained by `czz-dev` via merge `c9ee09b` (child HEAD `142fcfb`). `codex/260902-cursor-native-history` is contained by merge `467d491` (child HEAD `d9809a5`).
