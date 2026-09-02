@@ -1,5 +1,7 @@
 export const BRANCH_WORKTREE_TOGGLE_ATTRIBUTE = "data-codexhost-branch-worktree-toggle";
-export const BRANCH_WORKTREE_PREFERENCE_KEY = "codexhost.switch-branch-worktree";
+// `.v2`: values under the unsuffixed key were written by the retired
+// observed-mode persistence and never proved user intent, so they are ignored.
+export const BRANCH_WORKTREE_PREFERENCE_KEY = "codexhost.switch-branch-worktree.v2";
 
 const STYLE_ATTRIBUTE = "data-codexhost-branch-worktree-style";
 const RUN_LOCATION_SELECTOR =
@@ -95,13 +97,18 @@ export function windowLocalStorage(view: Window | null | undefined): Storage | n
   }
 }
 
+/**
+ * The persisted preference is opt-in: an unset or unreadable value keeps a
+ * new-chat draft on Desktop's `local` mode. Only an explicit checkbox change
+ * writes it; a mode observed from Desktop's own run-location control is never
+ * persisted, so a one-off Worktree draft cannot become the default.
+ */
 export function readBranchWorktreePreference(storage: Pick<Storage, "getItem"> | null): boolean {
   try {
     const value = storage?.getItem(BRANCH_WORKTREE_PREFERENCE_KEY);
-    if (value === "0" || value === "false") return false;
-    return true;
+    return value === "1" || value === "true";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -209,7 +216,6 @@ export function installRendererBranchWorktreeToggle(
       binding.setMode(mode);
     } catch {
       pendingMode = null;
-      writeBranchWorktreePreference(storage, modeUsesWorktree(binding.mode));
       return;
     }
     clearVerificationTimer();
@@ -220,10 +226,7 @@ export function installRendererBranchWorktreeToggle(
       if (expectedMode === null || pendingMode !== expectedMode) return;
       const current = findDraftWorktreeModeBinding(root);
       pendingMode = null;
-      if (current) {
-        lastObservedMode = current.mode;
-        writeBranchWorktreePreference(storage, modeUsesWorktree(current.mode));
-      }
+      if (current) lastObservedMode = current.mode;
       scan();
     }, MODE_SYNC_TIMEOUT_MS);
   };
@@ -288,20 +291,14 @@ export function installRendererBranchWorktreeToggle(
       const desiredMode = preferredMode(storage);
       if (desiredMode !== binding.mode) requestMode(binding, desiredMode, false);
     } else if (pendingMode !== null) {
-      if (binding.mode === pendingMode) {
+      if (binding.mode === pendingMode || lastObservedMode !== binding.mode) {
+        // Desktop settled (or moved on its own): track it without persisting.
         pendingMode = null;
         lastObservedMode = binding.mode;
         clearVerificationTimer();
-        writeBranchWorktreePreference(storage, modeUsesWorktree(binding.mode));
-      } else if (lastObservedMode !== binding.mode) {
-        pendingMode = null;
-        lastObservedMode = binding.mode;
-        clearVerificationTimer();
-        writeBranchWorktreePreference(storage, modeUsesWorktree(binding.mode));
       }
     } else if (lastObservedMode !== binding.mode) {
       lastObservedMode = binding.mode;
-      writeBranchWorktreePreference(storage, modeUsesWorktree(binding.mode));
     }
 
     entry.checkbox.checked = (pendingMode ?? binding.mode) === "worktree";

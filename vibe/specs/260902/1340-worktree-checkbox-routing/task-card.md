@@ -2,7 +2,7 @@
 
 Tool: pi
 Date: 2026-09-02
-Status: implemented / integrated into czz-dev (`c9ee09b`)
+Status: implemented / integrated into czz-dev (`c9ee09b`); default-Local follow-up (2026-09-02 19:30) in the control checkout, this-commit, awaiting Desktop relaunch
 
 ## User request
 
@@ -142,3 +142,29 @@ The product requirement delta belongs to the active [Composer workspace surface 
 
 - `doc_drift: resolved` — OpenSpec requirement, design, tasks, implementation, unit tests, and E2E now agree.
 - Memory routing: retained the build trap in [Root `node_modules` symlink misses workspace-local dependencies](../../../knowledge/error-memory/worktree-root-node-modules-symlink-misses-workspace-nested-deps.md) and the command-lane trap in [Managed-worktree Bash can default to the control checkout](../../../knowledge/error-memory/managed-worktree-bash-defaults-to-control-checkout.md); captured the follow-up receipt trap in [`mark-verified` rejects lifecycle-mode drift](../../../knowledge/error-memory/managed-worktree-mark-verified-rejects-lifecycle-mode-drift.md). No ADR was needed.
+
+## Requirement Change Review — default Local and explicit-only persistence
+
+- Added: the persisted Worktree preference defaults to unchecked, so a new-chat draft stays on Desktop's `local` mode until the user checks the box.
+- Added: only an explicit checkbox change persists the preference; a mode observed from Desktop's own run-location control updates the checkbox for the current draft and is never written back.
+- Changed: the fresh-draft routing still forces the persisted preference through `setComposerMode`, but the forced default is now `local`.
+- Removed: the five auto-persist sites that wrote whatever mode the binding observed (post-`setMode` verification timer, settle/drift branches, plain observed change, and the `setMode` failure fallback).
+- Superseded: the previous default-checked wording of the routing requirement.
+- Conflicting: none; Desktop still owns Worktree provisioning.
+- Decision source: `explicit-current-request` (user chose F-1 after the 2026-09-02 evening inspection).
+
+## Default-Local follow-up implementation
+
+- Root cause recorded during the inspection: since `b554c39` every new draft was forced to the persisted preference, the preference defaulted to `worktree` when unset, and observed Desktop modes were persisted. The live `app://-` Local Storage showed the key flip from `0` (seq 77889) back to `1` (seq 78027) without a checkbox click, so one Desktop-side Worktree draft became the default for every later new chat.
+- `readBranchWorktreePreference` now returns true only for `1`/`true` and false on unset or storage errors.
+- The storage key is `codexhost.switch-branch-worktree.v2`; the live profile already held `1` under the old key from the auto-persist path, so a bare default change would still have forced Worktree until the user unchecked once. Old-key values are ignored, not migrated.
+- `requestMode`, its verification timer, and `scan` keep tracking `lastObservedMode`/`pendingMode` for checkbox display but no longer call `writeBranchWorktreePreference`; the checkbox `change` handler is the only writer.
+- Work was done directly in the control checkout on `czz-dev` (the parked child Worktree `codex/260902-worktree-checkbox-routing` was not reopened); the renderer bundle was rebuilt so the next `codexhost launch` from Terminal picks it up.
+
+## Default-Local follow-up verification evidence
+
+- Renderer unit tests (`renderer-branch-worktree-toggle`, `renderer-workspace-bar`): 2 files, 10 tests passed; the preference test now asserts unset/null/garbage/throwing storage all read as Local.
+- Composer Playwright E2E: 1 passed; now asserts unchecked default with no stored value, check → `worktree` + `1`, uncheck → `local` + `0`, a Desktop-side switch to `worktree` shows checked but leaves `0`, and the next null-conversation draft starts `local`.
+- `tsc --noEmit` for `packages/renderer-extension` and `tests/tsconfig.json` passed; focused ESLint, Prettier, and `git diff --check` passed.
+- OpenSpec `add-composer-workspace-bar --strict` passed with `@fission-ai/openspec@1.10.0`.
+- Renderer bundle rebuilt (`npm run build:renderer`) so the next Terminal `codexhost launch` injects the default-Local toggle; live Desktop re-verification is still pending because relaunching from this agent would interrupt the parallel sessions' running processes.

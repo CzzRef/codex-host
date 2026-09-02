@@ -53,6 +53,8 @@ Worktree identity and branch stay on the left. A trailing disclosure on the righ
 
 The checkbox is an alternative control for Codex Desktop's existing new-chat run-location state, not a Git operation. The Renderer accepts exactly one `button[data-composer-navigation-target="run-location"]` whose reviewed React ownership chain exposes `composerMode`, `setComposerMode`, and a null `conversationId`. It calls the official state setter with `worktree` or `local`, then lets Desktop provision the selected destination on submission.
 
+The preference is opt-in and persisted only from the checkbox itself. An unset or unreadable value reads as `local`, and the mode observed from Desktop's own run-location control is tracked for checkbox display without being written back. Persisting observed modes had let one Desktop-side Worktree draft (or a stale React fiber read) become the default for every later new chat. The storage key moved to `codexhost.switch-branch-worktree.v2`; values under the previous key came from that observed-mode persistence and are ignored rather than migrated.
+
 Existing Threads, ambiguous ownership, unsupported modes, and label-only DOM matches fail closed without rendering the checkbox. This avoids moving an active Thread, scraping localized menu labels, or taking Worktree lifecycle away from Desktop.
 
 ## Risks / Trade-offs

@@ -305,16 +305,52 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
 
   const worktreeToggle = page.locator("[data-codexhost-branch-worktree-toggle] input");
   const runLocation = page.locator('[data-composer-navigation-target="run-location"]');
-  await expect(worktreeToggle).toBeChecked();
+  const storedPreference = () =>
+    page.evaluate("localStorage.getItem('codexhost.switch-branch-worktree.v2')");
+  // Unset preference: the draft stays on Desktop's Local mode and nothing is written.
+  await expect(worktreeToggle).not.toBeChecked();
   await expect(worktreeToggle).toBeEnabled();
-  await expect(runLocation).toHaveText("Worktree");
-  await worktreeToggle.uncheck();
   await expect(runLocation).toHaveText("Local");
-  await expect
-    .poll(async () => page.evaluate("localStorage.getItem('codexhost.switch-branch-worktree')"))
-    .toBe("0");
+  expect(await storedPreference()).toBeNull();
   await worktreeToggle.check();
   await expect(runLocation).toHaveText("Worktree");
+  await expect.poll(storedPreference).toBe("1");
+  await worktreeToggle.uncheck();
+  await expect(runLocation).toHaveText("Local");
+  await expect.poll(storedPreference).toBe("0");
+  // A Desktop-side switch (native run-location menu) shows on the checkbox but is not persisted.
+  type FixtureFiber = {
+    return: {
+      memoizedProps: { conversationId: string | null; setComposerMode(value: string): void };
+    };
+  };
+  const fixtureFiber = (node: Element): FixtureFiber | undefined =>
+    (node as unknown as Record<string, FixtureFiber | undefined>)["__reactFiber$fixture"];
+  await runLocation.evaluate((node) => {
+    const fiber = (node as unknown as Record<string, FixtureFiber | undefined>)[
+      "__reactFiber$fixture"
+    ];
+    fiber?.return.memoizedProps.setComposerMode("worktree");
+  });
+  await expect(runLocation).toHaveText("Worktree");
+  await expect(worktreeToggle).toBeChecked();
+  expect(await storedPreference()).toBe("0");
+  // The next new-chat draft falls back to the persisted preference, not the last Desktop mode.
+  const setDraftConversation = (conversationId: string | null) =>
+    runLocation.evaluate((node, nextId) => {
+      const fiber = (node as unknown as Record<string, FixtureFiber | undefined>)[
+        "__reactFiber$fixture"
+      ];
+      if (fiber) fiber.return.memoizedProps.conversationId = nextId;
+      node.setAttribute("title", `draft:${String(nextId)}`);
+    }, conversationId);
+  void fixtureFiber;
+  await setDraftConversation("thread-submitted");
+  await expect(page.locator("[data-codexhost-branch-worktree-toggle]")).toHaveCount(0);
+  await setDraftConversation(null);
+  await expect(runLocation).toHaveText("Local");
+  await expect(worktreeToggle).not.toBeChecked();
+  expect(await storedPreference()).toBe("0");
 
   const editor = page.locator('[data-codex-composer][contenteditable="true"]');
   await composer.evaluate((node) => {

@@ -65,11 +65,18 @@ The codexhost file-change disclosure SHALL occupy the right edge of the compact 
 
 ### Requirement: Worktree preference controls the official new-chat execution mode
 
-For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL route the persisted Worktree preference through Codex Desktop's owned `setComposerMode` state. Checked SHALL select `worktree`; unchecked SHALL select `local`. The Renderer SHALL NOT invoke Git or provision a Worktree itself.
+For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL route the persisted Worktree preference through Codex Desktop's owned `setComposerMode` state. The preference SHALL default to unchecked. Checked SHALL select `worktree`; unchecked SHALL select `local`. Only an explicit checkbox change SHALL persist the preference: a Composer mode observed from Desktop's own run-location control SHALL update the checkbox for the current draft and SHALL NOT be persisted. The Renderer SHALL NOT invoke Git or provision a Worktree itself.
+
+#### Scenario: Unset preference keeps a new draft Local
+
+- **GIVEN** the preference has never been written
+- **WHEN** a verified new-chat draft reports `worktree`
+- **THEN** the Renderer SHALL set the official Composer mode to `local`
+- **AND** SHALL NOT write any preference value
 
 #### Scenario: Checked preference selects a new Worktree
 
-- **GIVEN** the current surface is a new-chat draft and the preference is checked
+- **GIVEN** the current surface is a new-chat draft and the user has checked the preference
 - **WHEN** the official run-location control currently reports `local`
 - **THEN** the Renderer SHALL set the official Composer mode to `worktree`
 - **AND** Codex Desktop SHALL remain responsible for provisioning the Worktree when the draft is submitted
@@ -79,6 +86,14 @@ For a new-chat draft with one verified official run-location control and one off
 - **WHEN** the user unchecks the preference on a verified new-chat draft
 - **THEN** the Renderer SHALL set the official Composer mode to `local`
 - **AND** SHALL persist the unchecked preference
+
+#### Scenario: Desktop-side mode change is not persisted
+
+- **GIVEN** a verified new-chat draft whose persisted preference is unchecked
+- **WHEN** Desktop's own run-location control switches that draft to `worktree`
+- **THEN** the checkbox SHALL show checked for that draft
+- **AND** the persisted preference SHALL remain unchecked
+- **AND** the next verified new-chat draft SHALL start on `local`
 
 #### Scenario: Mode ownership is unsupported or belongs to an existing Thread
 

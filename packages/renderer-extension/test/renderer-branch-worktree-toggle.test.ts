@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  BRANCH_WORKTREE_PREFERENCE_KEY,
   draftWorktreeModeBindingFromButton,
   findDraftWorktreeModeBinding,
   isSwitchBranchButton,
@@ -51,7 +52,7 @@ function runLocationButton(options: {
 }
 
 describe("official Switch-branch worktree preference", () => {
-  it("defaults to creating a worktree and remembers an opt-out", () => {
+  it("defaults to Local and remembers only an explicit opt-in", () => {
     const storage = new Map<string, string>();
     const adapter = {
       getItem: (key: string) => storage.get(key) ?? null,
@@ -59,11 +60,23 @@ describe("official Switch-branch worktree preference", () => {
         storage.set(key, value);
       },
     };
-    expect(readBranchWorktreePreference(adapter)).toBe(true);
-    writeBranchWorktreePreference(adapter, false);
+    expect(readBranchWorktreePreference(null)).toBe(false);
+    expect(readBranchWorktreePreference(adapter)).toBe(false);
+    storage.set("codexhost.switch-branch-worktree", "1");
     expect(readBranchWorktreePreference(adapter)).toBe(false);
     writeBranchWorktreePreference(adapter, true);
     expect(readBranchWorktreePreference(adapter)).toBe(true);
+    writeBranchWorktreePreference(adapter, false);
+    expect(readBranchWorktreePreference(adapter)).toBe(false);
+    storage.set(BRANCH_WORKTREE_PREFERENCE_KEY, "yes");
+    expect(readBranchWorktreePreference(adapter)).toBe(false);
+    expect(
+      readBranchWorktreePreference({
+        getItem: () => {
+          throw new Error("denied");
+        },
+      }),
+    ).toBe(false);
   });
 
   it("recognizes only semantic Switch branch labels, not descendant text", () => {

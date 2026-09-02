@@ -82,3 +82,10 @@
 - [x] 9.2 Move the file disclosure to the right and show file count plus aggregate conversation-file additions/deletions
 - [x] 9.3 Align the upward file panel to the right edge and preserve direct file-to-native-change navigation
 - [x] 9.4 Update preview and E2E coverage for the attached-reference layout
+
+## 10. Default Local and explicit-only persistence
+
+- [x] 10.1 Default the persisted Worktree preference to unchecked (`local`) when unset or unreadable
+- [x] 10.2 Persist the preference only from an explicit checkbox change, never from an observed Desktop mode
+- [x] 10.3 Cover default, opt-in/opt-out, unpersisted Desktop-side switch, and next-draft fallback in unit and Composer E2E
+- [x] 10.4 Run focused renderer tests, TypeScript typecheck, and strict OpenSpec validation
