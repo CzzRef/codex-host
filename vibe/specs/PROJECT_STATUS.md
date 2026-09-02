@@ -15,7 +15,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 
 ## Current Focus
 
-- Status: Host last-turn Redo is in. Composer overlay layout is implemented locally: workspace/changes sit as a Composer sibling mask; Edit/Rollback/Redo anchor to the selected Turn with tooltip, press, and confirm. Preview remains [composer-overlay.preview.html](../../packages/renderer-extension/src/composer-overlay.preview.html).
+- Status: Host last-turn Redo is committed. Composer overlay layout is committed; the Turn-action cluster was redesigned locally on 2026-09-02: it anchors to the selected Turn but never leaves the conversation viewport, Redo enables only from Host `historyRedoAvailable`, Edit confirms only when later Turns exist, and official Desktop Redo is a fallback solely for Codex-owned Threads. Preview remains [composer-overlay.preview.html](../../packages/renderer-extension/src/composer-overlay.preview.html).
 - Latest task docs: [spec](260901/2042-external-thread-redo/spec.md), [raw](260901/2042-external-thread-redo/raw-requirement.md), [changes](260901/2042-external-thread-redo/changes.md), OpenSpec [add-external-thread-last-turn-redo](../../openspec/changes/add-external-thread-last-turn-redo/proposal.md).
 - Existing product/integration work remains under [../../docs/tasks/260831-czz-dev-integration/](../../docs/tasks/260831-czz-dev-integration/spec.md).
 - Sibling tasks now documented: Composer workspace-bar slice 6 (sibling worktrees / `additional` roots) in the workspace-bar OpenSpec change; Launcher source-checkout delegation CLI fallback in [task card](260902/1312-launcher-source-checkout-cli/task-card.md). The unread-only `app-server-host` hunk belongs to the unread change and is committed separately.
@@ -25,7 +25,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 | Task | Status | Authoritative Doc | Verification | Notes |
 | --- | --- | --- | --- | --- |
 | Host last-turn Redo | `committed b939a81 3b0275d` | [spec](260901/2042-external-thread-redo/spec.md) | vitest 79 files 712 pass; typecheck pass | OpenSpec change not archived |
-| Composer overlay + Turn actions | `committed 2f3a53b / redesign-pending` | [preview](../../packages/renderer-extension/src/composer-overlay.preview.html) | Playwright composer surface 1 pass | Turn action cluster collides with Desktop header when the selected Turn scrolls out |
+| Composer overlay + Turn actions | `committed 2f3a53b`; redesign `live-verified / this-commit` | [preview](../../packages/renderer-extension/src/composer-overlay.preview.html) | renderer vitest pass; Playwright composer surface 1 pass; typecheck pass | Cluster now sticks inside the conversation viewport (`turnActionPlacement`); Redo is thread-level from Host inspect; official Redo fallback only for Codex-owned Threads |
 | Workspace-bar slice 6 | `committed 18cfa10` | [tasks](../../openspec/changes/add-composer-workspace-bar/tasks.md) | thread-workspace vitest pass | sibling worktrees + `additional` roots |
 | Launcher source-checkout CLI | `committed e12a5e8` | [task-card](260902/1312-launcher-source-checkout-cli/task-card.md) | cargo installation_layout 5 pass | delegation CLI fallback |
 | AI rules init | `implemented-local / this-repo-commit-authorized` | [task-card](260901/2034-ai-rules-init/task-card.md) | `audit_ai_rules.py --mode project` OK | CodeNote catalog 另仓未提交 |
@@ -35,8 +35,9 @@ Compact process hub for active AI work. This file routes current tasks to projec
 
 - Last verified: 2026-09-02 (full vitest + typecheck + boundaries + cargo launcher + Playwright composer surface)
 - Commands: `vitest run` 79 files 712 pass / 2 skipped; `npm run typecheck` pass; `node tools/check-boundaries.mjs` pass; `cargo test -p codexhost-launcher --bin codexhost installation_layout` 5 pass; Playwright `renderer-composer-workspace-surface` 1 pass
-- Unverified gaps: live Desktop overlay visual after relaunch, `gate:*`, full `npm test`
-- Source Desktop relaunch: old launcher 60387 / desktop 60389 quit via ChatGPT; new launcher 16232 / desktop 16234 / controller 16240; descriptor `0600`; renderer `dist/production.js` rebuilt 2026-09-02 08:18. No force-kill, no descriptor cleanup.
+- Live Desktop 2026-09-02 13:25: normal quit via `com.openai.codex` (launcher 74334 exited, descriptor removed), relaunched by `tools/local-source/cli.mjs launch`; launcher 16647 / desktop 16649 / controller 16651 / host runtime 16789; descriptor `0600`. CDP measurement through the Electron inspector: selected 1644px Turn scrolled past the top keeps the action cluster at scroller top + 8 (y 55–83) below the Share control (y 9–37); Redo disabled without a Host slot; rail dots hidden outside the scroller; deselect clears the cluster. No rollback/redo was executed on a live Thread.
+- Unverified gaps: live rollback→Redo on a real external Thread (covered by Host tests only), `gate:*`, full `npm test`
+- Earlier source Desktop relaunch (08:18): launcher 16232 / desktop 16234 / controller 16240; superseded by the 13:25 relaunch above. No force-kill, no descriptor cleanup in either round.
 - Latest Sidecar result: main-thread
 - Latest Prior Task Overlap: last-message-edit rollbackLastTurn; decision `new-task`
 - Latest Documentation Impact: `requirement-canonical` OpenSpec change plus this hub

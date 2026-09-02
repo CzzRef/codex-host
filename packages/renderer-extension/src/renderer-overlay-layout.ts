@@ -103,6 +103,48 @@ export function turnActionOrigin(input: {
   });
 }
 
+/**
+ * Where the selected Turn's action cluster goes, or `null` when the Turn is
+ * not usefully visible. The cluster lives in the conversation viewport only:
+ * it sticks to the viewport's top edge while a long Turn scrolls past it and
+ * never rises into the Desktop title bar or drops under the Composer.
+ */
+export function turnActionPlacement(input: {
+  turn: { left: number; top: number; right: number; bottom: number };
+  size: { width: number; height: number };
+  composerTop: number;
+  viewportWidth: number;
+  scroller?: { top: number; bottom: number } | null;
+  avoid?: OverlayBox | null;
+}): { left: number; top: number } | null {
+  const visibleTop = input.scroller?.top ?? 8;
+  const visibleBottom = Math.min(input.composerTop, input.scroller?.bottom ?? input.composerTop);
+  const height = Math.max(0, input.size.height);
+  if (input.turn.bottom < visibleTop + height + 8) return null;
+  if (input.turn.top > visibleBottom - height - 8) return null;
+  const stickyTop = Math.max(input.turn.top + 8, visibleTop + 8);
+  const minTop = Math.min(stickyTop, Math.max(visibleTop + 8, input.turn.bottom - height - 4));
+  return turnActionOrigin({
+    turn: input.turn,
+    size: input.size,
+    composerTop: visibleBottom,
+    viewportWidth: input.viewportWidth,
+    avoid: input.avoid ?? null,
+    minTop,
+  });
+}
+
+/** A rail dot is drawn only while its Turn edge sits inside the conversation viewport. */
+export function railDotVisible(input: {
+  top: number;
+  scroller?: { top: number; bottom: number } | null;
+  composerTop: number;
+}): boolean {
+  const visibleTop = input.scroller?.top ?? 0;
+  const visibleBottom = Math.min(input.composerTop, input.scroller?.bottom ?? input.composerTop);
+  return input.top >= visibleTop && input.top + 8 <= visibleBottom;
+}
+
 export function overflowScroller(start: Element | null): HTMLElement | null {
   let node: Element | null = start;
   const view = start?.ownerDocument.defaultView;

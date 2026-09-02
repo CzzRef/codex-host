@@ -220,19 +220,24 @@ test("Composer shows repository rows, conversation files, branch worktree toggle
   await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Edit");
   await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Rollback");
   await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Redo");
+  // The cluster anchors inside the selected Turn's own box, never above it.
+  const clusterBox = await page.locator("[data-codexhost-turn-actions]").boundingBox();
+  const turnBox = await page.locator("[data-turn-key]").boundingBox();
+  expect(clusterBox && turnBox && clusterBox.y >= turnBox.y).toBe(true);
+  expect(
+    clusterBox && turnBox && clusterBox.x + clusterBox.width <= turnBox.x + turnBox.width,
+  ).toBe(true);
+  // Redo is disabled until the Host reports a last-Turn slot; the fixture's
+  // inspectThread is unavailable, so the button must stay disabled.
+  await expect(page.locator('[data-codexhost-turn-action="redo"]')).toBeDisabled();
   await expect(page.locator('[data-codexhost-turn-action="edit"]')).toHaveAttribute(
     "aria-label",
-    /Rollback later turns/,
+    /Last turn; edit the prompt/,
   );
-  await page.locator('[data-codexhost-turn-action="edit"]').click();
-  await expect(page.locator("[data-codexhost-turn-confirm]")).toContainText(
-    "Editing will first roll back",
-  );
-  await page
-    .locator("[data-codexhost-turn-confirm]")
-    .getByRole("button", { name: "Cancel" })
-    .click();
+  await page.locator('[data-codexhost-turn-action="edit"]').hover();
   await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(0);
+  // Rollback still confirms before dropping anything (nothing later here, so disabled).
+  await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeDisabled();
 
   await expect(page.locator("[data-codexhost-branch-worktree-toggle] input")).toBeChecked();
   await page.getByRole("button", { name: "Open review" }).first().click({ force: true });

@@ -77,6 +77,9 @@
 | --- | --- | --- |
 | Composer Redo | 点官方按钮 → 先走 Host 恢复 last-turn 槽 | Pi/OMP/Claude 等 distinct Session 回滚后可恢复 |
 | 官方 Codex Thread | Host 拒绝后仍点官方 Redo | 不拦截官方动作栈 |
+| 外部 Thread 无槽 | 只提示「没有可恢复的最后一轮」，不点官方 Redo | 2026-09-02 重设计：官方 Redo 是 app 动作栈，不是对话恢复 |
+| Redo 按钮可用态 | 仅由 Host inspect `historyRedoAvailable` 决定，多轮回滚不亮 | Host 只在回滚最后一轮时写槽 |
+| 动作簇位置 | 贴在所选轮次内，滚过顶边时贴住对话区上沿 | 不再漂进 Desktop 标题栏 |
 
 ## 6. 顺手发现但未处理
 

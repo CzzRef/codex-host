@@ -5,7 +5,9 @@ import { turnKeyMatches } from "./renderer-conversation-files.js";
 import {
   ensureOverlayChromeStyle,
   overflowScroller,
+  railDotVisible,
   turnActionOrigin,
+  turnActionPlacement,
   type OverlayBox,
 } from "./renderer-overlay-layout.js";
 import type { RendererModelClient } from "./renderer-model-client.js";
@@ -96,8 +98,11 @@ export function turnsAfterKey(keys: readonly string[], selected: string): number
 
 export function turnActionCopy(input: {
   chinese: boolean;
+  /** This session already rolled the Thread back to the selected Turn. */
   rolledBack: boolean;
   laterTurns: number;
+  /** Host holds a last-Turn Redo slot for the Thread (thread-level, not per Turn). */
+  redoAvailable?: boolean;
 }): {
   editLabel: string;
   editTitle: string;
@@ -113,15 +118,20 @@ export function turnActionCopy(input: {
   redoConfirm: string;
   redoConfirmAction: string;
   redoDisabled: boolean;
+  editNeedsConfirm: boolean;
   cancelLabel: string;
   editNotice: string;
 } {
+  const redoAvailable = input.redoAvailable === true;
+  const editNeedsConfirm = input.laterTurns > 0 && !input.rolledBack;
   if (input.chinese) {
     return {
       editLabel: "编辑",
-      editTitle: input.rolledBack
-        ? "已回滚到本轮开始，可直接编辑提示"
-        : "将先回滚该轮之后的对话与文件，再到本轮开始处编辑",
+      editTitle: editNeedsConfirm
+        ? "将先回滚该轮之后的对话与文件，再到本轮开始处编辑"
+        : input.rolledBack
+          ? "已回滚到本轮开始，可直接编辑提示"
+          : "这是最后一轮，直接编辑提示",
       editConfirm: "编辑会先回滚该轮之后的对话和文件，再打开提示。确定继续？",
       editConfirmAction: "确认编辑",
       rollbackLabel: "回滚",
@@ -133,19 +143,22 @@ export function turnActionCopy(input: {
       rollbackConfirmAction: "确认回滚",
       rollbackDisabled: input.laterTurns === 0 || input.rolledBack,
       redoLabel: "Redo",
-      redoTitle: input.rolledBack ? "恢复刚回滚掉的后续对话" : "回滚之后才能重做",
-      redoConfirm: "恢复刚回滚掉的后续对话。文件不会自动再改回去。",
+      redoTitle: redoAvailable ? "恢复刚回滚掉的最后一轮对话" : "只有回滚最后一轮之后才能 Redo",
+      redoConfirm: "恢复刚回滚掉的最后一轮对话。文件不会自动再改回去。",
       redoConfirmAction: "确认 Redo",
-      redoDisabled: !input.rolledBack,
+      redoDisabled: !redoAvailable,
+      editNeedsConfirm,
       cancelLabel: "取消",
       editNotice: "已回滚到本轮开始，后续对话已取消，可以编辑后重新发送",
     };
   }
   return {
     editLabel: "Edit",
-    editTitle: input.rolledBack
-      ? "Already rolled back to this turn; edit the prompt"
-      : "Rollback later turns and files to this turn, then edit",
+    editTitle: editNeedsConfirm
+      ? "Rollback later turns and files to this turn, then edit"
+      : input.rolledBack
+        ? "Already rolled back to this turn; edit the prompt"
+        : "Last turn; edit the prompt",
     editConfirm:
       "Editing will first roll back later turns and files, then open the prompt. Continue?",
     editConfirmAction: "Confirm edit",
@@ -158,12 +171,13 @@ export function turnActionCopy(input: {
     rollbackConfirmAction: "Confirm rollback",
     rollbackDisabled: input.laterTurns === 0 || input.rolledBack,
     redoLabel: "Redo",
-    redoTitle: input.rolledBack
-      ? "Restore later turns dropped by last-turn rollback"
-      : "Redo becomes available after rollback",
-    redoConfirm: "Restore later turns dropped by rollback. Project files are not rewritten.",
+    redoTitle: redoAvailable
+      ? "Restore the last turn dropped by rollback"
+      : "Redo becomes available after rolling back the last turn",
+    redoConfirm: "Restore the last turn dropped by rollback. Project files are not rewritten.",
     redoConfirmAction: "Confirm redo",
-    redoDisabled: !input.rolledBack,
+    redoDisabled: !redoAvailable,
+    editNeedsConfirm,
     cancelLabel: "Cancel",
     editNotice: "Rolled back to this turn. Later turns were dropped; you can edit and resend.",
   };
@@ -228,7 +242,13 @@ export function installRendererTurnActions(options: {
   rail.className = "codexhost-turn-rail";
   (documentNode.body ?? documentNode.documentElement).append(rail);
   let selected: { threadId: string; turnKey: string } | null = null;
+  // Turn-scoped: this session rolled the Thread back to the selected Turn.
   let rolledBack = false;
+  // Thread-scoped: Host reports a last-Turn Redo slot for the selected Thread.
+  let redoAvailable = false;
+  // Who owns the selected Thread. Official Desktop Redo is only a fallback
+  // for Codex-owned Threads; an external Thread without a slot gets nothing.
+  let owner: "external" | "official" | "unknown" = "unknown";
   let confirming: "edit" | "rollback" | "redo" | null = null;
   let disposed = false;
   const notice = documentNode.createElement("div");
@@ -259,6 +279,7 @@ export function installRendererTurnActions(options: {
     const origin = row.getBoundingClientRect();
     const composer = composerForPlacement();
     const composerTop = composer?.getBoundingClientRect().top ?? origin.bottom + 48;
+    const scroller = overflowScroller(selectedTurnElement());
     const box = turnActionOrigin({
       turn: {
         left: origin.left,
@@ -268,6 +289,7 @@ export function installRendererTurnActions(options: {
       size: { width: notice.offsetWidth || 240, height: notice.offsetHeight || 36 },
       composerTop,
       viewportWidth: documentNode.defaultView?.innerWidth ?? origin.right,
+      minTop: (scroller?.getBoundingClientRect().top ?? 0) + 8,
     });
     notice.style.left = `${box.left}px`;
     notice.style.top = `${box.top}px`;
@@ -293,19 +315,19 @@ export function installRendererTurnActions(options: {
     }
     const turnRect = turn.getBoundingClientRect();
     const composerRect = composer.getBoundingClientRect();
-    const scroller = overflowScroller(turn);
-    const conversationTop = scroller?.getBoundingClientRect().top ?? 8;
-    if (turnRect.bottom < conversationTop + 8 || turnRect.top > composerRect.top - 24) {
-      row.style.top = "-999px";
-      return;
-    }
-    const origin = turnActionOrigin({
+    const scrollerRect = overflowScroller(turn)?.getBoundingClientRect() ?? null;
+    const origin = turnActionPlacement({
       turn: turnRect,
       size: { width: row.offsetWidth || 200, height: row.offsetHeight || 32 },
       composerTop: composerRect.top,
       viewportWidth: documentNode.defaultView?.innerWidth ?? turnRect.right,
+      scroller: scrollerRect,
       avoid: nativeTurnChromeBox(turn),
     });
+    if (!origin) {
+      row.style.top = "-999px";
+      return;
+    }
     row.style.left = `${origin.left}px`;
     row.style.top = `${origin.top}px`;
     placeNotice();
@@ -313,11 +335,17 @@ export function installRendererTurnActions(options: {
 
   const paintRail = (): void => {
     rail.replaceChildren();
+    const composerTop =
+      composerForPlacement()?.getBoundingClientRect().top ??
+      documentNode.defaultView?.innerHeight ??
+      Number.POSITIVE_INFINITY;
     for (const turn of root.querySelectorAll("[data-turn-key]")) {
       const key = turn.getAttribute("data-turn-key");
       if (!key) continue;
       const rect = turn.getBoundingClientRect();
       if (rect.height <= 0 || rect.width <= 0) continue;
+      const scrollerRect = overflowScroller(turn)?.getBoundingClientRect() ?? null;
+      if (!railDotVisible({ top: rect.top + 10, scroller: scrollerRect, composerTop })) continue;
       const dot = documentNode.createElement("button");
       dot.type = "button";
       dot.setAttribute("aria-label", chineseLocale(documentNode) ? "选择此轮" : "Select this turn");
@@ -358,7 +386,7 @@ export function installRendererTurnActions(options: {
     }
     row.setAttribute("data-empty", "false");
     const later = turnsAfterKey(orderedTurnKeys(root), selected.turnKey);
-    const copy = turnActionCopy({ chinese, rolledBack, laterTurns: later });
+    const copy = turnActionCopy({ chinese, rolledBack, laterTurns: later, redoAvailable });
     const selectedTurn = selectedTurnElement();
     const runRollback = (): Promise<void> => {
       const current = selected;
@@ -371,6 +399,10 @@ export function installRendererTurnActions(options: {
           }) ?? Promise.resolve()
         ).then(() => {
           rolledBack = true;
+          // Host stashes a Redo slot only for a single last-Turn rollback;
+          // the inspect that follows is the authority and may revoke this.
+          redoAvailable = later === 1;
+          void inspectSelected();
         });
       }
       rolledBack = true;
@@ -383,39 +415,43 @@ export function installRendererTurnActions(options: {
     };
     const runRedo = (): void => {
       const current = selected;
-      const clickOfficialRedo = (): void => {
-        nativeTurnButton(documentNode.documentElement, /^redo$|^重做$/i)?.click();
-      };
-      const finish = (restored: boolean): void => {
-        rolledBack = !restored;
+      const restored = (): void => {
+        rolledBack = false;
+        redoAvailable = false;
         showNotice(
-          chinese
-            ? restored
-              ? "已恢复刚回滚掉的后续对话"
-              : "Host Redo 不可用，已请求官方 Redo"
-            : restored
-              ? "Restored later turns dropped by last-turn rollback"
-              : "Host Redo unavailable; requested official Redo",
+          chinese ? "已恢复刚回滚掉的最后一轮对话" : "Restored the last turn dropped by rollback",
         );
         paintAll();
+        void inspectSelected();
       };
-      if (!current) {
-        clickOfficialRedo();
-        finish(false);
-        return;
-      }
-      const request = options.getClient()?.redoThread?.({ threadId: current.threadId });
+      // Official Desktop Redo is an app-action stack, not a conversation
+      // restore. It is only a fallback for Threads Codex itself owns.
+      const fallback = (): void => {
+        const official =
+          owner !== "external"
+            ? nativeTurnButton(documentNode.documentElement, /^redo$|^重做$/i)
+            : null;
+        official?.click();
+        showNotice(
+          chinese
+            ? official
+              ? "Host Redo 不可用，已请求官方 Redo"
+              : "Host 没有可恢复的最后一轮"
+            : official
+              ? "Host Redo unavailable; requested official Redo"
+              : "Host has no last turn to restore",
+        );
+        paintAll();
+        void inspectSelected();
+      };
+      const request = current
+        ? options.getClient()?.redoThread?.({ threadId: current.threadId })
+        : undefined;
       if (!request) {
-        clickOfficialRedo();
-        finish(false);
+        fallback();
         return;
       }
-      void request
-        .then(() => finish(true))
-        .catch(() => {
-          clickOfficialRedo();
-          finish(false);
-        });
+      void request.then(restored).catch(fallback);
     };
     const appendConfirm = (
       host: HTMLElement,
@@ -514,10 +550,10 @@ export function installRendererTurnActions(options: {
       label: copy.editLabel,
       title: copy.editTitle,
       disabled: false,
-      ...(rolledBack ? {} : { tone: "danger", confirmText: copy.editConfirm }),
+      ...(copy.editNeedsConfirm ? { tone: "danger", confirmText: copy.editConfirm } : {}),
       confirmAction: copy.editConfirmAction,
       onRun: () => {
-        if (!rolledBack) {
+        if (copy.editNeedsConfirm) {
           void runRollback().then(() => {
             showNotice(copy.editNotice);
             clickEdit();
@@ -566,6 +602,25 @@ export function installRendererTurnActions(options: {
     paintRail();
   };
 
+  // Thread-level truth from the Host: who owns the Thread and whether a
+  // last-Turn Redo slot exists. Survives Renderer refresh and Turn reselect.
+  const inspectSelected = (): Promise<void> => {
+    const current = selected;
+    if (!current) return Promise.resolve();
+    const parsedThreadId = hostThreadIdSchema.safeParse(current.threadId);
+    if (!parsedThreadId.success) return Promise.resolve();
+    const request = options.getClient()?.inspectThread?.({ threadId: parsedThreadId.data });
+    if (!request) return Promise.resolve();
+    return request
+      .then((inspection) => {
+        if (disposed || selected?.threadId !== current.threadId) return;
+        owner = inspection.owner === "external" ? "external" : "official";
+        redoAvailable = inspection.owner === "external" && inspection.historyRedoAvailable === true;
+        paintAll();
+      })
+      .catch(() => undefined);
+  };
+
   const onSelected = (event: Event): void => {
     const detail = (event as CustomEvent).detail as {
       threadId?: string;
@@ -577,26 +632,15 @@ export function installRendererTurnActions(options: {
       typeof detail.turnKey === "string" && detail.turnKey.length > 0
         ? { threadId: detail.threadId, turnKey: detail.turnKey }
         : null;
+    rolledBack = false;
     if (!selected) {
-      rolledBack = false;
+      redoAvailable = false;
+      owner = "unknown";
       paintAll();
       return;
     }
-    const selectedThreadId = selected.threadId;
-    const parsedThreadId = hostThreadIdSchema.safeParse(selectedThreadId);
     paintAll();
-    if (!parsedThreadId.success) return;
-    void options
-      .getClient()
-      ?.inspectThread?.({ threadId: parsedThreadId.data })
-      .then((inspection) => {
-        if (disposed || selected?.threadId !== selectedThreadId) return;
-        if (inspection.owner === "external" && inspection.historyRedoAvailable === true) {
-          rolledBack = true;
-          paintAll();
-        }
-      })
-      .catch(() => undefined);
+    void inspectSelected();
   };
 
   const reposition = (): void => {
@@ -638,7 +682,10 @@ export function installRendererTurnActions(options: {
   paintAll();
 
   return {
-    refresh: paintAll,
+    refresh() {
+      paintAll();
+      void inspectSelected();
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
