@@ -9,6 +9,7 @@ Codex Desktop's Thread Composer has an empty slot above the input. Users current
 - Keep the list live when HEAD, the worktree, or the Thread cwd changes.
 - Later slices in this change: conversation-scoped file-change summary, an official Switch-branch worktree checkbox defaulting to a new worktree, and Tab-reusable implicit composer prompts.
 - Slice 3 of the 260903 worktree surface overhaul replaces that checkbox with a Host-managed draft worktree picker: Host lists and creates named linked worktrees (`codexhost/workspace/worktree/list|create`, additive only), the desktop-control draft policy rewrites the draft's `thread/start` cwd, and the Renderer offers Local / Desktop temporary worktree / existing / new.
+- The pinned Turn header (260903 transcript turn header) moves the workspace surface into the header's second row at the top of the transcript: `第 N/M 轮` + the current Turn's prompt once its bubble scrolls out + Edit / Rollback / Redo in row one, core worktree / touched roots (`+N`, downward lists, hover preview) / file disclosure in row two. The bar above the Composer, its bottom padding, the hover `⋯` chip and the floating Turn action cluster are removed.
 
 ## Capabilities
 
@@ -25,6 +26,6 @@ Codex Desktop's Thread Composer has an empty slot above the input. Users current
 
 - `packages/shared-contracts`: workspace snapshot schema and inspect params.
 - `packages/host-runtime`: Git inspect, watch, and `codexhost/thread/workspace/*` RPC.
-- `packages/renderer-extension`: Composer-adjacent list, request-manager client, draft worktree picker, tests.
+- `packages/renderer-extension`: pinned Turn header (`renderer-turn-header.ts`, `renderer-turn-header-row.ts`, `renderer-turn-action-controller.ts`) hosting the workspace surface (`renderer-workspace-surface.ts`, `renderer-workspace-files-state.ts`, `renderer-native-diff-controls.ts`), request-manager client, draft worktree picker, tests.
 - `packages/desktop-control`: draft policy `selectWorkspace` / `draftCwd` and the `thread/start` cwd rewrite.
 - No Harness Adapter, Mapping Store format, or official app-server passthrough changes.

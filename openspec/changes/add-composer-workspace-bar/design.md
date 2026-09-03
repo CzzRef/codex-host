@@ -57,6 +57,10 @@ The preference is opt-in and persisted only from the checkbox itself. An unset o
 
 Existing Threads, ambiguous ownership, unsupported modes, and label-only DOM matches fail closed without rendering the checkbox. This avoids moving an active Thread, scraping localized menu labels, or taking Worktree lifecycle away from Desktop.
 
+### 8. Pinned Turn header owns placement; the workspace surface is its second row
+
+The bar above the Composer (Decision 4) and its upward file list (Decision 6) are superseded. One header per verified Thread Composer is a `document.body` child pinned `fixed` at the top of the transcript scroller, below Desktop's `header[data-pip-obstacle="app-shell-header"]`, aligned to the Composer box and opaque. Row one describes the viewport-derived current Turn (`第 N/M 轮`, the prompt once its bubble has scrolled under the header, Edit / Rollback / Redo through the Turn action controller); row two is the workspace surface, still one line, whose `+N` list and file disclosure open downward and whose diff preview stays between the header and the Composer. The header reserves its height as `padding-top` on the transcript content column (restoring Desktop's own padding on unmount) instead of padding the bottom. The transcript scroller is `flex column-reverse`, so every current-Turn decision is rect-based and never reads `scrollTop`. Desktop's native edit mode hides the actions; a running Turn disables them with a reason. Native-control lookups skip every codexhost overlay (`data-codexhost-overlay`) so the header's own Redo chip is never mistaken for Desktop's.
+
 ## Risks / Trade-offs
 
 - Desktop DOM contract changes hide the bar; the Composer remains usable.
@@ -71,3 +75,4 @@ Existing Threads, ambiguous ownership, unsupported modes, and label-only DOM mat
 2. Filter the Renderer line to changed-file owners and keep those identities on the left.
 3. Put file count and aggregate conversation-file stats on the right; float its right-aligned list upward and conditionally hide duplicate native controls.
 4. Re-run renderer unit/E2E, typecheck, formatting, lint, build, and strict OpenSpec validation before integration.
+5. Pinned Turn header: the bar, `reserveTranscriptSpace`, the hover `⋯` chip and the floating cluster are removed in one slice; the workspace surface renders into the header's second row; the Composer E2E covers header geometry, top reservation, scrolling, prompt pinning, actions, row-2 collapse / expand and preview placement.

@@ -18,15 +18,14 @@ import {
 import {
   aggregateConversationFileStats,
   groupConversationFilesByRepository,
-  isNativeWorkspaceDiffControl,
-  previewOrigin,
   repositoriesForConversationFiles,
   repositoryDisplayName,
-  threadIdForComposer,
   worktreeLabel,
   workspaceLocationLabel,
-} from "../src/renderer-workspace-bar.js";
-import { overlayTopAboveComposer } from "../src/renderer-overlay-layout.js";
+} from "../src/renderer-conversation-files.js";
+import { isNativeWorkspaceDiffControl } from "../src/renderer-native-diff-controls.js";
+import { threadIdForComposer } from "../src/renderer-thread-composer.js";
+import { previewOrigin } from "../src/renderer-workspace-surface.js";
 
 function element(attributes: Record<string, string>, children: Element[] = []): Element {
   return {
@@ -40,7 +39,7 @@ function element(attributes: Record<string, string>, children: Element[] = []): 
   } as unknown as Element;
 }
 
-describe("Renderer workspace bar helpers", () => {
+describe("Renderer workspace surface helpers", () => {
   it("reads the Composer portal Thread ID", () => {
     const portal = element({
       "data-above-composer-portal": "true",
@@ -163,7 +162,7 @@ describe("Renderer workspace bar helpers", () => {
     });
   });
 
-  it("keeps the hover preview beside the file list and above the Composer", () => {
+  it("keeps the hover preview beside the file list, under the header and above the Composer", () => {
     // Room on the left of the right-aligned list: preview sits there.
     expect(
       previewOrigin({
@@ -174,6 +173,17 @@ describe("Renderer workspace bar helpers", () => {
         composerTop: 640,
       }),
     ).toEqual({ left: 92, top: 300 });
+    // A row hovered right under the header: the preview never rises above the header.
+    expect(
+      previewOrigin({
+        anchor: { top: 60 },
+        list: { left: 500, right: 900 },
+        size: { width: 400, height: 200 },
+        viewportWidth: 1000,
+        composerTop: 640,
+        minTop: 120,
+      }),
+    ).toEqual({ left: 92, top: 120 });
     // No room on the left but room on the right: flip sides.
     expect(
       previewOrigin({
@@ -273,7 +283,6 @@ describe("conversation file-change notifications", () => {
     ).toEqual(["src/a.ts"]);
     expect(filesForTurnSelection(byTurn, null)).toBeNull();
     expect(filesForTurnSelection(byTurn, "missing")).toEqual([]);
-    expect(overlayTopAboveComposer(400, 80, 8)).toBe(312);
     expect(diffPreview("diff --git a/x b/x\n+keep\n")).toBe("+keep");
     expect(reviewPathMatches("/workspace/app/src/a.ts", "src/a.ts")).toBe(true);
     expect(reviewPathMatches("/workspace/app/src/a.ts", "src/b.ts")).toBe(false);

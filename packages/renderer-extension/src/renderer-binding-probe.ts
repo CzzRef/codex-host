@@ -76,7 +76,6 @@ import { installRendererSettingsLifecycle } from "./renderer-settings-lifecycle.
 import { installRendererDraftWorktreePicker } from "./renderer-draft-worktree-picker.js";
 import { installRendererComposerPromptReuse } from "./renderer-composer-prompt-reuse.js";
 import { installRendererTurnHeader } from "./renderer-turn-header.js";
-import { installRendererWorkspaceBar } from "./renderer-workspace-bar.js";
 import type {
   RendererConnectionDiagnostics,
   RendererConnectionSnapshot,
@@ -582,9 +581,6 @@ export function installRendererBindingProbe(
     getClient: (hostId) => modelClientForHost(hostId),
     getLocalAgent: localAgentForSidebarThread,
   });
-  const workspaceBar = installRendererWorkspaceBar({
-    getClient: () => modelControl,
-  });
   const branchWorktreeToggle = installRendererDraftWorktreePicker({
     getClient: () => modelControl,
   });
@@ -598,7 +594,6 @@ export function installRendererBindingProbe(
     getConnectionDiagnostics: () => connectionDiagnostics,
     getModelCatalogClient: () => modelControl,
     onLocaleChange() {
-      workspaceBar.refresh();
       turnHeader.refresh();
       for (const mounted of mountedByComposer.values()) renderMounted(mounted);
     },
@@ -2437,7 +2432,6 @@ export function installRendererBindingProbe(
       harnessAvailabilityByHost.clear();
       activeAvailabilityHostId = "local";
       sidebarAgentIcons.refresh();
-      workspaceBar.refresh();
       branchWorktreeToggle.refresh();
       promptReuse.refresh();
       turnHeader.refresh();
@@ -2473,7 +2467,6 @@ export function installRendererBindingProbe(
       modelControl = null;
       mutationObserver.disconnect();
       sidebarAgentIcons.dispose();
-      workspaceBar.dispose();
       branchWorktreeToggle.dispose();
       promptReuse.dispose();
       turnHeader.dispose();

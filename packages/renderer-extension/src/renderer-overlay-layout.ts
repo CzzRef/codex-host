@@ -1,5 +1,3 @@
-export const CONVERSATION_GUTTER_ATTRIBUTE = "data-codexhost-conversation-gutter";
-
 /**
  * Every codexhost overlay root carries this marker so lookups for Desktop's
  * own controls (native Redo, Changes, Review) never match codexhost's chips.
@@ -17,12 +15,56 @@ export function chineseLocale(ownerDocument: Document): boolean {
   return (ownerDocument.documentElement.lang || "").toLowerCase().startsWith("zh");
 }
 
-export function overlayTopAboveComposer(
-  composerTop: number,
-  overlayHeight: number,
-  gap = 8,
-): number {
-  return Math.max(8, Math.round(composerTop - overlayHeight - gap));
+/** Desktop's title chrome, which floats over the top of the transcript scroller. */
+const APP_SHELL_HEADER_SELECTOR = 'header[data-pip-obstacle="app-shell-header"]';
+const TURN_SELECTOR = "[data-turn-key]";
+const SEARCH_TURN_SELECTOR = "[data-content-search-turn-key]";
+
+export function turnKeyOf(turn: Element): string {
+  return (
+    turn.getAttribute("data-turn-key") ?? turn.getAttribute("data-content-search-turn-key") ?? ""
+  );
+}
+
+/** Transcript Turns in document order: outermost nodes only, one per key. */
+export function transcriptTurns(
+  scope: ParentNode,
+  sameTurn: (left: string, right: string) => boolean,
+): Element[] {
+  let selector = TURN_SELECTOR;
+  let found = [...scope.querySelectorAll(selector)];
+  if (found.length === 0) {
+    selector = SEARCH_TURN_SELECTOR;
+    found = [...scope.querySelectorAll(selector)];
+  }
+  const turns: Element[] = [];
+  const keys: string[] = [];
+  for (const turn of found) {
+    if (turn.parentElement?.closest(selector)) continue;
+    if (turn.closest(OVERLAY_ROOT_SELECTOR)) continue;
+    const key = turnKeyOf(turn);
+    if (key.length === 0) continue;
+    if (keys.some((seen) => sameTurn(seen, key))) continue;
+    turns.push(turn);
+    keys.push(key);
+  }
+  return turns;
+}
+
+/** Bottom edge of Desktop's title chrome over the given horizontal band, if any. */
+export function appShellChromeBottom(
+  ownerDocument: Document,
+  anchor: { left: number; right: number },
+): number | null {
+  let bottom: number | null = null;
+  for (const chrome of ownerDocument.querySelectorAll<HTMLElement>(APP_SHELL_HEADER_SELECTOR)) {
+    if (chrome.hidden) continue;
+    const rect = chrome.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    if (rect.right <= anchor.left || rect.left >= anchor.right) continue;
+    bottom = bottom === null ? rect.bottom : Math.max(bottom, rect.bottom);
+  }
+  return bottom;
 }
 
 export function clampFixedBox(input: {

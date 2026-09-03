@@ -3,8 +3,13 @@ import { isComposerTurnBusy } from "./renderer-composer-prompt-reuse.js";
 import { turnKeyMatches } from "./renderer-conversation-files.js";
 import type { RendererModelClient } from "./renderer-model-client.js";
 import {
+  ensureNativeDiffControlStyle,
+  setNativeWorkspaceDiffControlsHidden,
+} from "./renderer-native-diff-controls.js";
+import {
   OVERLAY_ROOT_ATTRIBUTE,
   OVERLAY_ROOT_SELECTOR,
+  appShellChromeBottom,
   chineseLocale,
   ensureOverlayChromeStyle,
   overflowScroller,
@@ -18,15 +23,18 @@ import {
   scrollDeltaToTurn,
   transcriptColumn,
   transcriptTopReserve,
+  transcriptTurns,
   turnHeaderBox,
+  turnKeyOf,
 } from "./renderer-overlay-layout.js";
 import { threadIdForComposer, visibleComposers } from "./renderer-thread-composer.js";
 import {
   createTurnActionController,
   type TurnActionController,
 } from "./renderer-turn-action-controller.js";
+import { createTurnHeaderView, type TurnHeaderView } from "./renderer-turn-header-row.js";
+import { createWorkspaceRowPainter } from "./renderer-turn-header-workspace.js";
 import {
-  TURN_ACTIONS_ATTRIBUTE,
   nativeTurnButton,
   renderTurnActionCluster,
   turnInNativeEdit,
@@ -34,25 +42,28 @@ import {
   turnPromptText,
   type TurnActionBlock,
 } from "./renderer-turn-actions.js";
+import { createWorkspaceFilesState } from "./renderer-workspace-files-state.js";
+import {
+  WORKSPACE_FILES_ATTRIBUTE,
+  createDiffPreviewOverlay,
+  ensureWorkspaceSurfaceStyle,
+} from "./renderer-workspace-surface.js";
 import headerCss from "./turn-header.css";
 
 /** Value: the Thread id the header describes. */
 export const TURN_HEADER_ATTRIBUTE = "data-codexhost-turn-header";
-export const TURN_HEADER_INDEX_ATTRIBUTE = "data-codexhost-turn-header-index";
-export const TURN_HEADER_PROMPT_ATTRIBUTE = "data-codexhost-turn-header-prompt";
-export const TURN_HEADER_EXPAND_ATTRIBUTE = "data-codexhost-turn-header-expand";
-export const TURN_HEADER_PANEL_ATTRIBUTE = "data-codexhost-turn-header-panel";
+export {
+  TURN_HEADER_EXPAND_ATTRIBUTE,
+  TURN_HEADER_INDEX_ATTRIBUTE,
+  TURN_HEADER_PANEL_ATTRIBUTE,
+  TURN_HEADER_PROMPT_ATTRIBUTE,
+  TURN_HEADER_WORKSPACE_ATTRIBUTE,
+} from "./renderer-turn-header-row.js";
 
 const STYLE_ATTRIBUTE = "data-codexhost-turn-header-style";
 const HEADER_CLASS = "codexhost-turn-header";
-/** Desktop's title chrome floats over the top of the transcript scroller. */
-const APP_SHELL_HEADER_SELECTOR = 'header[data-pip-obstacle="app-shell-header"]';
-const TURN_SELECTOR = "[data-turn-key]";
-const SEARCH_TURN_SELECTOR = "[data-content-search-turn-key]";
 /** Overlays that are not transcript content and must not trigger rescans. */
 const FOREIGN_OVERLAY_SELECTOR = `${OVERLAY_ROOT_SELECTOR}, [data-codexhost-prompt-ghost], [data-codexhost-draft-worktree-picker], [data-codexhost-draft-worktree-menu]`;
-const PROMPT_LINE_MAX_CHARS = 200;
-const NOTICE_MS = 4_000;
 const RESERVE_GAP = 8;
 /** How far the last Turn's bottom may sit under the visible bottom and still count as "at the end". */
 const BOTTOM_TOLERANCE = 24;
@@ -67,14 +78,7 @@ export interface RendererTurnHeader {
 interface HeaderState {
   composer: Element;
   threadId: string;
-  root: HTMLElement;
-  index: HTMLElement;
-  prompt: HTMLButtonElement;
-  spacer: HTMLElement;
-  expand: HTMLButtonElement;
-  panel: HTMLElement;
-  cluster: HTMLElement;
-  notice: HTMLElement;
+  view: TurnHeaderView;
   controller: TurnActionController;
   scroller: HTMLElement | null;
   column: HTMLElement | null;
@@ -83,17 +87,19 @@ interface HeaderState {
   currentIndex: number | null;
   currentKey: string | null;
   pinned: boolean;
-  promptExpanded: boolean;
   blocked: TurnActionBlock | null;
+  filesExpanded: boolean;
   lastBox: string;
   lastPaint: string;
+  lastWorkspace: string;
   reloadUntil: number;
-  noticeTimer: ReturnType<typeof setTimeout> | null;
   columnObserver: ResizeObserver | null;
 }
 
 function ensureStyle(ownerDocument: Document): void {
   ensureOverlayChromeStyle(ownerDocument);
+  ensureNativeDiffControlStyle(ownerDocument);
+  ensureWorkspaceSurfaceStyle(ownerDocument);
   if (ownerDocument.querySelector(`style[${STYLE_ATTRIBUTE}]`)) return;
   const style = ownerDocument.createElement("style");
   style.setAttribute(STYLE_ATTRIBUTE, "true");
@@ -101,48 +107,8 @@ function ensureStyle(ownerDocument: Document): void {
   (ownerDocument.head ?? ownerDocument.documentElement).append(style);
 }
 
-function turnKeyOf(turn: Element): string {
-  return (
-    turn.getAttribute("data-turn-key") ?? turn.getAttribute("data-content-search-turn-key") ?? ""
-  );
-}
-
-/** Transcript Turns in document order: outermost nodes only, one per key. */
-function transcriptTurns(scope: ParentNode): Element[] {
-  let selector = TURN_SELECTOR;
-  let found = [...scope.querySelectorAll(selector)];
-  if (found.length === 0) {
-    selector = SEARCH_TURN_SELECTOR;
-    found = [...scope.querySelectorAll(selector)];
-  }
-  const turns: Element[] = [];
-  const keys: string[] = [];
-  for (const turn of found) {
-    if (turn.parentElement?.closest(selector)) continue;
-    if (turn.closest(OVERLAY_ROOT_SELECTOR)) continue;
-    const key = turnKeyOf(turn);
-    if (key.length === 0) continue;
-    if (keys.some((seen) => turnKeyMatches(seen, key) || turnKeyMatches(key, seen))) continue;
-    turns.push(turn);
-    keys.push(key);
-  }
-  return turns;
-}
-
-function appShellChromeBottom(
-  ownerDocument: Document,
-  anchor: { left: number; right: number },
-): number | null {
-  let bottom: number | null = null;
-  for (const chrome of ownerDocument.querySelectorAll<HTMLElement>(APP_SHELL_HEADER_SELECTOR)) {
-    if (chrome.hidden) continue;
-    const rect = chrome.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) continue;
-    if (rect.right <= anchor.left || rect.left >= anchor.right) continue;
-    bottom = bottom === null ? rect.bottom : Math.max(bottom, rect.bottom);
-  }
-  return bottom;
-}
+const sameTurn = (left: string, right: string): boolean =>
+  turnKeyMatches(left, right) || turnKeyMatches(right, left);
 
 export function installRendererTurnHeader(options: {
   getClient(): RendererModelClient | null;
@@ -155,6 +121,7 @@ export function installRendererTurnHeader(options: {
   ensureStyle(documentNode);
   const headers = new Map<Element, HeaderState>();
   const promptTextCache = new WeakMap<Element, string>();
+  const preview = createDiffPreviewOverlay(documentNode);
   let disposed = false;
   let frame: number | null = null;
   let scanPending = true;
@@ -171,22 +138,15 @@ export function installRendererTurnHeader(options: {
     frame = view.requestAnimationFrame(runFrame);
   };
 
-  const notify = (state: HeaderState, text: string): void => {
-    state.notice.textContent = text;
-    state.notice.hidden = false;
-    if (state.noticeTimer !== null) clearTimeout(state.noticeTimer);
-    state.noticeTimer = setTimeout(() => {
-      state.notice.hidden = true;
-      state.noticeTimer = null;
-    }, NOTICE_MS);
-  };
-
-  const collapsePanel = (state: HeaderState): void => {
-    if (!state.promptExpanded) return;
-    state.promptExpanded = false;
-    state.panel.hidden = true;
-    state.expand.setAttribute("aria-expanded", "false");
-  };
+  const filesState = createWorkspaceFilesState({
+    getClient: options.getClient,
+    onChange(threadId) {
+      for (const state of headers.values()) {
+        if (state.threadId === threadId) state.lastWorkspace = "";
+      }
+      scheduleFrame();
+    },
+  });
 
   const currentTurn = (state: HeaderState): Element | null =>
     state.currentIndex === null ? null : (state.turns[state.currentIndex] ?? null);
@@ -201,7 +161,7 @@ export function installRendererTurnHeader(options: {
 
   const paintCluster = (state: HeaderState): void => {
     renderTurnActionCluster(
-      state.cluster,
+      state.view.cluster,
       state.controller.view({ chinese: chinese(), blocked: state.blocked }),
       {
         onActivate: (id) => state.controller.activate(id),
@@ -211,62 +171,39 @@ export function installRendererTurnHeader(options: {
     );
   };
 
-  const paintRow = (
-    state: HeaderState,
-    derived: {
-      count: number;
-      index: number | null;
-      pinned: boolean;
-      nativeEdit: boolean;
-      busy: boolean;
-    },
-  ): void => {
-    const zh = chinese();
-    const turn = currentTurn(state);
-    const reloading = derived.count === 0 && Date.now() < state.reloadUntil;
-    if (!reloading) {
-      state.index.textContent =
-        derived.index === null
-          ? zh
-            ? "还没有轮次"
-            : "No turns yet"
-          : zh
-            ? `第 ${derived.index + 1}/${derived.count} 轮`
-            : `Turn ${derived.index + 1}/${derived.count}`;
-    }
-    state.root.setAttribute("data-state", reloading ? "reloading" : "ready");
-    state.root.setAttribute("data-native-edit", derived.nativeEdit ? "true" : "false");
-    state.root.setAttribute("data-streaming", derived.busy ? "true" : "false");
-    if (derived.nativeEdit) {
-      state.prompt.hidden = false;
-      state.prompt.textContent = zh ? "正在编辑本轮" : "Editing this turn";
-      state.prompt.title = "";
-      state.expand.hidden = true;
-      state.spacer.hidden = true;
-      collapsePanel(state);
-    } else if (derived.pinned && turn) {
-      const text = promptTextFor(turn);
-      state.prompt.hidden = false;
-      state.prompt.textContent = text.slice(0, PROMPT_LINE_MAX_CHARS);
-      state.prompt.title = zh ? "回到本轮开始" : "Scroll to this turn";
-      state.panel.textContent = text;
-      state.expand.hidden = false;
-      state.spacer.hidden = true;
-    } else {
-      state.prompt.hidden = true;
-      state.prompt.textContent = "";
-      state.expand.hidden = true;
-      state.spacer.hidden = false;
-      collapsePanel(state);
-    }
-    paintCluster(state);
+  const syncNativeDiffVisibility = (): void => {
+    const replacementAvailable = [...headers.values()].some(
+      (state) =>
+        state.view.root.isConnected &&
+        state.view.root.getAttribute("data-state") === "ready" &&
+        state.view.workspace.querySelector(`[${WORKSPACE_FILES_ATTRIBUTE}]`) !== null,
+    );
+    setNativeWorkspaceDiffControlsHidden(root, replacementAvailable);
+  };
+
+  const workspaceRow = createWorkspaceRowPainter({
+    ownerDocument: documentNode,
+    filesState,
+    preview,
+    chinese,
+    scheduleFrame: () => scheduleFrame(),
+    syncNativeDiffVisibility,
+  });
+
+  const collapseAll = (state: HeaderState): void => {
+    state.view.collapsePanel();
+    workspaceRow.collapse(state);
+    state.controller.cancel();
   };
 
   const hideHeader = (state: HeaderState, reason: "hidden" | "ambiguous"): void => {
-    state.root.setAttribute("data-state", reason);
+    state.view.root.setAttribute("data-state", reason);
     state.lastBox = "";
+    state.lastPaint = "";
     if (state.column) releaseTranscriptColumn(state.column);
-    collapsePanel(state);
+    collapseAll(state);
+    preview.hide();
+    syncNativeDiffVisibility();
   };
 
   const measure = (state: HeaderState): void => {
@@ -281,7 +218,8 @@ export function installRendererTurnHeader(options: {
       left: Math.min(composerRect.left, firstRect?.left ?? composerRect.left),
       right: Math.max(composerRect.right, firstRect?.right ?? composerRect.right),
     };
-    const height = state.root.offsetHeight || 40;
+    const rootNode = state.view.root;
+    const height = rootNode.offsetHeight || 40;
     const box = turnHeaderBox({
       anchor,
       scrollerTop,
@@ -294,12 +232,16 @@ export function installRendererTurnHeader(options: {
       hideHeader(state, "hidden");
       return;
     }
+    if (rootNode.getAttribute("data-state") === "hidden")
+      rootNode.setAttribute("data-state", "ready");
     const boxKey = `${box.left}:${box.top}:${box.width}`;
+    let boxChanged = false;
     if (state.lastBox !== boxKey) {
       state.lastBox = boxKey;
-      state.root.style.left = `${box.left}px`;
-      state.root.style.top = `${box.top}px`;
-      state.root.style.width = `${box.width}px`;
+      boxChanged = true;
+      rootNode.style.left = `${box.left}px`;
+      rootNode.style.top = `${box.top}px`;
+      rootNode.style.width = `${box.width}px`;
     }
     const headerBottom = box.top + height;
 
@@ -364,11 +306,13 @@ export function installRendererTurnHeader(options: {
     state.blocked = nativeEdit ? "nativeEdit" : busy ? "busy" : count === 0 ? "noTurns" : null;
 
     if (keyChanged) {
-      collapsePanel(state);
+      state.view.collapsePanel();
       state.controller.setCurrent(
         turn && key ? { threadId: state.threadId, turnKey: key, turn } : null,
       );
     }
+    const zh = chinese();
+    const reloading = count === 0 && Date.now() < state.reloadUntil;
     const signature = [
       state.threadId,
       index,
@@ -377,27 +321,43 @@ export function installRendererTurnHeader(options: {
       pinned,
       nativeEdit,
       busy,
-      chinese(),
+      reloading,
+      zh,
       pinned && turn ? promptTextFor(turn).length : 0,
     ].join("|");
-    if (signature === state.lastPaint && state.root.getAttribute("data-state") === "ready") return;
-    state.lastPaint = signature;
-    paintRow(state, { count, index, pinned, nativeEdit, busy });
+    if (signature !== state.lastPaint) {
+      state.lastPaint = signature;
+      state.view.paintRow({
+        count,
+        index,
+        pinned,
+        nativeEdit,
+        busy,
+        reloading,
+        chinese: zh,
+        promptText: pinned && turn ? promptTextFor(turn) : "",
+      });
+      paintCluster(state);
+    }
+    if (boxChanged) state.lastWorkspace = "";
+    workspaceRow.paint(state, { headerBottom });
   };
 
   const observeColumn = (state: HeaderState): void => {
     if (typeof ResizeObserver === "undefined") return;
     state.columnObserver?.disconnect();
     state.columnObserver = null;
-    if (!state.column) return;
+    // The Composer column narrows with the sidebar and the content column
+    // grows while streaming; neither raises a window event.
     state.columnObserver = new ResizeObserver(() => scheduleFrame());
-    state.columnObserver.observe(state.column);
-    state.columnObserver.observe(state.root);
+    state.columnObserver.observe(state.view.root);
+    state.columnObserver.observe(state.composer);
+    if (state.column) state.columnObserver.observe(state.column);
   };
 
   const refreshTurns = (state: HeaderState): void => {
     const scope: ParentNode = state.scroller ?? root;
-    const turns = transcriptTurns(scope);
+    let turns = transcriptTurns(scope, sameTurn);
     const first = turns[0] ?? null;
     // Short Threads have no overflow yet, so the walk accepts any vertical scroller.
     const scroller =
@@ -407,10 +367,13 @@ export function installRendererTurnHeader(options: {
       scrollContainerFor(state.composer);
     if (scroller !== state.scroller && state.column) releaseTranscriptColumn(state.column);
     state.scroller = scroller;
-    state.turns = scroller && scope !== scroller ? transcriptTurns(scroller) : turns;
-    if (state.turns.length === 0 && scroller && scope !== scroller) state.turns = turns;
-    state.keys = state.turns.map(turnKeyOf);
-    const column = scroller ? transcriptColumn(scroller, state.turns[0] ?? null) : null;
+    if (scroller && scope !== scroller) {
+      const scoped = transcriptTurns(scroller, sameTurn);
+      if (scoped.length > 0) turns = scoped;
+    }
+    state.turns = turns;
+    state.keys = turns.map(turnKeyOf);
+    const column = scroller ? transcriptColumn(scroller, turns[0] ?? null) : null;
     const usableColumn = column && !column.contains(state.composer) ? column : null;
     if (usableColumn !== state.column) {
       if (state.column) releaseTranscriptColumn(state.column);
@@ -419,9 +382,7 @@ export function installRendererTurnHeader(options: {
     }
     if (state.currentKey !== null) {
       const stillAt = state.keys.findIndex(
-        (key) =>
-          state.currentKey !== null &&
-          (turnKeyMatches(key, state.currentKey) || turnKeyMatches(state.currentKey, key)),
+        (key) => state.currentKey !== null && sameTurn(key, state.currentKey),
       );
       state.currentIndex = stillAt >= 0 ? stillAt : null;
       if (stillAt < 0) state.currentKey = null;
@@ -429,56 +390,28 @@ export function installRendererTurnHeader(options: {
   };
 
   const mount = (composer: Element, threadId: string): HeaderState => {
-    const rootNode = documentNode.createElement("div");
-    rootNode.className = HEADER_CLASS;
-    rootNode.setAttribute(TURN_HEADER_ATTRIBUTE, threadId);
-    rootNode.setAttribute(OVERLAY_ROOT_ATTRIBUTE, "true");
-    rootNode.setAttribute("data-state", "ready");
-    const row = documentNode.createElement("div");
-    row.className = "codexhost-turn-header-row";
-    const index = documentNode.createElement("span");
-    index.className = "codexhost-turn-header-index";
-    index.setAttribute(TURN_HEADER_INDEX_ATTRIBUTE, "true");
-    index.setAttribute("aria-live", "polite");
-    const prompt = documentNode.createElement("button");
-    prompt.type = "button";
-    prompt.className = "codexhost-turn-header-prompt";
-    prompt.setAttribute(TURN_HEADER_PROMPT_ATTRIBUTE, "true");
-    prompt.hidden = true;
-    const spacer = documentNode.createElement("span");
-    spacer.className = "codexhost-turn-header-spacer";
-    const expand = documentNode.createElement("button");
-    expand.type = "button";
-    expand.className = "codexhost-turn-header-expand";
-    expand.setAttribute(TURN_HEADER_EXPAND_ATTRIBUTE, "true");
-    expand.setAttribute("aria-expanded", "false");
-    expand.textContent = "▾";
-    expand.hidden = true;
-    const panel = documentNode.createElement("div");
-    panel.className = "codexhost-turn-header-panel";
-    panel.setAttribute(TURN_HEADER_PANEL_ATTRIBUTE, "true");
-    panel.setAttribute("role", "region");
-    panel.hidden = true;
-    const cluster = documentNode.createElement("div");
-    cluster.className = "codexhost-turn-actions";
-    cluster.setAttribute(TURN_ACTIONS_ATTRIBUTE, "true");
-    const notice = documentNode.createElement("div");
-    notice.className = "codexhost-turn-notice";
-    notice.hidden = true;
-    row.append(index, prompt, spacer, expand, cluster);
-    rootNode.append(row, panel, notice);
-    (documentNode.body ?? documentNode.documentElement).append(rootNode);
+    const headerView = createTurnHeaderView(documentNode, {
+      threadId,
+      rootAttribute: TURN_HEADER_ATTRIBUTE,
+      overlayAttribute: OVERLAY_ROOT_ATTRIBUTE,
+      className: HEADER_CLASS,
+      onPromptClick: () => {
+        const turn = currentTurn(state);
+        if (!turn || state.blocked === "nativeEdit") return;
+        const headerBottom = state.view.root.getBoundingClientRect().bottom;
+        const delta = scrollDeltaToTurn({
+          turnTop: turn.getBoundingClientRect().top,
+          headerBottom,
+        });
+        if (state.scroller) state.scroller.scrollBy({ top: delta, behavior: "smooth" });
+        else turn.scrollIntoView({ block: "start" });
+      },
+    });
+    (documentNode.body ?? documentNode.documentElement).append(headerView.root);
     const state: HeaderState = {
       composer,
       threadId,
-      root: rootNode,
-      index,
-      prompt,
-      spacer,
-      expand,
-      panel,
-      cluster,
-      notice,
+      view: headerView,
       controller: createTurnActionController({
         getClient: options.getClient,
         orderedTurnKeys: () => state.keys,
@@ -488,7 +421,7 @@ export function installRendererTurnHeader(options: {
         },
         nativeRedoButton: () => nativeTurnButton(documentNode.documentElement, /^redo$|^重做$/i),
         chinese,
-        notify: (text) => notify(state, text),
+        notify: (text) => state.view.notify(text),
         onChange: () => {
           if (disposed || !headers.has(state.composer)) return;
           state.reloadUntil = Date.now() + RELOAD_GRACE_MS;
@@ -503,32 +436,17 @@ export function installRendererTurnHeader(options: {
       currentIndex: null,
       currentKey: null,
       pinned: false,
-      promptExpanded: false,
       blocked: null,
+      filesExpanded: false,
       lastBox: "",
       lastPaint: "",
+      lastWorkspace: "",
       reloadUntil: 0,
-      noticeTimer: null,
       columnObserver: null,
     };
-    prompt.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const turn = currentTurn(state);
-      if (!turn || state.blocked === "nativeEdit") return;
-      const headerBottom = state.root.getBoundingClientRect().bottom;
-      const delta = scrollDeltaToTurn({ turnTop: turn.getBoundingClientRect().top, headerBottom });
-      if (state.scroller) state.scroller.scrollBy({ top: delta, behavior: "smooth" });
-      else turn.scrollIntoView({ block: "start" });
-    });
-    expand.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      state.promptExpanded = !state.promptExpanded;
-      state.panel.hidden = !state.promptExpanded;
-      expand.setAttribute("aria-expanded", state.promptExpanded ? "true" : "false");
-    });
     headers.set(composer, state);
+    observeColumn(state);
+    filesState.ensureLoaded(threadId);
     return state;
   };
 
@@ -538,23 +456,28 @@ export function installRendererTurnHeader(options: {
     headers.delete(composer);
     state.controller.dispose();
     state.columnObserver?.disconnect();
-    if (state.noticeTimer !== null) clearTimeout(state.noticeTimer);
     if (state.column) releaseTranscriptColumn(state.column);
-    state.root.remove();
+    state.view.dispose();
+    preview.hide();
+    syncNativeDiffVisibility();
   };
 
   const switchThread = (state: HeaderState, threadId: string): void => {
     state.threadId = threadId;
-    state.root.setAttribute(TURN_HEADER_ATTRIBUTE, threadId);
+    state.view.setThreadId(threadId);
     state.currentIndex = null;
     state.currentKey = null;
     state.pinned = false;
+    state.filesExpanded = false;
     state.lastPaint = "";
-    collapsePanel(state);
+    state.lastWorkspace = "";
+    collapseAll(state);
     state.controller.setCurrent(null);
+    filesState.ensureLoaded(threadId);
   };
 
   const scan = (): void => {
+    filesState.connect();
     const live = new Set<Element>();
     for (const composer of visibleComposers(root)) {
       const threadId = threadIdForComposer(composer);
@@ -591,17 +514,22 @@ export function installRendererTurnHeader(options: {
       scan();
     }
     for (const state of headers.values()) {
-      if (state.root.getAttribute("data-state") === "ambiguous") continue;
+      if (state.view.root.getAttribute("data-state") === "ambiguous") continue;
       measure(state);
     }
   };
 
-  const insideHeader = (target: EventTarget | null): boolean =>
-    target instanceof Element && target.closest(`[${TURN_HEADER_ATTRIBUTE}]`) !== null;
+  const insideOverlay = (target: EventTarget | null): boolean =>
+    target instanceof Element &&
+    target.closest(`[${TURN_HEADER_ATTRIBUTE}], [data-codexhost-workspace-preview]`) !== null;
 
   const onScroll = (event: Event): void => {
-    if (!insideHeader(event.target)) {
-      for (const state of headers.values()) collapsePanel(state);
+    if (!insideOverlay(event.target)) {
+      for (const state of headers.values()) {
+        state.view.collapsePanel();
+        workspaceRow.collapse(state);
+      }
+      preview.hide();
     }
     scheduleFrame();
   };
@@ -610,18 +538,14 @@ export function installRendererTurnHeader(options: {
     scheduleFrame();
   };
   const onDocumentPointerDown = (event: Event): void => {
-    if (insideHeader(event.target)) return;
-    for (const state of headers.values()) {
-      collapsePanel(state);
-      state.controller.cancel();
-    }
+    if (insideOverlay(event.target)) return;
+    for (const state of headers.values()) collapseAll(state);
+    preview.hide();
   };
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== "Escape") return;
-    for (const state of headers.values()) {
-      collapsePanel(state);
-      state.controller.cancel();
-    }
+    for (const state of headers.values()) collapseAll(state);
+    preview.hide();
   };
 
   view?.addEventListener("scroll", onScroll, true);
@@ -661,8 +585,11 @@ export function installRendererTurnHeader(options: {
   return {
     refresh() {
       if (disposed) return;
+      filesState.reset();
       for (const state of headers.values()) {
         state.lastPaint = "";
+        state.lastWorkspace = "";
+        filesState.ensureLoaded(state.threadId);
         void state.controller.refresh();
       }
       scheduleFrame(true);
@@ -677,7 +604,10 @@ export function installRendererTurnHeader(options: {
       documentNode.removeEventListener("pointerdown", onDocumentPointerDown, true);
       documentNode.removeEventListener("keydown", onKeyDown);
       for (const composer of [...headers.keys()]) unmount(composer);
+      filesState.dispose();
+      preview.dispose();
       releaseTranscriptReservation(documentNode);
+      setNativeWorkspaceDiffControlsHidden(root, false);
     },
   };
 }

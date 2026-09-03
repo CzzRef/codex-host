@@ -1,27 +1,27 @@
 ## ADDED Requirements
 
-### Requirement: Renderer mounts a compact changed-files surface beside the Composer
+### Requirement: Renderer mounts the workspace surface as the Turn header's second row
 
-The Renderer SHALL mount a codexhost-owned workspace surface as a `document.body` child positioned `fixed` directly above a verified `[data-codex-composer-root]`, horizontally aligned to the Composer box, without consuming transcript layout. It SHALL NOT insert into the Composer's parent, `data-above-composer-portal`, or React-owned transcript nodes, so that transformed or filtered ancestors cannot offset it. Unsupported or ambiguous Composer identities SHALL render nothing.
+The Renderer SHALL render the codexhost-owned workspace surface as the second, single-line row of the pinned Turn header (a `document.body` child positioned `fixed` at the top of the transcript, horizontally aligned to the verified `[data-codex-composer-root]` box, opaque) instead of a bar above the Composer. Nothing codexhost-owned SHALL float above the Composer or pad the transcript's bottom for it. It SHALL NOT insert into the Composer's parent, `data-above-composer-portal`, or React-owned transcript nodes, so that transformed or filtered ancestors cannot offset it. Unsupported or ambiguous Composer identities SHALL render nothing. Expanding anything in the row SHALL NOT change the header's height.
 
 #### Scenario: Thread cwd is known
 
 - **WHEN** a connected Thread Composer root is unique and visible
 - **AND** workspace inspection returns a primary repository
-- **THEN** the Renderer SHALL show one compact, single-line surface above the Composer whose first chip is the core workspace (the Thread cwd root) with its Worktree identity and branch, marked as core
+- **THEN** the Renderer SHALL show one single-line workspace row in the Turn header whose first chip is the core workspace (the Thread cwd root) with its Worktree identity and branch, marked as core
 - **AND** the core chip SHALL remain visible while the conversation has no file changes
 
 #### Scenario: Conversation file changes are available
 
 - **WHEN** conversation file-change data is present for the Composer Thread
-- **THEN** the Renderer SHALL add the right-side file disclosure
+- **THEN** the Renderer SHALL add the right-side file disclosure to the workspace row
 - **AND** SHALL show per-repository conversation additions/deletions on each chip that has any, never repository diff totals
 - **AND** MAY show conversation-file aggregate additions/deletions beside the right-side file disclosure
 
 #### Scenario: Composer identity is unsupported
 
 - **WHEN** Composer roots are missing, hidden, or ambiguous
-- **THEN** the Renderer SHALL not insert a workspace surface
+- **THEN** the Renderer SHALL not render a Turn header or a workspace row
 
 ### Requirement: Changed-file ownership filters repository locations
 
@@ -48,9 +48,9 @@ The Host SHALL continue inspecting the complete repository array, including prim
 
 #### Scenario: Chips overflow the single line
 
-- **WHEN** the repository chips do not fit the Composer width
-- **THEN** trailing chips SHALL collapse behind one `+N` chip
-- **AND** hovering or activating `+N` SHALL reveal the hidden chips without changing the line height
+- **WHEN** the repository chips do not fit the header width
+- **THEN** the row SHALL stay one line and trailing chips SHALL collapse behind one `+N` chip, never the core chip
+- **AND** hovering `+N` SHALL preview the hidden chips in a list below the row, activating `+N` SHALL pin that list open, and neither SHALL change the header's height
 
 ### Requirement: Conversation files follow File Change Item change sets
 
@@ -70,14 +70,14 @@ The Renderer SHALL subscribe to `codexhost/thread/workspace/updated` through the
 - **WHEN** a workspace-updated notification arrives for the Composer Thread
 - **THEN** the visible rows SHALL match the next successful inspection
 
-### Requirement: File changes expand from the right and replace duplicate native summaries
+### Requirement: File changes expand downward from the right and replace duplicate native summaries
 
-The codexhost file-change disclosure SHALL occupy the right edge of the compact workspace surface after the repository chips. It SHALL show the current file count and conversation-file aggregate additions/deletions. Its file list SHALL align to the right edge and float upward above the compact line, grouped by owning repository when more than one is involved, and hovering or focusing a file SHALL show a diff preview. The preview SHALL be an interactive `document.body` overlay sized for reading (up to `min(560px, 60vw)` by `min(420px, 50vh)`), placed beside the file list (left first, right as fallback) so it never covers the list, and kept above the Composer. It SHALL stay open while the pointer moves from the file row into the preview, hide after a short grace when the pointer leaves both, and hide on `Escape`. While this replacement is available, the Renderer SHALL hide Desktop's duplicate top Changes summary and bottom Review/diff control without removing their event handlers. It SHALL restore native controls when the replacement is unavailable or disposed, and SHALL NOT hide them while only the core chip is shown.
+The codexhost file-change disclosure SHALL occupy the right edge of the workspace row after the repository chips. It SHALL show the current file count and conversation-file aggregate additions/deletions. It SHALL open only on activation; its file list SHALL align to the right edge and open downward below the header, bounded by the Composer's top edge, grouped by owning repository when more than one is involved, with the files the current Turn touched tagged and listed first in their group. Hovering or focusing a file SHALL show a diff preview. The preview SHALL be an interactive `document.body` overlay sized for reading (up to `min(560px, 60vw)` by `min(420px, 50vh)`), placed beside the file list (left first, right as fallback) so it never covers the list, kept below the header and above the Composer. It SHALL stay open while the pointer moves from the file row into the preview, hide after a short grace when the pointer leaves both, and hide on `Escape`. Scrolling the transcript SHALL close the list and the preview. While this replacement is available, the Renderer SHALL hide Desktop's duplicate top Changes summary and bottom Review/diff control without removing their event handlers. It SHALL restore native controls when the replacement is unavailable or disposed, and SHALL NOT hide them while only the core chip is shown.
 
 #### Scenario: User expands changed files
 
 - **WHEN** the user opens the right-side codexhost file-change disclosure
-- **THEN** the file list SHALL align to the right edge and appear above the compact workspace line without increasing the Composer's layout height
+- **THEN** the file list SHALL align to the right edge and open below the header without changing the header's height or the transcript's reserved space
 - **AND** hovering a file SHALL show its diff preview beside the list, with the file path and its additions/deletions in the header
 - **AND** moving the pointer into the preview SHALL keep it open and scrollable
 - **AND** selecting a file SHALL hide the preview and enter that file's native change display
