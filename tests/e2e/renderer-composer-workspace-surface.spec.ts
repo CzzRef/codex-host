@@ -270,6 +270,19 @@ const { outputFiles } = await build({
                 deletedLines: 1,
                 dirty: true,
               },
+              {
+                root: "/workspace/app-feature-two",
+                name: "app-feature-two",
+                kind: "worktree",
+                branch: "feature-two",
+                headSha: "0feature2",
+                isWorktree: true,
+                worktreeName: "app-feature-two",
+                primaryRoot: "/workspace/source",
+                addedLines: 0,
+                deletedLines: 0,
+                dirty: false,
+              },
             ],
             };
           },
@@ -330,6 +343,17 @@ const { outputFiles } = await build({
             { path: "vendor/lib.ts", addedLines: 0, deletedLines: 0, preview: "" },
           ],
           turnId: "turn-b",
+        });
+      };
+      globalThis.emitSiblingFiles = () => {
+        if (!fileListener) throw new Error("File-change listener is unavailable");
+        fileListener({
+          threadId,
+          itemId: "item-c",
+          files: [
+            { path: "/workspace/app-feature-two/src/two.ts", addedLines: 3, deletedLines: 1, preview: "+two" },
+          ],
+          turnId: "turn-c",
         });
       };
       globalThis.revertExternalFiles = () => {
@@ -469,90 +493,95 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(headerPrompt).toHaveText("third prompt");
   // Following the viewport across Turns never re-inspects the Thread.
   expect(await page.evaluate("globalThis.__threadInspectCalls")).toBe(inspectCallsBeforeScrolling);
+  // With the transcript end in view the last Turn is current and its prompt is pinned.
+  await page.evaluate("globalThis.scrollTranscriptToBottom()");
+  await expect(headerIndex).toHaveText("Turn 3/3");
+  await expect(headerPrompt).toHaveText("third prompt");
 
-  const bar = page.locator("[data-codexhost-workspace-bar]");
+  // The workspace row lives in the header: nothing floats above the Composer any more.
+  const workspace = header.locator("[data-codexhost-turn-header-workspace]");
+  await expect(page.locator("[data-codexhost-workspace-bar]")).toHaveCount(0);
+  await expect(page.locator("[data-codexhost-workspace-reserve]")).toHaveCount(0);
   const nativeChanges = page.locator('[data-slot="thread-summary-panel-item-button"]');
   const nativeReview = page.locator('[data-tab-id="diff"]');
   const composer = page.locator("[data-codex-composer-root]");
   // The core workspace chip is always present once the Host knows the cwd,
-  // even before any file changed; native diff controls stay until the bar
+  // even before any file changed; native diff controls stay until the row
   // has a file disclosure to replace them with.
-  await expect(bar).toBeVisible();
+  await expect(workspace).toHaveAttribute("data-codexhost-turn-header-workspace", "core");
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
   await expect(page.locator('[data-codexhost-workspace-core="true"]')).toContainText("app-feature");
   await expect(page.locator("[data-codexhost-workspace-files]")).toHaveCount(0);
   await expect(nativeChanges).toBeVisible();
   await expect(nativeReview).toBeVisible();
-  // Mounted on <body> so `position: fixed` is viewport-relative, yet aligned
-  // to the Composer's horizontal box.
-  expect(await bar.evaluate((node) => node.parentElement === node.ownerDocument.body)).toBe(true);
-  const alignedBarBox = await bar.boundingBox();
-  const composerBox = await composer.boundingBox();
-  expect(alignedBarBox && composerBox && Math.abs(alignedBarBox.x - composerBox.x) <= 1).toBe(true);
-  expect(
-    alignedBarBox && composerBox && Math.abs(alignedBarBox.width - composerBox.width) <= 1,
-  ).toBe(true);
-  expect(
-    alignedBarBox && composerBox && alignedBarBox.y + alignedBarBox.height <= composerBox.y,
-  ).toBe(true);
 
   await page.evaluate("globalThis.emitWorkspaceFiles()");
-  await expect(bar).toBeVisible();
+  await expect(workspace).toHaveAttribute("data-codexhost-turn-header-workspace", "files");
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
-  await expect(bar).toContainText("app-feature");
-  await expect(bar).toContainText("main");
-  await expect(bar).not.toContainText("vendor");
-  await expect(bar).not.toContainText("+12");
+  await expect(workspace).toContainText("app-feature");
+  await expect(workspace).toContainText("main");
+  await expect(workspace).not.toContainText("vendor");
+  await expect(workspace).not.toContainText("+12");
   await expect(nativeChanges).toBeHidden();
   await expect(nativeReview).toBeHidden();
-  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("file change");
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("file changed");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("+8");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("-2");
   expect(
-    await bar.evaluate(
+    await workspace.evaluate(
       (node) =>
         node.firstElementChild?.classList.contains("codexhost-workspace-chips") === true &&
         node.lastElementChild?.hasAttribute("data-codexhost-workspace-files") === true,
     ),
   ).toBe(true);
+  // The row never changes the header's height: dropdowns hang below it.
+  expect((await header.boundingBox())?.height).toBe(headerBox?.height);
   await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
   await page.locator(".codexhost-workspace-files-toggle").click();
   const fileRow = page.locator("[data-codexhost-workspace-file]");
   await expect(fileRow).toBeVisible();
   await expect(fileRow).toContainText("src/bar.ts");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("+8");
-  const barBox = await bar.boundingBox();
+  const headerBoxOpen = await header.boundingBox();
   const fileListBox = await page
-    .locator('[data-codexhost-workspace-file-list="upward-right"]')
+    .locator('[data-codexhost-workspace-file-list="downward-right"]')
     .boundingBox();
-  expect(barBox && fileListBox && fileListBox.y + fileListBox.height <= barBox.y).toBe(true);
   expect(
-    barBox &&
-      fileListBox &&
-      Math.abs(fileListBox.x + fileListBox.width - (barBox.x + barBox.width)) <= 12,
+    headerBoxOpen && fileListBox && fileListBox.y >= headerBoxOpen.y + headerBoxOpen.height,
   ).toBe(true);
+  expect(
+    headerBoxOpen &&
+      fileListBox &&
+      Math.abs(fileListBox.x + fileListBox.width - (headerBoxOpen.x + headerBoxOpen.width)) <= 12,
+  ).toBe(true);
+  // The current Turn's files are tagged; src/bar.ts belongs to turn-a, not turn-c.
+  await expect(fileRow).not.toHaveAttribute("data-codexhost-workspace-turn-file", "true");
   await fileRow.hover();
   const preview = page.locator("[data-codexhost-workspace-preview]");
   await expect(preview).toBeVisible();
   await expect(preview).toContainText("+keep");
   await expect(preview).toContainText("src/bar.ts");
-  // The preview sits beside the list (never over it) and above the Composer.
+  // The preview sits beside the list (never over it), under the header and above the Composer.
   const previewBox = await preview.boundingBox();
+  const composerBox = await composer.boundingBox();
   expect(
     previewBox &&
       fileListBox &&
       (previewBox.x + previewBox.width <= fileListBox.x ||
         previewBox.x >= fileListBox.x + fileListBox.width),
   ).toBe(true);
-  expect(previewBox && barBox && previewBox.y + previewBox.height <= barBox.y + barBox.height).toBe(
-    true,
-  );
+  expect(
+    previewBox && headerBoxOpen && previewBox.y >= headerBoxOpen.y + headerBoxOpen.height,
+  ).toBe(true);
+  expect(previewBox && composerBox && previewBox.y + previewBox.height <= composerBox.y).toBe(true);
   // Moving the pointer into the preview keeps it (interactive, scrollable).
   await preview.hover();
   await page.waitForTimeout(250);
   await expect(preview).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(preview).toBeHidden();
+  await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
+  await page.locator(".codexhost-workspace-files-toggle").click();
   await fileRow.hover();
   await expect(preview).toBeVisible();
   await fileRow.click();
@@ -574,11 +603,55 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("3 files");
   await page.evaluate("globalThis.revertExternalFiles()");
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
-  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("1 file change");
-  // Clicking a Turn filters the file disclosure to that Turn.
-  await page.locator('[data-turn-key="history-content:turn:turn-a"]').dispatchEvent("click");
-  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("this turn");
-  await expect(page.locator("[data-codexhost-turn-files]")).toHaveCount(1);
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("1 file changed");
+  // Scrolling to turn-a makes its file the current Turn's and tags it first.
+  await page.evaluate("globalThis.scrollTranscriptToTop()");
+  await expect(headerIndex).toHaveText("Turn 1/3");
+  await page.locator(".codexhost-workspace-files-toggle").click();
+  await expect(page.locator('[data-codexhost-workspace-file="src/bar.ts"]')).toHaveAttribute(
+    "data-codexhost-workspace-turn-file",
+    "true",
+  );
+  await expect(page.locator('[data-codexhost-workspace-file="src/bar.ts"]')).toContainText(
+    "this turn",
+  );
+  // Scrolling the transcript closes the list again.
+  await page.evaluate("globalThis.scrollTranscriptToBottom()");
+  await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
+  await expect(headerIndex).toHaveText("Turn 3/3");
+
+  // Many touched roots collapse to one line behind `+N`; hover previews the
+  // hidden chips, click pins the list, and the header keeps its height.
+  await page.evaluate("globalThis.emitSiblingFiles()");
+  await page.evaluate("globalThis.emitExternalFiles()");
+  await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(3);
+  const visibleRows = page.locator("[data-codexhost-workspace-row]:visible");
+  const setComposerWidth = (width: string) =>
+    composer.evaluate((node, value) => {
+      (node as HTMLElement).style.width = value;
+      (node.parentElement as HTMLElement).style.width = value;
+    }, width);
+  const visibleAtFullWidth = await visibleRows.count();
+  await setComposerWidth("300px");
+  const more = page.locator("[data-codexhost-workspace-more]");
+  await expect(more).toBeVisible();
+  await expect(more).toHaveText(/^\+[12]$/, { useInnerText: true });
+  // The core chip yields width before more roots are hidden; the line never grows.
+  await expect.poll(() => visibleRows.count()).toBeLessThanOrEqual(visibleAtFullWidth);
+  await expect(page.locator('[data-codexhost-workspace-core="true"]')).toBeVisible();
+  expect((await header.boundingBox())?.height).toBe(headerBox?.height);
+  await more.hover();
+  await expect(page.locator(".codexhost-workspace-more-list")).toBeVisible();
+  await expect(page.locator("[data-codexhost-workspace-more-row]").first()).toBeVisible();
+  expect((await header.boundingBox())?.height).toBe(headerBox?.height);
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await setComposerWidth("480px");
+  await expect.poll(() => visibleRows.count()).toBe(visibleAtFullWidth);
+  await page.evaluate("globalThis.revertExternalFiles()");
+  await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(2);
 
   // Draft worktree picker: a chip beside Switch branch, defaulting to Local.
   const picker = page.locator("[data-codexhost-draft-worktree-picker]");

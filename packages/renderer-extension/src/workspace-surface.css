@@ -1,0 +1,321 @@
+.codexhost-workspace-surface {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+}
+.codexhost-workspace-surface .codexhost-workspace-chips {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.codexhost-workspace-surface [data-codexhost-workspace-row] {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  line-height: 15px;
+}
+.codexhost-workspace-surface [data-codexhost-workspace-row][hidden] {
+  display: none;
+}
+.codexhost-workspace-surface [data-codexhost-workspace-row] span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The core chip yields width before the touched roots do, never the reverse. */
+.codexhost-workspace-surface [data-codexhost-workspace-core="true"] {
+  flex: 0 1 auto;
+  min-width: 96px;
+  border-color: rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 6%);
+}
+.codexhost-workspace-surface [data-codexhost-workspace-core="true"]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-codex-git-added, #3fb950);
+  flex: 0 0 auto;
+}
+.codexhost-workspace-surface .codexhost-workspace-tree {
+  font-weight: 650;
+}
+.codexhost-workspace-surface .codexhost-workspace-worktree,
+.codexhost-workspace-surface .codexhost-workspace-branch {
+  color: rgb(255 255 255 / 62%);
+}
+.codexhost-workspace-surface .codexhost-workspace-row-stats {
+  display: inline-flex;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.codexhost-workspace-surface [data-codexhost-workspace-more] {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  appearance: none;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 5%);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.codexhost-workspace-surface [data-codexhost-workspace-more][hidden] {
+  display: none;
+}
+/* Dropdowns open downward: the surface hangs from the top of the transcript. */
+.codexhost-workspace-surface .codexhost-workspace-more-list {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 3;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  max-width: min(480px, calc(100vw - 24px));
+  padding: 6px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 10px;
+  background: rgb(17 17 17);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 38%);
+}
+.codexhost-workspace-surface [data-codexhost-workspace-more]:hover .codexhost-workspace-more-list,
+.codexhost-workspace-surface
+  [data-codexhost-workspace-more]:focus-within
+  .codexhost-workspace-more-list,
+.codexhost-workspace-surface
+  [data-codexhost-workspace-more][aria-expanded="true"]
+  .codexhost-workspace-more-list {
+  display: flex;
+}
+.codexhost-workspace-surface [data-codexhost-workspace-more-row] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 15px;
+}
+.codexhost-workspace-surface .codexhost-workspace-stats {
+  position: relative;
+  display: inline-flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+.codexhost-workspace-surface .codexhost-workspace-stats:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.codexhost-workspace-surface .codexhost-workspace-stats:focus-visible {
+  outline: 2px solid #339cff;
+  outline-offset: 2px;
+}
+.codexhost-workspace-surface .codexhost-workspace-added,
+[data-codexhost-workspace-preview] .codexhost-workspace-added {
+  color: var(--color-codex-git-added, #3fb950);
+}
+.codexhost-workspace-surface .codexhost-workspace-deleted,
+[data-codexhost-workspace-preview] .codexhost-workspace-deleted {
+  color: var(--color-codex-git-deleted, #f85149);
+}
+.codexhost-workspace-surface [data-codexhost-workspace-files] {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: auto;
+  font-size: 11px;
+  line-height: 16px;
+}
+.codexhost-workspace-surface .codexhost-workspace-files-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgb(255 255 255 / 68%);
+  cursor: pointer;
+  padding: 3px 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.codexhost-workspace-surface .codexhost-workspace-files-count {
+  color: rgb(255 255 255 / 76%);
+}
+.codexhost-workspace-surface .codexhost-workspace-summary-stats {
+  display: inline-flex;
+  gap: 5px;
+}
+.codexhost-workspace-surface .codexhost-workspace-files-chevron {
+  color: rgb(255 255 255 / 48%);
+  font-size: 10px;
+}
+.codexhost-workspace-surface .codexhost-workspace-files-toggle:hover {
+  background: rgb(255 255 255 / 7%);
+  color: inherit;
+}
+.codexhost-workspace-surface .codexhost-workspace-files-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  left: auto;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(300px, 42vh);
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 10px;
+  background: rgb(17 17 17);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 38%);
+}
+.codexhost-workspace-surface
+  [data-codexhost-workspace-files="collapsed"]
+  .codexhost-workspace-files-list {
+  display: none;
+}
+.codexhost-workspace-surface .codexhost-workspace-files-group {
+  padding: 4px 4px 2px;
+  color: rgb(255 255 255 / 55%);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.codexhost-workspace-surface [data-codexhost-workspace-file] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  font: inherit;
+  text-align: left;
+}
+.codexhost-workspace-surface [data-codexhost-workspace-file]:hover,
+.codexhost-workspace-surface [data-codexhost-workspace-file][data-previewing="true"] {
+  background: rgb(255 255 255 / 7%);
+}
+.codexhost-workspace-surface [data-codexhost-workspace-file]:active {
+  background: rgb(255 255 255 / 12%);
+}
+.codexhost-workspace-surface [data-codexhost-workspace-file] code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.codexhost-workspace-surface .codexhost-workspace-turn-tag {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1px solid rgb(51 156 255 / 45%);
+  color: rgb(51 156 255 / 90%);
+  font-size: 10px;
+  line-height: 14px;
+}
+[data-codexhost-workspace-preview] {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 60vw);
+  max-height: min(420px, 50vh);
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid rgba(127, 127, 127, 0.28);
+  border-radius: 10px;
+  background: rgb(20 20 20);
+  color: inherit;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  pointer-events: auto;
+}
+[data-codexhost-workspace-preview][hidden] {
+  display: none;
+}
+[data-codexhost-workspace-preview] .codexhost-workspace-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+}
+[data-codexhost-workspace-preview] .codexhost-workspace-preview-head code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+[data-codexhost-workspace-preview] .codexhost-workspace-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  white-space: pre;
+}
+[data-codexhost-workspace-preview] .codexhost-workspace-preview-add {
+  color: var(--color-codex-git-added, #3fb950);
+}
+[data-codexhost-workspace-preview] .codexhost-workspace-preview-del {
+  color: var(--color-codex-git-deleted, #f85149);
+}
+[data-codexhost-workspace-preview] .codexhost-workspace-preview-meta {
+  opacity: 0.62;
+}

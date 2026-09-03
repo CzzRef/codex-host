@@ -147,3 +147,16 @@
   line-height: 16px;
   pointer-events: none;
 }
+/* Inside the header, dropdowns hang from the header itself, clear of its bottom edge. */
+.codexhost-turn-header .codexhost-workspace-surface [data-codexhost-workspace-files],
+.codexhost-turn-header .codexhost-workspace-surface [data-codexhost-workspace-more] {
+  position: static;
+}
+.codexhost-turn-header .codexhost-workspace-surface .codexhost-workspace-files-list {
+  right: 8px;
+  top: calc(100% + 6px);
+}
+.codexhost-turn-header .codexhost-workspace-surface .codexhost-workspace-more-list {
+  left: 8px;
+  top: calc(100% + 6px);
+}

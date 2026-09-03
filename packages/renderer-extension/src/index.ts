@@ -174,19 +174,24 @@ export {
   TURN_HEADER_ATTRIBUTE,
   TURN_HEADER_INDEX_ATTRIBUTE,
   TURN_HEADER_PROMPT_ATTRIBUTE,
+  TURN_HEADER_WORKSPACE_ATTRIBUTE,
 } from "./renderer-turn-header.js";
 export type { RendererTurnHeader } from "./renderer-turn-header.js";
 export { threadIdForComposer } from "./renderer-thread-composer.js";
 export {
-  installRendererWorkspaceBar,
   isNativeWorkspaceDiffControl,
   nativeWorkspaceDiffControl,
   openNativeWorkspaceDiff,
-  WORKSPACE_BAR_ATTRIBUTE,
-  WORKSPACE_BAR_SELECTOR,
+} from "./renderer-native-diff-controls.js";
+export {
+  WORKSPACE_FILES_ATTRIBUTE,
+  WORKSPACE_PREVIEW_ATTRIBUTE,
   WORKSPACE_ROW_ATTRIBUTE,
-} from "./renderer-workspace-bar.js";
-export type { RendererWorkspaceBar } from "./renderer-workspace-bar.js";
+  fitWorkspaceChips,
+  previewOrigin,
+} from "./renderer-workspace-surface.js";
+export { createWorkspaceFilesState } from "./renderer-workspace-files-state.js";
+export type { WorkspaceFilesState } from "./renderer-workspace-files-state.js";
 export {
   BRANCH_WORKTREE_PREFERENCE_KEY,
   DRAFT_WORKTREE_MENU_ATTRIBUTE,
