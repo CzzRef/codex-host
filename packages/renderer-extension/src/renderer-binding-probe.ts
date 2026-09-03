@@ -73,7 +73,7 @@ import {
 } from "./renderer-model-visibility-preference.js";
 import { installRendererSidebarAgentIcons } from "./renderer-sidebar-agent-icons.js";
 import { installRendererSettingsLifecycle } from "./renderer-settings-lifecycle.js";
-import { installRendererBranchWorktreeToggle } from "./renderer-branch-worktree-toggle.js";
+import { installRendererDraftWorktreePicker } from "./renderer-draft-worktree-picker.js";
 import { installRendererComposerPromptReuse } from "./renderer-composer-prompt-reuse.js";
 import { installRendererTurnActions } from "./renderer-turn-actions.js";
 import { installRendererWorkspaceBar } from "./renderer-workspace-bar.js";
@@ -585,7 +585,9 @@ export function installRendererBindingProbe(
   const workspaceBar = installRendererWorkspaceBar({
     getClient: () => modelControl,
   });
-  const branchWorktreeToggle = installRendererBranchWorktreeToggle();
+  const branchWorktreeToggle = installRendererDraftWorktreePicker({
+    getClient: () => modelControl,
+  });
   const promptReuse = installRendererComposerPromptReuse();
   const turnActions = installRendererTurnActions({
     getClient: () => modelControl,

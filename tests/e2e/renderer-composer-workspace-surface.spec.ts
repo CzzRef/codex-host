@@ -70,6 +70,7 @@ const { outputFiles } = await build({
         memoizedProps: {
           composerMode: "local",
           conversationId: null,
+          cwd: "/workspace/source",
           setComposerMode(mode) {
             modeOwner.memoizedProps.composerMode = mode;
             runLocation.textContent = mode === "worktree" ? "Worktree" : "Local";
@@ -116,6 +117,40 @@ const { outputFiles } = await build({
       const unavailable = async () => {
         throw new Error("unused fixed control");
       };
+      // Stand-in for the desktop-control draft policy: records the worktree cwd
+      // the Renderer picks so the test can assert the Host-side rewrite input.
+      globalThis.__workspaceSelections = [];
+      window.__codexhostDraftPrewarmPolicyV1 = {
+        state: "ready",
+        hostId: "local",
+        select: () => false,
+        selectWorkspace(selection) {
+          globalThis.__workspaceSelections.push(selection ? selection.cwd : null);
+          return true;
+        },
+        draftCwd: () => null,
+        clear: async () => undefined,
+      };
+      const worktrees = [
+        {
+          root: "/workspace/source",
+          name: "source",
+          branch: "main",
+          headSha: "abc1234",
+          lane: null,
+          dirty: false,
+          isPrimary: true,
+        },
+        {
+          root: "/workspace/source-worktrees/codex/260901-existing",
+          name: "260901-existing",
+          branch: "codex/260901-existing",
+          headSha: "1111111",
+          lane: "codex",
+          dirty: true,
+          isPrimary: false,
+        },
+      ];
       let fileListener = null;
       const binding = installRendererBindingProbe({
         enabledAgents: ["codex", "pi"],
@@ -191,6 +226,25 @@ const { outputFiles } = await build({
               fileListener = null;
             };
           },
+          listWorkspaceWorktrees: async (params) => {
+            globalThis.__worktreeListRoots = [...(globalThis.__worktreeListRoots ?? []), params.projectRoot];
+            return { primaryRoot: "/workspace/source", worktrees, suggestedName: "260903-" };
+          },
+          createWorkspaceWorktree: async (params) => {
+            globalThis.__worktreeCreateParams = params;
+            if (params.name === "260903-taken") throw new Error("Branch already exists: codex/260903-taken");
+            const created = {
+              root: "/workspace/source-worktrees/codex/" + params.name,
+              name: params.name,
+              branch: "codex/" + params.name,
+              headSha: "2222222",
+              lane: "codex",
+              dirty: false,
+              isPrimary: false,
+            };
+            worktrees.push(created);
+            return { primaryRoot: "/workspace/source", worktree: created };
+          },
           listThreadOwnership: unavailable,
           inspectThreadCommands: unavailable,
           executeThreadCommand: unavailable,
@@ -248,7 +302,7 @@ const { outputFiles } = await build({
 const browserBundle = outputFiles[0]?.text;
 if (!browserBundle) throw new Error("Composer workspace surface E2E bundle was not generated");
 
-test("Composer shows a compact changed-files workspace surface, branch worktree toggle, and Tab prompt reuse", async ({
+test("Composer shows a compact changed-files workspace surface, draft worktree picker, and Tab prompt reuse", async ({
   page,
 }) => {
   await page.route("https://codexhost.test/**", async (route) => {
@@ -416,39 +470,85 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
     node.textContent = "";
   });
 
-  const worktreeToggle = page.locator("[data-codexhost-branch-worktree-toggle] input");
+  // Draft worktree picker: a chip beside Switch branch, defaulting to Local.
+  const picker = page.locator("[data-codexhost-draft-worktree-picker]");
   const runLocation = page.locator('[data-composer-navigation-target="run-location"]');
-  const storedPreference = () =>
-    page.evaluate("localStorage.getItem('codexhost.switch-branch-worktree.v2')");
-  // Unset preference: the draft stays on Desktop's Local mode and nothing is written.
-  await expect(worktreeToggle).not.toBeChecked();
-  await expect(worktreeToggle).toBeEnabled();
+  const menu = page.locator("[data-codexhost-draft-worktree-menu]");
+  const option = (label: string) =>
+    menu.locator(`[data-codexhost-draft-worktree-option="${label}"]`);
+  const selections = () => page.evaluate("globalThis.__workspaceSelections");
+  const storedPick = () => page.evaluate("localStorage.getItem('codexhost.draft-worktree.v1')");
+  await expect(picker).toHaveCount(1);
+  await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "local");
+  await expect(picker).toContainText("Local");
   await expect(runLocation).toHaveText("Local");
-  expect(await storedPreference()).toBeNull();
-  await worktreeToggle.check();
+  expect(await storedPick()).toBeNull();
+  // The draft project root came from the React owner; the list was fetched for it.
+  await expect.poll(() => page.evaluate("globalThis.__worktreeListRoots")).toEqual([
+    "/workspace/source",
+  ]);
+  await picker.click();
+  await expect(menu).toBeVisible();
+  await expect(option("Local")).toHaveAttribute("aria-checked", "true");
+  await expect(option("260901-existing")).toContainText("codex/260901-existing");
+  await expect(option("260901-existing")).toContainText("uncommitted changes");
+  // The primary checkout is not listed twice: "Local" already means it.
+  await expect(option("source")).toHaveCount(0);
+  // Picking an existing worktree keeps Desktop on Local and routes cwd through the policy.
+  await option("260901-existing").click();
+  await expect(menu).toHaveCount(0);
+  await expect(picker).toContainText("260901-existing");
+  await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "worktree");
+  await expect(runLocation).toHaveText("Local");
+  expect(await selections()).toEqual(["/workspace/source-worktrees/codex/260901-existing"]);
+  expect(JSON.parse((await storedPick()) as string)).toMatchObject({
+    kind: "worktree",
+    root: "/workspace/source-worktrees/codex/260901-existing",
+  });
+  // Desktop's own anonymous worktree mode is still reachable and clears the Host pick.
+  await picker.click();
+  await option("Temporary worktree").click();
   await expect(runLocation).toHaveText("Worktree");
-  await expect.poll(storedPreference).toBe("1");
-  await worktreeToggle.uncheck();
+  await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "desktop");
+  expect(await selections()).toEqual([
+    "/workspace/source-worktrees/codex/260901-existing",
+    null,
+  ]);
+  // Creating: bad names are rejected inline, Host errors are shown, success selects it.
+  await picker.click();
+  await option("create").click();
+  const nameInput = menu.locator("input");
+  await expect(nameInput).toHaveValue("260903-");
+  await nameInput.fill("Bad Name");
+  await nameInput.press("Enter");
+  await expect(menu.locator(".codexhost-draft-worktree-error")).toContainText(/yyMMdd/);
+  await nameInput.fill("260903-taken");
+  await nameInput.press("Enter");
+  await expect(menu.locator(".codexhost-draft-worktree-error")).toContainText(
+    "Branch already exists",
+  );
+  await nameInput.fill("260903-picker");
+  await nameInput.press("Enter");
+  await expect(menu).toHaveCount(0);
+  await expect(picker).toContainText("260903-picker");
   await expect(runLocation).toHaveText("Local");
-  await expect.poll(storedPreference).toBe("0");
-  // A Desktop-side switch (native run-location menu) shows on the checkbox but is not persisted.
+  expect(await page.evaluate("globalThis.__worktreeCreateParams")).toEqual({
+    projectRoot: "/workspace/source",
+    name: "260903-picker",
+    lane: "codex",
+  });
+  expect(await selections()).toEqual([
+    "/workspace/source-worktrees/codex/260901-existing",
+    null,
+    "/workspace/source-worktrees/codex/260903-picker",
+  ]);
+  // Submitting the draft removes the chip and releases the Host pick; the next
+  // draft starts on Local again and only highlights the remembered worktree.
   type FixtureFiber = {
     return: {
       memoizedProps: { conversationId: string | null; setComposerMode(value: string): void };
     };
   };
-  const fixtureFiber = (node: Element): FixtureFiber | undefined =>
-    (node as unknown as Record<string, FixtureFiber | undefined>)["__reactFiber$fixture"];
-  await runLocation.evaluate((node) => {
-    const fiber = (node as unknown as Record<string, FixtureFiber | undefined>)[
-      "__reactFiber$fixture"
-    ];
-    fiber?.return.memoizedProps.setComposerMode("worktree");
-  });
-  await expect(runLocation).toHaveText("Worktree");
-  await expect(worktreeToggle).toBeChecked();
-  expect(await storedPreference()).toBe("0");
-  // The next new-chat draft falls back to the persisted preference, not the last Desktop mode.
   const setDraftConversation = (conversationId: string | null) =>
     runLocation.evaluate((node, nextId) => {
       const fiber = (node as unknown as Record<string, FixtureFiber | undefined>)[
@@ -457,13 +557,22 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
       if (fiber) fiber.return.memoizedProps.conversationId = nextId;
       node.setAttribute("title", `draft:${String(nextId)}`);
     }, conversationId);
-  void fixtureFiber;
   await setDraftConversation("thread-submitted");
-  await expect(page.locator("[data-codexhost-branch-worktree-toggle]")).toHaveCount(0);
+  await expect(picker).toHaveCount(0);
+  expect(await selections()).toEqual([
+    "/workspace/source-worktrees/codex/260901-existing",
+    null,
+    "/workspace/source-worktrees/codex/260903-picker",
+    null,
+  ]);
   await setDraftConversation(null);
+  await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "local");
   await expect(runLocation).toHaveText("Local");
-  await expect(worktreeToggle).not.toBeChecked();
-  expect(await storedPreference()).toBe("0");
+  await picker.click();
+  await expect(option("260903-picker")).toContainText("last used");
+  await expect(option("260903-picker")).toHaveAttribute("aria-checked", "false");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
 
   const editor = page.locator('[data-codex-composer][contenteditable="true"]');
   await composer.evaluate((node) => {

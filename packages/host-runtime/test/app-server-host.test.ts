@@ -2002,6 +2002,25 @@ describe("AppServerHost HarnessAdapter projection", () => {
       fixture.collector.waitFor((message) => requestId(message, 43)),
     ).resolves.toMatchObject({ error: { code: -32602 } });
 
+    // Host-owned worktree routes never reach the official app-server; bad
+    // params and non-Git roots fail with INVALID_ARGUMENT.
+    writeRequest(fixture.desktopInput, {
+      id: 44,
+      method: "codexhost/workspace/worktree/list",
+      params: { projectRoot: "" },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 44)),
+    ).resolves.toMatchObject({ error: { code: -32602 } });
+    writeRequest(fixture.desktopInput, {
+      id: 45,
+      method: "codexhost/workspace/worktree/create",
+      params: { projectRoot: "relative/path", name: "260903-picker" },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 45)),
+    ).resolves.toMatchObject({ error: { code: -32602, message: /absolute path/ } });
+
     expect(officialWrite).toHaveBeenCalledTimes(1);
     expect(JSON.parse(officialWrite.mock.calls[0]?.[0]?.toString() ?? "{}")).toMatchObject({
       method: "account/rateLimits/read",

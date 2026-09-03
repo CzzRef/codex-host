@@ -72,6 +72,12 @@ export function installDraftPrewarmPolicyBridge(
   const originalOnNotification = manager.onNotification;
   const originalDispatchAppServerResponse = manager.dispatchAppServerResponse;
   let selectedModel: string | null = null;
+  // Host-managed worktree picked for the current new-chat draft; the Renderer
+  // picker owns its lifetime and clears it when the draft goes away.
+  let selectedWorkspaceCwd: string | null = null;
+  // Last cwd Desktop itself put on a `thread/start` (prewarm included): the
+  // draft's project root, which the Renderer cannot read from Desktop state.
+  let observedDraftCwd: string | null = null;
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
   const isRemoteControlHost = hostId.startsWith("remote-control:");
@@ -499,11 +505,32 @@ export function installDraftPrewarmPolicyBridge(
       (method.startsWith("thread/") || method.startsWith("turn/") || method.startsWith("review/"))
     );
   };
-  const routeThreadStart = (parameters: unknown): unknown => {
-    if (selectedModel === null || !isRecord(parameters) || parameters.ephemeral === true) {
-      return parameters;
+  const noteDraftCwd = (parameters: Record<string, unknown>): void => {
+    const cwd = typeof parameters.cwd === "string" && parameters.cwd.length > 0 ? parameters.cwd : null;
+    if (cwd === null || cwd === observedDraftCwd || cwd === selectedWorkspaceCwd) return;
+    observedDraftCwd = cwd;
+    if (typeof target.dispatchEvent === "function" && typeof CustomEvent === "function") {
+      target.dispatchEvent(new CustomEvent("codexhost:draft-workspace-changed"));
     }
-    return { ...parameters, model: selectedModel };
+  };
+  const routeThreadStart = (parameters: unknown): unknown => {
+    if (!isRecord(parameters) || parameters.ephemeral === true) return parameters;
+    noteDraftCwd(parameters);
+    let routed = parameters;
+    if (selectedWorkspaceCwd !== null && parameters.cwd !== selectedWorkspaceCwd) {
+      const originalCwd = parameters.cwd;
+      routed = { ...routed, cwd: selectedWorkspaceCwd };
+      if (Array.isArray(parameters.runtimeWorkspaceRoots)) {
+        routed = {
+          ...routed,
+          runtimeWorkspaceRoots: parameters.runtimeWorkspaceRoots.map((root) =>
+            root === originalCwd ? selectedWorkspaceCwd : root,
+          ),
+        };
+      }
+    }
+    if (selectedModel !== null) routed = { ...routed, model: selectedModel };
+    return routed;
   };
   const routedSend = (method: string, parameters: unknown, options?: unknown): unknown => {
     const routedParameters = method === "thread/start" ? routeThreadStart(parameters) : parameters;
@@ -603,6 +630,20 @@ export function installDraftPrewarmPolicyBridge(
       selectedModel = model;
       return true;
     },
+    selectWorkspace(selection: { cwd: string } | null): boolean {
+      const cwd = selection === null ? null : selection.cwd;
+      if (cwd !== null && (typeof cwd !== "string" || cwd.length === 0)) {
+        throw new Error("Draft workspace selection requires a cwd");
+      }
+      if (selectedWorkspaceCwd === cwd) return false;
+      selectedWorkspaceCwd = cwd;
+      // A Thread prewarmed for the old cwd must not serve the first Turn.
+      prewarmedThreadManager.discardAllPrewarmedThreads();
+      return true;
+    },
+    draftCwd(): string | null {
+      return observedDraftCwd;
+    },
     clear(): Promise<void> {
       prewarmedThreadManager.discardAllPrewarmedThreads();
       return Promise.resolve();
@@ -637,6 +678,8 @@ export function installDraftPrewarmPolicyBridge(
       knownOfficialThreadIds.clear();
       threadOwnershipResolutions.clear();
       selectedModel = null;
+      selectedWorkspaceCwd = null;
+      observedDraftCwd = null;
     },
   });
   Object.defineProperty(target, "__codexhostDraftPrewarmPolicyV1", {

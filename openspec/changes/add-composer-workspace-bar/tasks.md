@@ -99,3 +99,12 @@
 - [x] 11.5 Key conversation files by File Change Item so replaced or empty change sets retire files
 - [x] 11.6 Larger interactive hover preview beside the list with grace hide and `Escape`
 - [x] 11.7 Unit (contracts, Host, Renderer grouping/preview origin/item sets) and Composer E2E coverage; typecheck, lint, boundaries
+
+## 12. Draft worktree picker (worktree surface overhaul slice 3)
+
+- [x] 12.1 Contract `codexhost/workspace/worktree/list|create` in shared-contracts (`workspace-worktree.ts`): name pattern, lanes, entry shape, `suggestedName`
+- [x] 12.2 Host `workspace-worktree.ts`: resolve primary root from the common Git dir, `git worktree list --porcelain`, `git worktree add -b {lane}/{name} {parent}/{Repo}-worktrees/{lane}/{name}`; never delete; both methods routed in `AppServerHost` off the official app-server
+- [x] 12.3 desktop-control draft policy: `selectWorkspace({ cwd } | null)` rewrites `cwd`/matching `runtimeWorkspaceRoots` on non-ephemeral `thread/start` (official Codex and external alike) at the same point as the Model carrier; discards prewarmed Threads on change; `draftCwd()` exposes the cwd Desktop itself sent so the Renderer learns the project root
+- [x] 12.4 Renderer `renderer-draft-worktree-picker.ts` replaces the checkbox: `Worktree ▾` chip, menu (Local / Temporary worktree / Host-managed list / New…), inline validation and Host errors, preference `codexhost.draft-worktree.v1` for last-used marking only, Host pick released when the draft ends
+- [x] 12.5 Unit coverage (contracts, Host worktree list/create/refusals, desktop-control rewrite, picker helpers) and Composer E2E (list, pick, temporary, create errors/success, draft end and next draft); typecheck, lint, boundaries
+- [ ] 12.6 Live Desktop check: confirm which React owner prop (if any) exposes the draft project root; otherwise the policy-observed prewarm cwd is the source

@@ -52,3 +52,22 @@ Host SHALL watch Git identity files for Thread cwds that have been inspected and
 - **THEN** Host SHALL resolve each path's nearest existing ancestor directory to its Git toplevel and include a toplevel not already listed as an `external` row
 - **AND** a relative path, a path inside an already listed root, or a path with no Git toplevel SHALL add no row
 - **AND** Host SHALL NOT create, remove, or check out anything while resolving
+
+### Requirement: Host lists and creates project worktrees on request
+
+Host SHALL serve `codexhost/workspace/worktree/list { projectRoot }` and `codexhost/workspace/worktree/create { projectRoot, name, lane?, baseRef? }` without involving the official app-server or any Thread. `projectRoot` MAY be the primary checkout or any linked worktree of the same family; Host SHALL resolve the family's primary checkout from the common Git directory. `list` SHALL return `{ primaryRoot, worktrees[], suggestedName }` where each entry carries `root, name, branch, headSha, lane, dirty, isPrimary`, the primary checkout sorts first, and `suggestedName` is `yyMMdd-` in GMT+8. `create` SHALL add exactly one linked worktree at `{parent}/{Repo}-worktrees/{lane}/{name}` on the new branch `{lane}/{name}` (lane default `codex`, base `HEAD` unless `baseRef`), and Host SHALL never remove, prune, or check out an existing worktree or branch through these methods.
+
+#### Scenario: Listing from a linked worktree
+
+- **WHEN** `projectRoot` is a linked worktree of repository `Repo`
+- **THEN** `primaryRoot` SHALL be `Repo`'s primary checkout and the list SHALL include both the primary checkout (`isPrimary: true`, first) and every linked worktree with its branch and dirty state
+
+#### Scenario: Creating a named worktree
+
+- **WHEN** `create` is called with `name: "260903-picker"` and no lane
+- **THEN** Host SHALL run `git worktree add -b codex/260903-picker <parent>/Repo-worktrees/codex/260903-picker HEAD` and return the described entry with `lane: "codex"`, `isPrimary: false`
+
+#### Scenario: Refusing unsafe creation
+
+- **WHEN** `name` does not match `^\d{6}-[a-z0-9][a-z0-9-]{1,40}$`, the target path already exists, the branch already exists, `baseRef` is unknown, or `projectRoot` is relative or outside a Git repository
+- **THEN** Host SHALL reply with error `-32602` and SHALL leave the repository unchanged

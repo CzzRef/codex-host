@@ -108,40 +108,45 @@ The Renderer SHALL show one floating `⋯` chip at the top-right of the hovered 
 - **THEN** Rollback SHALL be disabled with a tooltip explaining only the last Turn can be rolled back
 - **AND** Edit SHALL run without a rollback confirmation and refill the Composer
 
-### Requirement: Worktree preference controls the official new-chat execution mode
+### Requirement: Draft worktree picker selects where a new Thread starts
 
-For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL route the persisted Worktree preference through Codex Desktop's owned `setComposerMode` state. The preference SHALL default to unchecked. Checked SHALL select `worktree`; unchecked SHALL select `local`. Only an explicit checkbox change SHALL persist the preference: a Composer mode observed from Desktop's own run-location control SHALL update the checkbox for the current draft and SHALL NOT be persisted. The Renderer SHALL NOT invoke Git or provision a Worktree itself.
+For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL render a `Worktree ▾` chip beside the branch control instead of a checkbox. Its menu SHALL offer `Local` (Desktop's project directory), `Temporary worktree` (Desktop's own anonymous worktree via `setComposerMode("worktree")`), every Host-managed linked worktree of the draft's project (`codexhost/workspace/worktree/list`, name · branch · dirty marker, primary checkout excluded), and `New worktree…` (name prefilled with `yyMMdd-`, created through `codexhost/workspace/worktree/create` on lane `codex`). Picking a Host-managed worktree SHALL keep Desktop's Composer mode on `local` and SHALL hand the worktree root to the desktop-control draft policy (`selectWorkspace({ cwd })`), which rewrites `cwd` (and matching `runtimeWorkspaceRoots`) on the draft's non-ephemeral `thread/start` for official Codex and external Threads alike. Every new draft SHALL start on `Local`; the last pick SHALL be persisted only to mark that entry as last used. The Renderer SHALL NOT invoke Git itself.
 
-#### Scenario: Unset preference keeps a new draft Local
+#### Scenario: New draft starts Local and lists Host-managed worktrees
 
-- **GIVEN** the preference has never been written
-- **WHEN** a verified new-chat draft reports `worktree`
-- **THEN** the Renderer SHALL set the official Composer mode to `local`
-- **AND** SHALL NOT write any preference value
+- **GIVEN** a verified new-chat draft whose project root is known (React owner `cwd`, or the policy's observed draft cwd)
+- **WHEN** the chip is opened
+- **THEN** `Local` SHALL be checked, the primary checkout SHALL NOT be listed as a separate entry
+- **AND** each linked worktree SHALL show its name, branch, and a dirty marker when it has uncommitted changes
 
-#### Scenario: Checked preference selects a new Worktree
+#### Scenario: Picking an existing worktree routes the draft cwd
 
-- **GIVEN** the current surface is a new-chat draft and the user has checked the preference
-- **WHEN** the official run-location control currently reports `local`
-- **THEN** the Renderer SHALL set the official Composer mode to `worktree`
-- **AND** Codex Desktop SHALL remain responsible for provisioning the Worktree when the draft is submitted
+- **WHEN** the user picks a listed worktree
+- **THEN** the Renderer SHALL call `selectWorkspace({ cwd: <worktree root> })`, keep Composer mode `local`, show the worktree name on the chip, and persist it as the last pick
+- **AND** the draft's next non-ephemeral `thread/start` SHALL carry that cwd
 
-#### Scenario: User opts out of a new Worktree
+#### Scenario: Creating a worktree
 
-- **WHEN** the user unchecks the preference on a verified new-chat draft
-- **THEN** the Renderer SHALL set the official Composer mode to `local`
-- **AND** SHALL persist the unchecked preference
+- **WHEN** the user submits a name that does not match `yyMMdd-<lowercase core>`
+- **THEN** the menu SHALL reject it inline without calling the Host
+- **WHEN** the Host rejects the name (path or branch exists)
+- **THEN** the Host message SHALL be shown inline and nothing SHALL be selected
+- **WHEN** creation succeeds
+- **THEN** the new worktree SHALL be selected exactly as an existing one
 
-#### Scenario: Desktop-side mode change is not persisted
+#### Scenario: Desktop's own temporary worktree
 
-- **GIVEN** a verified new-chat draft whose persisted preference is unchecked
-- **WHEN** Desktop's own run-location control switches that draft to `worktree`
-- **THEN** the checkbox SHALL show checked for that draft
-- **AND** the persisted preference SHALL remain unchecked
-- **AND** the next verified new-chat draft SHALL start on `local`
+- **WHEN** the user picks `Temporary worktree`, or Desktop's own run-location control switches the draft to `worktree`
+- **THEN** the Renderer SHALL clear any Host-managed pick (`selectWorkspace(null)`), set or mirror Composer mode `worktree`, and label the chip accordingly
+
+#### Scenario: Draft ends
+
+- **WHEN** the draft is submitted or the run-location ownership disappears
+- **THEN** the chip SHALL be removed and `selectWorkspace(null)` SHALL be called so the next draft starts Local
+- **AND** the next draft's menu SHALL only mark the remembered worktree as last used, not select it
 
 #### Scenario: Mode ownership is unsupported or belongs to an existing Thread
 
 - **WHEN** the run-location React ownership chain is missing, ambiguous, unsupported, or carries a non-null conversation id
-- **THEN** the Renderer SHALL render no Worktree checkbox
+- **THEN** the Renderer SHALL render no picker
 - **AND** SHALL NOT change Composer mode, Thread cwd, branch state, or Git Worktrees

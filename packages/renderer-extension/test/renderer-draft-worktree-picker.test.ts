@@ -2,18 +2,24 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   BRANCH_WORKTREE_PREFERENCE_KEY,
+  DRAFT_WORKTREE_PREFERENCE_KEY,
+  draftWorktreeChipLabel,
   draftWorktreeModeBindingFromButton,
   findDraftWorktreeModeBinding,
   isSwitchBranchButton,
-  readBranchWorktreePreference,
-  writeBranchWorktreePreference,
-} from "../src/renderer-branch-worktree-toggle.js";
+  pickerCopy,
+  projectRootFromProps,
+  readDraftWorktreePreference,
+  selectionsEqual,
+  writeDraftWorktreePreference,
+} from "../src/renderer-draft-worktree-picker.js";
 
 function runLocationButton(options: {
   conversationId?: string | null;
   duplicateOwner?: boolean;
   mode?: "cloud" | "local" | "worktree";
   target?: string;
+  ownerProps?: Record<string, unknown>;
 }) {
   const setComposerMode = vi.fn();
   const target = options.target ?? "run-location";
@@ -22,6 +28,7 @@ function runLocationButton(options: {
       composerMode: options.mode ?? "local",
       setComposerMode,
       conversationId: options.conversationId ?? null,
+      ...options.ownerProps,
     },
     return: null,
   };
@@ -51,34 +58,79 @@ function runLocationButton(options: {
   return { button, setComposerMode };
 }
 
-describe("official Switch-branch worktree preference", () => {
-  it("defaults to Local and remembers only an explicit opt-in", () => {
-    const storage = new Map<string, string>();
-    const adapter = {
+function storageAdapter() {
+  const storage = new Map<string, string>();
+  return {
+    storage,
+    adapter: {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => {
         storage.set(key, value);
       },
-    };
-    expect(readBranchWorktreePreference(null)).toBe(false);
-    expect(readBranchWorktreePreference(adapter)).toBe(false);
-    storage.set("codexhost.switch-branch-worktree", "1");
-    expect(readBranchWorktreePreference(adapter)).toBe(false);
-    writeBranchWorktreePreference(adapter, true);
-    expect(readBranchWorktreePreference(adapter)).toBe(true);
-    writeBranchWorktreePreference(adapter, false);
-    expect(readBranchWorktreePreference(adapter)).toBe(false);
-    storage.set(BRANCH_WORKTREE_PREFERENCE_KEY, "yes");
-    expect(readBranchWorktreePreference(adapter)).toBe(false);
+    },
+  };
+}
+
+describe("draft worktree picker preference", () => {
+  it("remembers only the last pick and reads the retired checkbox opt-in once", () => {
+    const { storage, adapter } = storageAdapter();
+    expect(readDraftWorktreePreference(null)).toBeNull();
+    expect(readDraftWorktreePreference(adapter)).toBeNull();
+    storage.set(BRANCH_WORKTREE_PREFERENCE_KEY, "1");
+    expect(readDraftWorktreePreference(adapter)).toEqual({ kind: "desktop" });
+    writeDraftWorktreePreference(adapter, {
+      kind: "worktree",
+      root: "/repo-worktrees/codex/260903-picker",
+      name: "260903-picker",
+    });
+    expect(readDraftWorktreePreference(adapter)).toEqual({
+      kind: "worktree",
+      root: "/repo-worktrees/codex/260903-picker",
+      name: "260903-picker",
+    });
+    storage.set(DRAFT_WORKTREE_PREFERENCE_KEY, '{"kind":"worktree","root":"relative"}');
+    expect(readDraftWorktreePreference(adapter)).toBeNull();
+    storage.set(DRAFT_WORKTREE_PREFERENCE_KEY, "not json");
+    expect(readDraftWorktreePreference(adapter)).toBeNull();
     expect(
-      readBranchWorktreePreference({
+      readDraftWorktreePreference({
         getItem: () => {
           throw new Error("denied");
         },
       }),
-    ).toBe(false);
+    ).toBeNull();
   });
 
+  it("compares selections by kind and worktree root", () => {
+    expect(selectionsEqual({ kind: "local" }, { kind: "local" })).toBe(true);
+    expect(selectionsEqual({ kind: "local" }, { kind: "desktop" })).toBe(false);
+    expect(
+      selectionsEqual(
+        { kind: "worktree", root: "/a", name: "a" },
+        { kind: "worktree", root: "/a", name: "renamed" },
+      ),
+    ).toBe(true);
+    expect(
+      selectionsEqual(
+        { kind: "worktree", root: "/a", name: "a" },
+        { kind: "worktree", root: "/b", name: "a" },
+      ),
+    ).toBe(false);
+    expect(selectionsEqual(null, { kind: "local" })).toBe(false);
+  });
+
+  it("labels the chip with the pick, not the Desktop mode", () => {
+    const zh = pickerCopy(true);
+    const en = pickerCopy(false);
+    expect(draftWorktreeChipLabel({ kind: "local" }, zh)).toBe("本地");
+    expect(draftWorktreeChipLabel({ kind: "desktop" }, en)).toBe("Temporary worktree");
+    expect(
+      draftWorktreeChipLabel({ kind: "worktree", root: "/x/260903-picker", name: "260903-picker" }, zh),
+    ).toBe("260903-picker");
+  });
+});
+
+describe("draft run-location binding", () => {
   it("recognizes only semantic Switch branch labels, not descendant text", () => {
     const button = {
       getAttribute: (name: string) => (name === "aria-label" ? "Switch branch main" : null),
@@ -97,6 +149,7 @@ describe("official Switch-branch worktree preference", () => {
     const { button, setComposerMode } = runLocationButton({ mode: "local" });
     const binding = draftWorktreeModeBindingFromButton(button);
     expect(binding?.mode).toBe("local");
+    expect(binding?.projectRoot).toBeNull();
     binding?.setMode("worktree");
     expect(setComposerMode).toHaveBeenCalledWith("worktree");
     expect(
@@ -104,6 +157,13 @@ describe("official Switch-branch worktree preference", () => {
         querySelectorAll: () => [button],
       } as unknown as ParentNode)?.mode,
     ).toBe("local");
+  });
+
+  it("reads the draft project root from the same React owner when Desktop exposes it", () => {
+    const { button } = runLocationButton({ ownerProps: { cwd: "/Users/me/repo" } });
+    expect(draftWorktreeModeBindingFromButton(button)?.projectRoot).toBe("/Users/me/repo");
+    expect(projectRootFromProps({ project: { path: "C:\\work\\repo" } })).toBe("C:\\work\\repo");
+    expect(projectRootFromProps({ cwd: "relative/path", projectRoot: 42 })).toBeNull();
   });
 
   it("fails closed for an existing Thread, unsupported mode, or ambiguous owner", () => {

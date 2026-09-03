@@ -170,13 +170,22 @@ export {
 export type { RendererWorkspaceBar } from "./renderer-workspace-bar.js";
 export {
   BRANCH_WORKTREE_PREFERENCE_KEY,
-  BRANCH_WORKTREE_TOGGLE_ATTRIBUTE,
+  DRAFT_WORKTREE_MENU_ATTRIBUTE,
+  DRAFT_WORKTREE_OPTION_ATTRIBUTE,
+  DRAFT_WORKTREE_PICKER_ATTRIBUTE,
+  DRAFT_WORKTREE_PREFERENCE_KEY,
+  draftWorktreeChipLabel,
   draftWorktreeModeBindingFromButton,
   findDraftWorktreeModeBinding,
-  installRendererBranchWorktreeToggle,
+  installRendererDraftWorktreePicker,
   isSwitchBranchButton,
-  readBranchWorktreePreference,
-} from "./renderer-branch-worktree-toggle.js";
+  projectRootFromProps,
+  readDraftWorktreePreference,
+} from "./renderer-draft-worktree-picker.js";
+export type {
+  DraftWorktreeSelection,
+  RendererDraftWorktreePicker,
+} from "./renderer-draft-worktree-picker.js";
 export {
   installRendererComposerPromptReuse,
   PROMPT_GHOST_ATTRIBUTE,

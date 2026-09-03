@@ -114,6 +114,30 @@ export type {
   ThreadWorkspaceSnapshot,
 } from "./thread-workspace.js";
 export {
+  WORKSPACE_WORKTREE_CREATE_METHOD,
+  WORKSPACE_WORKTREE_LIST_METHOD,
+  WORKSPACE_WORKTREE_MAX_LENGTH,
+  WORKSPACE_WORKTREE_NAME_PATTERN,
+  suggestedWorkspaceWorktreeName,
+  workspaceWorktreeBranch,
+  workspaceWorktreeCreateParamsSchema,
+  workspaceWorktreeCreateResultSchema,
+  workspaceWorktreeEntrySchema,
+  workspaceWorktreeLaneFromBranch,
+  workspaceWorktreeLaneSchema,
+  workspaceWorktreeListParamsSchema,
+  workspaceWorktreeListResultSchema,
+  workspaceWorktreeNameSchema,
+} from "./workspace-worktree.js";
+export type {
+  WorkspaceWorktreeCreateParams,
+  WorkspaceWorktreeCreateResult,
+  WorkspaceWorktreeEntry,
+  WorkspaceWorktreeLane,
+  WorkspaceWorktreeListParams,
+  WorkspaceWorktreeListResult,
+} from "./workspace-worktree.js";
+export {
   harnessIdSchema,
   hostInteractionIdSchema,
   hostItemIdSchema,
