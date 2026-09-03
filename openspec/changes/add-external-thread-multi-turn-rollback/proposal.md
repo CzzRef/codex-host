@@ -21,4 +21,4 @@ The injected Turn actions light up "Rollback" on any earlier Turn, but the Host 
 - `packages/shared-contracts`: optional `rollback` on external Thread inspection.
 - `packages/mapping-store`: `replaceReadySessionAfterRollback` (any trailing extent); `historyRedo` may exceed the current prefix by more than one Turn.
 - `packages/host-runtime`: `externalRollbackCapabilities`; `executeCheckpointRollback` + `commitCheckpointRollback`; `thread/reverted` after paginated rollback / Redo.
-- `packages/renderer-extension`: `rollbackSupportFor`, honest disablement, Composer refill for Edit, hover `⋯` chip, rAF repositioning.
+- `packages/renderer-extension`: `rollbackSupportFor`, honest disablement, Composer refill for Edit; the actions render in the pinned Turn header (`renderer-turn-header.ts`, `renderer-turn-action-controller.ts`) for the viewport-derived current Turn.

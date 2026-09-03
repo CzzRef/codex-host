@@ -108,3 +108,12 @@
 - [x] 12.4 Renderer `renderer-draft-worktree-picker.ts` replaces the checkbox: `Worktree ▾` chip, menu (Local / Temporary worktree / Host-managed list / New…), inline validation and Host errors, preference `codexhost.draft-worktree.v1` for last-used marking only, Host pick released when the draft ends
 - [x] 12.5 Unit coverage (contracts, Host worktree list/create/refusals, desktop-control rewrite, picker helpers) and Composer E2E (list, pick, temporary, create errors/success, draft end and next draft); typecheck, lint, boundaries
 - [ ] 12.6 Live Desktop check: confirm which React owner prop (if any) exposes the draft project root; otherwise the policy-observed prewarm cwd is the source
+
+## 13. Pinned Turn header (transcript turn header)
+
+- [x] 13.1 Pure helpers + unit tests: current-Turn resolution with hysteresis, prompt-visibility rule, header placement and top-reservation math, native-control lookups skip codexhost overlays (`renderer-overlay-layout.ts`, `renderer-turn-actions.ts`)
+- [x] 13.2 Header row 1: `第 N/M 轮`, prompt after bubble scroll-out (scroll-to-turn, expand panel), Edit / Rollback / Redo on the current Turn through `renderer-turn-action-controller.ts`; hover `⋯` chip, rail and floating cluster removed; native edit hides the actions, a running Turn disables them; one-rAF recomputation; Composer E2E covers the header row
+- [ ] 13.3 Header row 2: workspace chips with `+N` collapse / click-expand / hover-preview, disclosure opening downward, preview beside the list between header and Composer; bottom bar and its `padding-bottom` reservation removed; native Changes / Review hiding condition unchanged
+- [ ] 13.4 Composer E2E for row 2: collapse / expand at a narrow width, downward list, preview placement, native controls hidden, no bottom bar, transcript end reachable above the Composer
+- [ ] 13.5 Preview page, proposal / design, task doc, hub, README matrix (zh / en / ko), update-impact inventory, glossary
+- [ ] 13.6 `[live]` CDP checklist after a user-authorised normal quit + `codexhost launch`: no overlap with prompt text, last lines not covered, no drift on scroll, title-bar / native-summary clearance

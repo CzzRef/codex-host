@@ -75,7 +75,7 @@ import { installRendererSidebarAgentIcons } from "./renderer-sidebar-agent-icons
 import { installRendererSettingsLifecycle } from "./renderer-settings-lifecycle.js";
 import { installRendererDraftWorktreePicker } from "./renderer-draft-worktree-picker.js";
 import { installRendererComposerPromptReuse } from "./renderer-composer-prompt-reuse.js";
-import { installRendererTurnActions } from "./renderer-turn-actions.js";
+import { installRendererTurnHeader } from "./renderer-turn-header.js";
 import { installRendererWorkspaceBar } from "./renderer-workspace-bar.js";
 import type {
   RendererConnectionDiagnostics,
@@ -589,7 +589,7 @@ export function installRendererBindingProbe(
     getClient: () => modelControl,
   });
   const promptReuse = installRendererComposerPromptReuse();
-  const turnActions = installRendererTurnActions({
+  const turnHeader = installRendererTurnHeader({
     getClient: () => modelControl,
   });
   let connectionDiagnostics: RendererConnectionDiagnostics | null = null;
@@ -599,7 +599,7 @@ export function installRendererBindingProbe(
     getModelCatalogClient: () => modelControl,
     onLocaleChange() {
       workspaceBar.refresh();
-      turnActions.refresh();
+      turnHeader.refresh();
       for (const mounted of mountedByComposer.values()) renderMounted(mounted);
     },
   });
@@ -2440,7 +2440,7 @@ export function installRendererBindingProbe(
       workspaceBar.refresh();
       branchWorktreeToggle.refresh();
       promptReuse.refresh();
-      turnActions.refresh();
+      turnHeader.refresh();
       void refreshHarnessAvailabilityForHost("local");
       reconcileHarnessAvailabilityHost();
       const connected = connectedComposers();
@@ -2476,7 +2476,7 @@ export function installRendererBindingProbe(
       workspaceBar.dispose();
       branchWorktreeToggle.dispose();
       promptReuse.dispose();
-      turnActions.dispose();
+      turnHeader.dispose();
       settingsLifecycle.dispose();
       document.removeEventListener("beforeinput", onBeforeInput, true);
       document.removeEventListener("submit", onSubmit, true);

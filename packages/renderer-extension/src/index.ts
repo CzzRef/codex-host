@@ -150,14 +150,33 @@ export {
 } from "./renderer-sidebar-agent-icons.js";
 export type { RendererSidebarContractInspection } from "./renderer-sidebar-agent-icons.js";
 export {
-  installRendererTurnActions,
   nativeTurnButton,
-  nativeTurnChromeBox,
   orderedTurnKeys,
+  renderTurnActionCluster,
+  rollbackSupportFor,
   turnActionCopy,
+  turnInNativeEdit,
+  turnPromptElement,
+  turnPromptText,
   turnsAfterKey,
 } from "./renderer-turn-actions.js";
-export type { RendererTurnActions } from "./renderer-turn-actions.js";
+export type {
+  RollbackSupport,
+  TurnActionBlock,
+  TurnActionCopy,
+  TurnActionId,
+  TurnActionView,
+} from "./renderer-turn-actions.js";
+export { createTurnActionController } from "./renderer-turn-action-controller.js";
+export type { TurnActionController, TurnActionTarget } from "./renderer-turn-action-controller.js";
+export {
+  installRendererTurnHeader,
+  TURN_HEADER_ATTRIBUTE,
+  TURN_HEADER_INDEX_ATTRIBUTE,
+  TURN_HEADER_PROMPT_ATTRIBUTE,
+} from "./renderer-turn-header.js";
+export type { RendererTurnHeader } from "./renderer-turn-header.js";
+export { threadIdForComposer } from "./renderer-thread-composer.js";
 export {
   installRendererWorkspaceBar,
   isNativeWorkspaceDiffControl,

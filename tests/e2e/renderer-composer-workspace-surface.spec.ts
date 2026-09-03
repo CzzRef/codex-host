@@ -31,11 +31,40 @@ const { outputFiles } = await build({
         },
       };
 
+      // Desktop's title chrome floats over the transcript; the transcript is a
+      // column-reverse scroller whose first child is the content column and
+      // whose Composer container is an absolutely positioned sibling.
+      const chrome = document.createElement("header");
+      chrome.setAttribute("data-pip-obstacle", "app-shell-header");
+      chrome.style.cssText = "position:fixed;top:0;left:0;right:0;height:44px;background:#222;z-index:1";
+      const scroller = document.createElement("div");
+      scroller.id = "transcript";
+      scroller.style.cssText =
+        "position:relative;margin-top:44px;width:640px;height:560px;overflow-y:auto;display:flex;flex-direction:column-reverse;background:#111";
+      const column = document.createElement("div");
+      column.style.cssText =
+        "box-sizing:border-box;flex:0 0 auto;min-height:100%;padding:24px 80px 120px;display:flex;flex-direction:column";
+      const turnSpecs = [
+        ["turn-a", 320, "first prompt"],
+        ["turn-b", 320, "second prompt"],
+        ["turn-c", 600, "third prompt"],
+      ];
+      for (const [key, height, prompt] of turnSpecs) {
+        const turn = document.createElement("div");
+        turn.setAttribute("data-turn-key", "history-content:turn:" + key);
+        turn.style.cssText = "box-sizing:border-box;height:" + height + "px;width:480px";
+        const bubble = document.createElement("div");
+        bubble.setAttribute("data-message-role", "user");
+        bubble.style.cssText = "height:48px;box-sizing:border-box;padding:8px;background:rgba(255,255,255,0.05);border-radius:25px";
+        bubble.textContent = prompt;
+        const reply = document.createElement("div");
+        reply.style.cssText = "height:" + (height - 48) + "px;box-sizing:border-box;padding:8px";
+        reply.textContent = "assistant reply for " + key;
+        turn.append(bubble, reply);
+        column.append(turn);
+      }
       const parent = document.createElement("div");
-      parent.style.display = "flex";
-      parent.style.flexDirection = "column";
-      parent.style.gap = "8px";
-      parent.style.width = "480px";
+      parent.style.cssText = "position:absolute;bottom:0;left:80px;width:480px;display:flex;flex-direction:column";
       const composer = document.createElement("div");
       composer.setAttribute("data-codex-composer-root", "true");
       composer.setAttribute("data-composer-placement", "thread");
@@ -103,16 +132,29 @@ const { outputFiles } = await build({
       review.textContent = "Review";
       review.style.width = "80px";
       review.style.height = "24px";
-      const turn = document.createElement("div");
-      turn.setAttribute("data-turn-key", "history-content:turn:turn-a");
-      turn.textContent = "You said: hello";
-      turn.style.minHeight = "120px";
-      turn.style.flex = "1";
+      scroller.append(column, parent);
       document.body.style.margin = "0";
-      document.body.style.display = "flex";
-      document.body.style.flexDirection = "column";
-      document.body.style.minHeight = "100vh";
-      document.body.append(turn, parent, branch, runLocation, changes, review);
+      document.body.append(chrome, scroller, branch, runLocation, changes, review);
+      const turnElement = (key) => document.querySelector('[data-turn-key="history-content:turn:' + key + '"]');
+      // column-reverse: scrollTop is 0 at the bottom and negative above it, so
+      // the helpers only ever use clamped absolute targets or relative deltas.
+      globalThis.scrollTranscriptToTop = () => scroller.scrollTo({ top: -scroller.scrollHeight });
+      globalThis.scrollTranscriptToBottom = () => scroller.scrollTo({ top: scroller.scrollHeight });
+      globalThis.scrollTurnUnderHeader = (key, extra) => {
+        const header = document.querySelector("[data-codexhost-turn-header]");
+        const headerBottom = header.getBoundingClientRect().bottom;
+        const delta = turnElement(key).getBoundingClientRect().top - (headerBottom - extra);
+        scroller.scrollBy({ top: delta });
+      };
+      globalThis.setNativeEdit = (key, editing) => {
+        const turn = turnElement(key);
+        turn.querySelector("textarea")?.remove();
+        if (editing) {
+          const textarea = document.createElement("textarea");
+          textarea.value = "editing";
+          turn.append(textarea);
+        }
+      };
 
       const unavailable = async () => {
         throw new Error("unused fixed control");
@@ -162,7 +204,19 @@ const { outputFiles } = await build({
         () => true,
         {
           inspectHarness: async () => inspection,
-          inspectThread: unavailable,
+          inspectThread: async (params) => {
+            globalThis.__threadInspectCalls = (globalThis.__threadInspectCalls ?? 0) + 1;
+            return {
+              owner: "external",
+              harnessId: "pi",
+              transportModelId: model.id,
+              history: inspection.capabilities.history,
+              historyRedoAvailable: false,
+              rollback: { lastTurn: true, multiTurn: false },
+              locked: true,
+              threadId: params.threadId,
+            };
+          },
           forkThread: unavailable,
           inspectThreadUsage: unavailable,
           inspectThreadWorkspace: async (params) => {
@@ -315,6 +369,107 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await page.goto("https://codexhost.test/");
   await page.addScriptTag({ content: browserBundle });
 
+  // The pinned Turn header: a body child fixed at the transcript's top edge,
+  // below Desktop's title chrome, opaque, spanning the Composer column.
+  const header = page.locator("[data-codexhost-turn-header]");
+  const headerIndex = page.locator("[data-codexhost-turn-header-index]");
+  const headerPrompt = page.locator("[data-codexhost-turn-header-prompt]");
+  await expect(header).toBeVisible();
+  expect(await header.evaluate((node) => node.parentElement === node.ownerDocument.body)).toBe(
+    true,
+  );
+  expect(
+    await header.evaluate((node) => {
+      const style = node.ownerDocument.defaultView?.getComputedStyle(node);
+      return [style?.position, style?.backgroundColor, style?.backdropFilter];
+    }),
+  ).toEqual(["fixed", "rgb(17, 17, 17)", "none"]);
+  const headerBox = await header.boundingBox();
+  const composerBoxForHeader = await page.locator("[data-codex-composer-root]").boundingBox();
+  expect(
+    headerBox && composerBoxForHeader && Math.abs(headerBox.x - composerBoxForHeader.x) <= 1,
+  ).toBe(true);
+  expect(
+    headerBox &&
+      composerBoxForHeader &&
+      Math.abs(headerBox.width - composerBoxForHeader.width) <= 1,
+  ).toBe(true);
+  expect(headerBox?.y).toBe(44);
+  // The transcript column reserves the header's height above the first Turn.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const column = document.querySelector("[data-codexhost-transcript-reserve]");
+        return column instanceof HTMLElement ? Number.parseFloat(column.style.paddingTop) : null;
+      }),
+    )
+    .toBe(Math.round((headerBox?.height ?? 0) + 8));
+  await expect(page.locator("[data-codexhost-turn-hover]")).toHaveCount(0);
+  await expect(page.locator("[data-codexhost-turn-rail]")).toHaveCount(0);
+  await expect(header.locator("[data-codexhost-turn-actions]")).toHaveCount(1);
+  await expect.poll(() => page.evaluate("globalThis.__threadInspectCalls ?? 0")).toBeGreaterThan(0);
+  const inspectCallsBeforeScrolling = await page.evaluate("globalThis.__threadInspectCalls");
+  // Scrolling moves the current Turn; the prompt appears only once its bubble
+  // has passed under the header.
+  await page.evaluate("globalThis.scrollTranscriptToTop()");
+  await expect(headerIndex).toHaveText("Turn 1/3");
+  await expect(headerPrompt).toBeHidden();
+  const firstTurnBox = await page
+    .locator('[data-turn-key="history-content:turn:turn-a"]')
+    .boundingBox();
+  expect(firstTurnBox && headerBox && firstTurnBox.y >= headerBox.y + headerBox.height).toBe(true);
+  await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeDisabled();
+  await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toHaveAttribute(
+    "aria-label",
+    /only roll back its last turn; 2 turns follow/,
+  );
+  await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 8)");
+  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(headerPrompt).toBeHidden();
+  await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 60)");
+  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(headerPrompt).toHaveText("second prompt");
+  expect(await header.boundingBox()).toEqual(headerBox);
+  // One later Turn on a last-turn-only Thread: rollback is offered behind a confirmation.
+  await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeEnabled();
+  await page.locator('[data-codexhost-turn-action="rollback"]').click();
+  await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(0);
+  await page.evaluate("globalThis.scrollTurnUnderHeader('turn-c', 60)");
+  await expect(headerIndex).toHaveText("Turn 3/3");
+  await expect(headerPrompt).toHaveText("third prompt");
+  // Redo is disabled until the Host reports a Redo slot.
+  await expect(page.locator('[data-codexhost-turn-action="redo"]')).toBeDisabled();
+  await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeDisabled();
+  await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toHaveAttribute(
+    "aria-label",
+    /No later turns/,
+  );
+  await expect(page.locator('[data-codexhost-turn-action="edit"]')).toHaveAttribute(
+    "aria-label",
+    /Last turn; edit the prompt/,
+  );
+  // No native pencil on this Turn: Edit refills the Composer with the prompt.
+  const editorForEdit = page.locator('[data-codex-composer][contenteditable="true"]');
+  await page.locator('[data-codexhost-turn-action="edit"]').click();
+  await expect(editorForEdit).toContainText("third prompt");
+  await expect(page.locator(".codexhost-turn-notice")).toContainText("placed in the Composer");
+  await editorForEdit.evaluate((node) => {
+    node.textContent = "";
+  });
+  // Desktop's own edit mode on the current Turn hides the Host actions.
+  await page.evaluate("globalThis.setNativeEdit('turn-c', true)");
+  await expect(header).toHaveAttribute("data-native-edit", "true");
+  await expect(header.locator("[data-codexhost-turn-actions]")).toBeHidden();
+  await expect(headerPrompt).toHaveText("Editing this turn");
+  await page.evaluate("globalThis.setNativeEdit('turn-c', false)");
+  await expect(header).toHaveAttribute("data-native-edit", "false");
+  await expect(header.locator("[data-codexhost-turn-actions]")).toBeVisible();
+  await expect(headerPrompt).toHaveText("third prompt");
+  // Following the viewport across Turns never re-inspects the Thread.
+  expect(await page.evaluate("globalThis.__threadInspectCalls")).toBe(inspectCallsBeforeScrolling);
+
   const bar = page.locator("[data-codexhost-workspace-bar]");
   const nativeChanges = page.locator('[data-slot="thread-summary-panel-item-button"]');
   const nativeReview = page.locator('[data-tab-id="diff"]');
@@ -420,55 +575,10 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await page.evaluate("globalThis.revertExternalFiles()");
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("1 file change");
-  // Hovering a Turn shows one floating "⋯" chip at its top-right (no rail dots
-  // over the text); clicking it selects the Turn.
-  await expect(page.locator("[data-codexhost-turn-hover]")).not.toHaveAttribute(
-    "data-visible",
-    "true",
-  );
-  await page.locator("[data-turn-key]").hover();
-  const hoverChip = page.locator('[data-codexhost-turn-hover][data-visible="true"]');
-  await expect(hoverChip).toBeVisible();
-  const hoverBox = await hoverChip.boundingBox();
-  const hoveredTurnBox = await page.locator("[data-turn-key]").boundingBox();
-  expect(hoverBox && hoveredTurnBox && hoverBox.y >= hoveredTurnBox.y).toBe(true);
-  expect(
-    hoverBox &&
-      hoveredTurnBox &&
-      hoverBox.x + hoverBox.width <= hoveredTurnBox.x + hoveredTurnBox.width,
-  ).toBe(true);
-  await hoverChip.click();
+  // Clicking a Turn filters the file disclosure to that Turn.
+  await page.locator('[data-turn-key="history-content:turn:turn-a"]').dispatchEvent("click");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("this turn");
   await expect(page.locator("[data-codexhost-turn-files]")).toHaveCount(1);
-  await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Edit");
-  await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Rollback");
-  await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Redo");
-  // The cluster anchors inside the selected Turn's own box, never above it.
-  const clusterBox = await page.locator("[data-codexhost-turn-actions]").boundingBox();
-  const turnBox = await page.locator("[data-turn-key]").boundingBox();
-  expect(clusterBox && turnBox && clusterBox.y >= turnBox.y).toBe(true);
-  expect(
-    clusterBox && turnBox && clusterBox.x + clusterBox.width <= turnBox.x + turnBox.width,
-  ).toBe(true);
-  // Redo is disabled until the Host reports a Redo slot; the fixture's
-  // inspectThread is unavailable, so the button must stay disabled.
-  await expect(page.locator('[data-codexhost-turn-action="redo"]')).toBeDisabled();
-  await expect(page.locator('[data-codexhost-turn-action="edit"]')).toHaveAttribute(
-    "aria-label",
-    /Last turn; edit the prompt/,
-  );
-  await page.locator('[data-codexhost-turn-action="edit"]').hover();
-  await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(0);
-  // Rollback still confirms before dropping anything (nothing later here, so disabled).
-  await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeDisabled();
-  // No native pencil on this Turn: Edit refills the Composer with the prompt.
-  const editorForEdit = page.locator('[data-codex-composer][contenteditable="true"]');
-  await page.locator('[data-codexhost-turn-action="edit"]').click();
-  await expect(editorForEdit).toContainText("You said: hello");
-  await expect(page.locator(".codexhost-turn-notice")).toContainText("placed in the Composer");
-  await editorForEdit.evaluate((node) => {
-    node.textContent = "";
-  });
 
   // Draft worktree picker: a chip beside Switch branch, defaulting to Local.
   const picker = page.locator("[data-codexhost-draft-worktree-picker]");
@@ -577,6 +687,9 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
     stop.setAttribute("aria-label", "Stop");
     node.append(stop);
   });
+  // A running Turn pauses the header actions instead of letting the Host reject them.
+  await expect(header).toHaveAttribute("data-streaming", "true");
+  await expect(page.locator('[data-codexhost-turn-action="edit"]')).toBeDisabled();
   await editor.click();
   await editor.evaluate((node) => {
     node.textContent = "现在是第二段";
@@ -585,6 +698,8 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(editor).toHaveText("");
   await expect(page.locator("[data-codexhost-prompt-ghost]")).toHaveCount(0);
   await composer.evaluate((node) => node.querySelector('[aria-label="Stop"]')?.remove());
+  await expect(header).toHaveAttribute("data-streaming", "false");
+  await expect(page.locator('[data-codexhost-turn-action="edit"]')).toBeEnabled();
   const ghost = page.locator("[data-codexhost-prompt-ghost]");
   await expect(ghost).toBeVisible();
   await expect(ghost).toContainText("现在是第二段");
@@ -595,4 +710,6 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await page.evaluate("globalThis.disposeBinding()");
   await expect(nativeChanges).toBeVisible();
   await expect(nativeReview).toBeVisible();
+  await expect(header).toHaveCount(0);
+  await expect(page.locator("[data-codexhost-transcript-reserve]")).toHaveCount(0);
 });

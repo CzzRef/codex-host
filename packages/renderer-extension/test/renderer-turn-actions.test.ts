@@ -91,3 +91,39 @@ describe("Turn action copy and capability bits", () => {
     });
   });
 });
+
+describe("Turn DOM helpers", () => {
+  it("never mistakes a codexhost chip for a native control", async () => {
+    const { nativeTurnButton } = await import("../src/renderer-turn-actions.js");
+    const button = (label: string, insideOverlay: boolean) => ({
+      closest: () => (insideOverlay ? {} : null),
+      getAttribute: (name: string) => (name === "aria-label" ? label : null),
+      textContent: "",
+    });
+    const scope = {
+      querySelectorAll: () => [button("Redo", true), button("Redo", false)],
+    } as unknown as Element;
+    const found = nativeTurnButton(scope, /^redo$/i);
+    expect(found).not.toBeNull();
+    expect(found?.closest("x")).toBeNull();
+    const onlyOverlay = { querySelectorAll: () => [button("Redo", true)] } as unknown as Element;
+    expect(nativeTurnButton(onlyOverlay, /^redo$/i)).toBeNull();
+  });
+
+  it("finds the prompt bubble behind single-child wrappers", async () => {
+    const { turnPromptElement } = await import("../src/renderer-turn-actions.js");
+    const bubble = { children: [], firstElementChild: null, matches: () => false };
+    const wrapper = { children: [bubble], firstElementChild: bubble, matches: () => false };
+    const turn = {
+      querySelector: () => null,
+      firstElementChild: wrapper,
+    } as unknown as Element;
+    expect(turnPromptElement(turn)).toBe(bubble);
+    const marked = { children: [] };
+    const markedTurn = {
+      querySelector: () => marked,
+      firstElementChild: wrapper,
+    } as unknown as Element;
+    expect(turnPromptElement(markedTurn)).toBe(marked);
+  });
+});

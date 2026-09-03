@@ -1,0 +1,149 @@
+.codexhost-turn-header {
+  position: fixed;
+  z-index: 32;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  /* Opaque: the header sits over transcript text, which must never show through. */
+  background: var(--codexhost-turn-header-bg, rgb(17 17 17));
+  color: inherit;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: auto;
+  overflow: visible;
+}
+.codexhost-turn-header[data-state="hidden"],
+.codexhost-turn-header[data-state="ambiguous"] {
+  display: none;
+}
+.codexhost-turn-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 28px;
+}
+.codexhost-turn-header-index {
+  flex: 0 0 auto;
+  color: rgb(255 255 255 / 72%);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.codexhost-turn-header[data-streaming="true"] .codexhost-turn-header-index {
+  box-shadow: inset 0 -1px 0 rgb(51 156 255 / 60%);
+}
+.codexhost-turn-header-prompt {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 4px 6px;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.codexhost-turn-header-prompt:hover {
+  background: rgb(255 255 255 / 7%);
+}
+.codexhost-turn-header-prompt:focus-visible,
+.codexhost-turn-header-expand:focus-visible {
+  outline: 2px solid #339cff;
+  outline-offset: 2px;
+}
+.codexhost-turn-header[data-native-edit="true"] .codexhost-turn-header-prompt {
+  color: rgb(255 255 255 / 62%);
+  cursor: default;
+  font-style: italic;
+}
+.codexhost-turn-header-prompt[hidden],
+.codexhost-turn-header-expand[hidden],
+.codexhost-turn-header-panel[hidden],
+.codexhost-turn-header .codexhost-turn-notice[hidden] {
+  display: none;
+}
+.codexhost-turn-header-spacer {
+  flex: 1 1 auto;
+}
+.codexhost-turn-header-expand {
+  flex: 0 0 auto;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 6px;
+  background: rgb(24 24 24);
+  color: rgb(255 255 255 / 72%);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+}
+.codexhost-turn-header-expand:hover,
+.codexhost-turn-header-expand[aria-expanded="true"] {
+  background: rgb(44 44 44);
+  color: #fff;
+}
+.codexhost-turn-header-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 4;
+  box-sizing: border-box;
+  max-height: min(160px, 40vh);
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 10px;
+  background: rgb(24 24 24);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 38%);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.codexhost-turn-header .codexhost-turn-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+/* Desktop's own edit mode owns the Turn; codexhost's actions step aside. */
+.codexhost-turn-header[data-native-edit="true"] .codexhost-turn-actions {
+  display: none;
+}
+/* Under a top-pinned host, tooltips open downward instead of into the title bar. */
+.codexhost-turn-header .codexhost-overlay-tooltip {
+  bottom: auto;
+  top: calc(100% + 8px);
+  translate: 0 -4px;
+}
+.codexhost-turn-header .codexhost-turn-notice {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 5;
+  max-width: min(320px, 100%);
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  border-radius: 10px;
+  background: rgb(20 20 20);
+  color: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: none;
+}
