@@ -7,103 +7,98 @@
     <style>
       :root {
         --bg: #0c0c0c;
-        --panel: #111111;
-        --card: #161616;
-        --composer: #1a1a1a;
         --text: #ececec;
         --muted: #9a9a9a;
-        --faint: #6d6d6d;
         --border: rgb(255 255 255 / 10%);
         --hover: rgb(255 255 255 / 7%);
-        --press: rgb(255 255 255 / 14%);
         --green: #3fb950;
         --red: #f85149;
         --accent: #339cff;
         --shadow: 0 16px 40px rgb(0 0 0 / 45%);
+        --pop: 0 12px 32px rgb(0 0 0 / 38%);
+        --pop-border: 1px solid rgb(255 255 255 / 12%);
         color-scheme: dark;
       }
-
       * {
         box-sizing: border-box;
       }
-
       html,
       body {
         margin: 0;
         min-height: 100%;
         background: var(--bg);
         color: var(--text);
-        font:
-          13px/1.45 ui-sans-serif,
+        font-family:
+          ui-sans-serif,
           system-ui,
           -apple-system,
           "Segoe UI",
           sans-serif;
+        font-size: 13px;
+        line-height: 1.45;
       }
-
       button,
       input {
         font: inherit;
         color: inherit;
       }
-
       button {
         appearance: none;
+        cursor: pointer;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
       }
 
+      /* ---------- 说明栏 ---------- */
       .page {
         display: grid;
         grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
         min-height: 100vh;
       }
-
       .brief {
         padding: 28px 24px 40px;
         border-right: 1px solid var(--border);
         background: #0f0f0f;
         overflow: auto;
       }
-
       .brief h1 {
         margin: 0 0 6px;
         font-size: 20px;
         font-weight: 650;
-        letter-spacing: -0.02em;
       }
-
-      .brief .lede {
+      .brief h2 {
+        margin: 22px 0 8px;
+        font-size: 12px;
+        font-weight: 650;
+        text-transform: uppercase;
+        color: #6d6d6d;
+      }
+      .brief ol,
+      .brief ul {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding-left: 18px;
+        color: #d4d4d4;
+      }
+      .brief code {
+        color: #d6e8ff;
+      }
+      .lede,
+      .hint {
         margin: 0 0 22px;
         color: var(--muted);
         font-size: 12px;
         line-height: 18px;
       }
-
-      .brief h2 {
-        margin: 22px 0 8px;
-        font-size: 12px;
-        font-weight: 650;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--faint);
-      }
-
-      .brief ol,
-      .brief ul {
+      .hint {
         margin: 0;
-        padding-left: 18px;
-        color: #d4d4d4;
       }
-
-      .brief li + li {
-        margin-top: 8px;
-      }
-
-      .brief code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 11px;
-        color: #d6e8ff;
-      }
-
       .mode-switch {
         display: flex;
         gap: 6px;
@@ -113,27 +108,26 @@
         border-radius: 12px;
         background: #171717;
       }
-
       .mode-switch button {
         flex: 1;
+        padding: 8px 10px;
         border: 0;
         border-radius: 8px;
         background: transparent;
-        padding: 8px 10px;
-        cursor: pointer;
       }
-
       .mode-switch button[aria-pressed="true"] {
         background: rgb(51 156 255 / 16%);
         color: #d7ebff;
       }
-
-      .hint {
-        color: var(--muted);
+      .options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        margin: 0 0 10px;
         font-size: 12px;
-        line-height: 18px;
       }
 
+      /* ---------- 模拟窗口 ---------- */
       .stage {
         /* 说明栏很长；模拟窗口钉在视口里，不跟着说明栏拉高到 Composer 掉出首屏 */
         position: sticky;
@@ -144,7 +138,6 @@
         height: 100vh;
         padding: 20px 24px 24px;
       }
-
       .desktop {
         flex: 1;
         display: flex;
@@ -156,7 +149,6 @@
         background: #0d0d0d;
         box-shadow: var(--shadow);
       }
-
       .titlebar {
         display: flex;
         align-items: center;
@@ -166,412 +158,373 @@
         border-bottom: 1px solid var(--border);
         color: #d0d0d0;
       }
-
       .titlebar .dot {
         width: 10px;
         height: 10px;
         border-radius: 50%;
         background: #3d3d3d;
       }
-
       .titlebar .title {
         flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
       }
-
       .share {
-        border: 0;
-        background: transparent;
         color: var(--muted);
-        cursor: default;
       }
-
       .thread {
+        position: relative;
         flex: 1;
         display: flex;
         flex-direction: column;
         min-height: 0;
-        position: relative;
       }
-
+      /* 固定高度的滚动区：头部钉在它顶边，内容列由脚本补 padding-top 让首轮不被盖 */
       .transcript {
         flex: 1;
         min-height: 0;
         overflow: auto;
         padding: 18px 28px 16px;
       }
-
-      .turn {
-        position: relative;
+      .column {
         max-width: 760px;
-        margin: 0 auto 18px;
-        padding: 12px 14px 14px;
-        border: 1px solid transparent;
-        border-radius: 14px;
-        cursor: pointer;
+        margin: 0 auto;
       }
-
-      .turn[data-role="user"] {
-        color: #d9d9d9;
+      .turn {
+        margin: 0 0 22px;
       }
-
-      .turn[data-role="assistant"] {
-        background: linear-gradient(180deg, rgb(255 255 255 / 3%), transparent 42%);
-        border-color: rgb(255 255 255 / 5%);
+      .prompt {
+        max-width: 78%;
+        margin: 0 0 12px auto;
+        padding: 10px 14px;
+        border-radius: 16px 16px 4px 16px;
+        background: rgb(255 255 255 / 8%);
+        color: #e4e4e4;
       }
-
-      .turn[data-selected="true"] {
-        border-color: rgb(63 185 80 / 45%);
-        box-shadow: inset 3px 0 0 var(--green);
-        background: rgb(63 185 80 / 5%);
+      /* 官方编辑模式（Desktop 把气泡换成 textarea + 取消 / 发送）的示意 */
+      .turn[data-editing="true"] .prompt {
+        outline: 1px dashed rgb(51 156 255 / 60%);
+        outline-offset: 2px;
       }
-
+      .reply {
+        padding: 0 4px;
+      }
       .turn-kicker {
-        display: flex;
-        align-items: center;
-        gap: 8px;
         margin-bottom: 8px;
         color: var(--muted);
         font-size: 11px;
       }
-
-      .turn p {
+      .reply p {
         margin: 0 0 10px;
         color: #dedede;
       }
 
-      .turn p:last-child {
-        margin-bottom: 0;
-      }
-
-      .native-commit {
-        display: inline-flex;
-        align-items: center;
-        margin-top: 10px;
-        padding: 6px 10px;
+      /* ---------- 轮次头部：钉在对话区顶边、对齐 Composer 列、不透明 ---------- */
+      .turn-header {
+        position: absolute;
+        z-index: 32;
+        top: 0;
+        left: 18px;
+        right: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 6px 8px;
         border: 1px solid var(--border);
-        border-radius: 999px;
-        background: rgb(255 255 255 / 4%);
-        color: #d8d8d8;
+        border-top: 0;
+        border-radius: 0 0 12px 12px;
+        background: rgb(17 17 17); /* 不透明：头部压在正文上，正文不得透出 */
+        box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
         font-size: 12px;
+        line-height: 16px;
       }
-
+      .th-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        min-height: 28px;
+      }
+      .th-index {
+        flex: 0 0 auto;
+        color: rgb(255 255 255 / 72%);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .turn-header[data-streaming="true"] .th-index {
+        box-shadow: inset 0 -1px 0 rgb(51 156 255 / 60%);
+      }
+      /* 本轮提示：一行省略，点击回到该轮；只在用户气泡滚过头部之后出现 */
+      .th-prompt {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 4px 6px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .th-prompt:hover {
+        background: var(--hover);
+      }
+      .turn-header[data-native-edit="true"] .th-prompt {
+        color: rgb(255 255 255 / 62%);
+        cursor: default;
+        font-style: italic;
+      }
+      .th-spacer {
+        flex: 1 1 auto;
+      }
+      .th-expand {
+        width: 22px;
+        height: 22px;
+        min-height: 0;
+        padding: 0;
+        border-radius: 6px;
+        color: rgb(255 255 255 / 72%);
+        font-size: 11px;
+      }
+      /* 提示全文、通知、+N 列表、文件列表都相对头部定位，挂在它下缘向下展开 */
+      .th-panel,
+      .th-notice,
+      .more-list,
+      .file-list {
+        position: absolute;
+        top: calc(100% + 6px);
+        border: var(--pop-border);
+        border-radius: 10px;
+        background: rgb(17 17 17);
+        box-shadow: var(--pop);
+      }
+      .th-panel {
+        left: 0;
+        right: 0;
+        z-index: 4;
+        max-height: min(160px, 40vh);
+        overflow: auto;
+        padding: 8px 10px;
+        background: rgb(24 24 24);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .th-notice {
+        right: 0;
+        z-index: 5;
+        max-width: min(320px, 100%);
+        padding: 8px 12px;
+        pointer-events: none;
+      }
       .turn-actions {
-        display: none;
+        display: flex;
+        flex: 0 0 auto;
         align-items: center;
         gap: 6px;
         margin-left: auto;
       }
-
-      /* 悬停任一未选中轮次：轮次右侧空白槽出现「⋯」（窗口太窄时退回轮次右上角），点击即选中并展开动作簇 */
-      .turn-hover {
-        position: absolute;
-        top: 8px;
-        right: -34px;
+      /* 官方编辑模式拥有本轮：Host 动作簇让位 */
+      .turn-header[data-native-edit="true"] .turn-actions {
         display: none;
-        align-items: center;
-        justify-content: center;
-        width: 26px;
-        height: 22px;
-        border: 1px solid rgb(255 255 255 / 12%);
-        border-radius: 7px;
-        background: rgb(24 24 24);
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1;
-        opacity: 0;
-        transition: opacity 120ms ease;
       }
 
-      body[data-mode="target"] .turn:not([data-selected="true"]) .turn-hover {
-        display: inline-flex;
-      }
-
-      body[data-mode="target"] .turn:not([data-selected="true"]):hover .turn-hover {
-        opacity: 0.85;
-      }
-
+      /* ---------- 动作 chip、tooltip、确认气泡（都向下展开） ---------- */
       .action {
         position: relative;
         display: inline-flex;
       }
-
-      body[data-mode="target"] .turn[data-selected="true"] .turn-actions {
-        display: inline-flex;
-      }
-
       .chip {
-        position: relative;
         display: inline-flex;
         align-items: center;
-        justify-content: center;
         min-height: 28px;
         padding: 0 10px;
-        border: 1px solid rgb(255 255 255 / 12%);
+        border: var(--pop-border);
         border-radius: 8px;
-        background: rgb(24 24 24); /* 不透明：动作簇可能压在正文上，正文不得透出 */
-        color: var(--text);
-        cursor: pointer;
-        transition:
-          background 120ms ease,
-          border-color 120ms ease,
-          transform 80ms ease,
-          box-shadow 120ms ease;
+        background: rgb(24 24 24); /* 不透明 chip */
       }
-
       .chip:hover:not(:disabled) {
         background: rgb(44 44 44);
         border-color: rgb(255 255 255 / 22%);
       }
-
       .chip:active:not(:disabled) {
         transform: translateY(1px) scale(0.97);
-        background: var(--press);
       }
-
-      .chip:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 2px;
-      }
-
       .chip:disabled {
         color: rgb(255 255 255 / 38%); /* 只压暗文字，不让底面透明 */
         border-color: rgb(255 255 255 / 8%);
         cursor: not-allowed;
       }
-
       .chip[data-tone="danger"]:hover:not(:disabled) {
         border-color: rgb(248 81 73 / 45%);
         background: rgb(248 81 73 / 10%);
       }
-
-      .chip[data-busy="true"] {
+      .chip[data-busy="true"],
+      .chip[aria-expanded="true"] {
         box-shadow: inset 0 0 0 1px rgb(51 156 255 / 45%);
       }
-
-      .tooltip {
+      .chip:focus-visible,
+      .th-prompt:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .tooltip,
+      .confirm {
         position: absolute;
         right: 0;
-        bottom: calc(100% + 8px);
+        top: calc(100% + 8px);
+        z-index: 6;
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        text-align: left;
+      }
+      .tooltip {
         z-index: 5;
         width: max-content;
         max-width: 280px;
         padding: 8px 10px;
-        border: 1px solid var(--border);
         border-radius: 8px;
         background: #111;
         color: #e7e7e7;
         font-size: 11px;
         line-height: 16px;
-        text-align: left;
-        box-shadow: var(--shadow);
         pointer-events: none;
         opacity: 0;
-        translate: 0 4px;
-        transition:
-          opacity 120ms ease,
-          translate 120ms ease;
       }
-
+      .action:hover .tooltip,
+      .action:focus-within .tooltip {
+        opacity: 1;
+      }
       .action:has(.confirm) .tooltip {
         display: none;
       }
-
-      .chip:hover .tooltip,
-      .chip:focus-visible .tooltip,
-      .stat:hover .tooltip,
-      .stat:focus-visible .tooltip {
-        opacity: 1;
-        translate: 0 0;
-      }
-
       .confirm {
-        position: absolute;
-        top: calc(100% + 8px);
-        right: 0;
-        z-index: 6;
         width: 304px;
         padding: 12px;
-        border: 1px solid var(--border);
         border-radius: 12px;
         background: #151515;
-        box-shadow: var(--shadow);
-        text-align: left;
       }
-
       .confirm p {
         margin: 0 0 10px;
         color: #dcdcdc;
         font-size: 12px;
         line-height: 17px;
       }
-
       .confirm-row {
         display: flex;
         justify-content: flex-end;
         gap: 6px;
       }
-
-      .ghost {
-        min-height: 28px;
-        padding: 0 10px;
-        border: 1px solid transparent;
-        border-radius: 8px;
-        background: transparent;
-        cursor: pointer;
-      }
-
-      .ghost:hover {
-        background: var(--hover);
-      }
-
+      .ghost,
       .primary {
         min-height: 28px;
         padding: 0 10px;
         border: 0;
         border-radius: 8px;
+        background: transparent;
+      }
+      .primary {
         background: #2f6fed;
-        cursor: pointer;
       }
-
-      .primary:hover {
-        background: #3b7bff;
-      }
-
-      .primary:active {
-        transform: translateY(1px);
-      }
-
       .primary.danger {
         background: #c93832;
       }
-
-      .primary.danger:hover {
-        background: #e0443d;
+      .ghost:hover {
+        background: var(--hover);
+      }
+      .primary:hover {
+        filter: brightness(1.15);
       }
 
-      .footer {
-        position: relative;
-        padding: 0 18px 14px;
-      }
-
-      .mask {
-        position: absolute;
-        z-index: 12;
-        bottom: calc(100% + 8px);
-        left: 50%;
-        display: none;
-        width: min(760px, calc(100% - 36px));
-        min-height: 32px;
-        align-items: center;
+      /* ---------- 第二行：工作区（永远单行） ---------- */
+      .workspace {
         gap: 6px;
-        padding: 4px 6px;
-        border: 1px solid rgb(255 255 255 / 10%);
-        border-radius: 10px;
-        background: rgb(17 17 17 / 90%);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(16px);
-        transform: translateX(-50%);
+        min-height: 24px;
       }
-
-      body[data-mode="target"] .mask {
-        display: flex;
-      }
-
       .chips {
         display: flex;
-        flex: 1;
-        flex-wrap: nowrap;
+        flex: 1 1 auto;
+        align-items: center;
         gap: 4px;
         min-width: 0;
         overflow: hidden;
       }
-
       .repo {
         display: inline-flex;
+        flex: 0 0 auto;
         align-items: center;
         gap: 6px;
-        min-height: 24px;
         min-width: 0;
+        max-width: 100%;
+        min-height: 24px;
         padding: 0 6px;
-        border: 0;
+        border: 1px solid transparent;
         border-radius: 6px;
-        background: transparent;
         font-size: 11px;
+        line-height: 15px;
         white-space: nowrap;
       }
-
+      .repo span,
       .repo b {
-        font-weight: 650;
-      }
-
-      .repo .branch,
-      .repo .tree {
-        color: var(--muted);
-        /* 只有核心 chip 收缩省略；其余 chip 不挤，放不下的进 +N（真实实现 fitWorkspaceChips） */
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-
-      .repo:not([data-core="true"]),
-      .repo b,
-      .repo .add,
-      .repo .del {
-        flex: none;
-      }
-
+      /* 核心 chip 先让宽度，涉及的 root 不挤；放不下的 root 进 +N */
       .repo[data-core="true"] {
-        border: 1px solid rgb(255 255 255 / 12%);
+        flex: 0 1 auto;
+        min-width: 96px;
+        border-color: rgb(255 255 255 / 12%);
         background: rgb(255 255 255 / 6%);
       }
-
       .repo[data-core="true"]::before {
         content: "";
+        flex: 0 0 auto;
         width: 6px;
         height: 6px;
         border-radius: 999px;
         background: var(--green);
       }
-
-      .repo.more {
-        padding: 0 8px;
-        border: 1px solid rgb(255 255 255 / 12%);
-        border-radius: 999px;
-        background: rgb(255 255 255 / 5%);
-        cursor: pointer;
+      .repo .branch,
+      .files-toggle {
+        color: rgb(255 255 255 / 62%);
       }
-
-      .stat {
-        position: relative;
-        margin-left: 2px;
-        border: 0;
-        background: transparent;
-        cursor: pointer;
+      .stats {
+        display: inline-flex;
+        gap: 4px;
         font-variant-numeric: tabular-nums;
       }
-
-      .stat:hover {
-        text-decoration: underline;
-        text-underline-offset: 2px;
-      }
-
       .add {
         color: var(--green);
       }
-
       .del {
         color: var(--red);
       }
-
+      .more {
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: rgb(255 255 255 / 5%);
+        font-size: 11px;
+      }
+      .more-list {
+        left: 8px;
+        z-index: 3;
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 220px;
+        padding: 6px;
+      }
+      .more:hover .more-list,
+      .more:focus-within .more-list,
+      .more[aria-expanded="true"] .more-list {
+        display: flex;
+      }
       .files {
-        position: relative;
+        display: flex;
         flex: 0 0 auto;
         margin-left: auto;
+        font-size: 11px;
       }
-
       .files-toggle {
         display: flex;
         align-items: center;
@@ -581,105 +534,128 @@
         border: 0;
         border-radius: 7px;
         background: transparent;
-        cursor: pointer;
-        color: var(--muted);
-        text-align: left;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
       }
-
       .files-toggle:hover {
         background: var(--hover);
-        color: var(--text);
       }
-
+      .files-chevron {
+        color: rgb(255 255 255 / 48%);
+        font-size: 10px;
+      }
+      /* 文件列表贴头部右缘向下展开；高度受头部与 Composer 之间的空间限制（脚本设 max-height） */
       .file-list {
-        position: absolute;
-        right: 0;
-        bottom: calc(100% + 8px);
-        left: auto;
+        right: 8px;
+        z-index: 2;
         display: none;
-        width: min(420px, calc(100vw - 24px));
+        flex-direction: column;
+        gap: 1px;
+        width: min(420px, calc(100% - 16px));
         max-height: min(300px, 42vh);
         overflow: auto;
         padding: 6px;
-        border: 1px solid rgb(255 255 255 / 12%);
-        border-radius: 10px;
-        background: rgb(17 17 17 / 96%);
-        box-shadow: var(--shadow);
       }
-
       .files[data-open="true"] .file-list {
-        display: block;
+        display: flex;
       }
-
+      .file-group {
+        padding: 4px 4px 2px;
+        color: rgb(255 255 255 / 55%);
+        font-size: 10px;
+      }
       .file {
         display: flex;
         width: 100%;
         align-items: center;
         gap: 8px;
-        padding: 4px 6px;
+        padding: 2px 4px;
         border: 0;
-        border-radius: 8px;
+        border-radius: 6px;
         background: transparent;
-        cursor: pointer;
         text-align: left;
       }
-
-      .file:hover {
+      .file:hover,
+      .file[data-previewing="true"] {
         background: var(--hover);
       }
-
-      .file code {
+      .file code,
+      .preview-head code {
         flex: 1;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
+        white-space: nowrap;
         color: #d5d5d5;
-        font-size: 11px;
       }
-
+      .turn-tag {
+        flex: 0 0 auto;
+        padding: 0 5px;
+        border: 1px solid rgb(51 156 255 / 45%);
+        border-radius: 999px;
+        color: rgb(51 156 255 / 90%);
+        font-size: 10px;
+        line-height: 14px;
+      }
+      /* diff 预览：列表旁边、头部之下、Composer 之上 */
       .file-preview {
         position: absolute;
-        right: 428px;
-        bottom: calc(100% + 8px);
-        left: auto;
-        display: none;
-        width: min(560px, 60vw);
+        z-index: 40;
+        display: flex;
+        flex-direction: column;
         max-height: min(420px, 50vh);
-        overflow: auto;
-        pointer-events: auto;
-        padding: 8px 10px;
-        border: 1px solid rgb(255 255 255 / 12%);
+        overflow: hidden;
+        border: 1px solid rgb(127 127 127 / 28%);
         border-radius: 10px;
-        background: rgb(20 20 20 / 96%);
-        box-shadow: var(--shadow);
-        color: var(--muted);
-        font:
-          11px/16px ui-monospace,
-          SFMono-Regular,
-          Menlo,
-          monospace;
+        background: rgb(20 20 20);
+        box-shadow: var(--pop);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        line-height: 16px;
+      }
+      .preview-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-bottom: 1px solid rgb(255 255 255 / 8%);
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      .preview-head code {
+        direction: rtl;
+        text-align: left;
+      }
+      .preview-body {
+        min-height: 0;
+        overflow: auto;
+        padding: 8px 10px;
         white-space: pre;
       }
-
-      .files:has(.file:hover) .file-preview {
-        display: block;
+      .preview-meta {
+        opacity: 0.62;
       }
 
+      /* ---------- Composer（不再有任何东西漂在它上方） ---------- */
+      .footer {
+        position: relative;
+        padding: 0 18px 14px;
+      }
       .composer {
         width: min(760px, 100%);
         margin: 0 auto;
         padding: 10px 12px 8px;
-        border: 1px solid rgb(255 255 255 / 10%);
+        border: 1px solid var(--border);
         border-radius: 16px;
-        background: var(--composer);
+        background: #1a1a1a;
       }
-
-      .composer .placeholder {
+      .placeholder {
         min-height: 36px;
-        color: #8a8a8a;
         padding: 6px 4px 10px;
+        color: #8a8a8a;
       }
-
+      .placeholder[data-filled="true"] {
+        color: var(--text);
+      }
       .composer-meta {
         display: flex;
         align-items: center;
@@ -687,32 +663,23 @@
         color: var(--muted);
         font-size: 11px;
       }
-
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        min-height: 22px;
-        padding: 0 8px;
-        border-radius: 999px;
-        background: rgb(255 255 255 / 6%);
-      }
-
-      /* 新建对话草稿：Switch-branch 旁的「工作树 ▾」选择器（替代原勾选框） */
+      .pill,
       .wt-chip {
         display: inline-flex;
         align-items: center;
         gap: 4px;
         min-height: 22px;
         padding: 0 8px;
-        border: 1px solid rgb(255 255 255 / 18%);
         border-radius: 999px;
-        cursor: pointer;
+        background: rgb(255 255 255 / 6%);
+      }
+      /* 新建对话草稿：Switch-branch 旁的「工作树 ▾」选择器（替代原勾选框），本轮不变 */
+      .wt-chip {
+        border: 1px solid rgb(255 255 255 / 18%);
+        background: transparent;
       }
       .wt-chip .kind {
         opacity: 0.65;
-      }
-      .wt-chip b {
-        font-weight: 600;
       }
       .wt-chip[aria-expanded="true"] {
         background: rgb(255 255 255 / 8%);
@@ -721,27 +688,23 @@
         position: absolute;
         right: 16px;
         bottom: 58px;
-        /* 打开态是瞬时浮层，压在工作区 bar 之上（真实实现 z-index 同样高于 bar）；
-           默认收起，点「工作树 ▾」打开，Esc / 点外面关闭，不然会一直盖住 bar 右侧的文件披露 */
-        display: none;
         z-index: 20;
         min-width: 260px;
         padding: 6px;
         border: 1px solid rgb(255 255 255 / 14%);
         border-radius: 10px;
         background: #1c1c1e;
-        box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+        box-shadow: var(--pop);
         font-size: 12px;
         line-height: 16px;
       }
-      .wt-menu[data-open="true"] {
-        display: block;
+      .wt-menu:not([data-open="true"]) {
+        display: none;
       }
       .wt-menu .section {
         padding: 6px 8px 2px;
         font-size: 11px;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
         opacity: 0.55;
       }
       .wt-menu .item {
@@ -754,11 +717,11 @@
       .wt-menu .item[aria-checked="true"] {
         background: rgb(255 255 255 / 12%);
       }
-      .wt-menu .item .meta {
+      .wt-menu .meta {
         flex: 1;
         opacity: 0.6;
       }
-      .wt-menu .item .dirty {
+      .wt-menu .dirty {
         color: #d97706;
       }
       .wt-menu form {
@@ -772,91 +735,58 @@
         border: 1px solid rgb(255 255 255 / 18%);
         border-radius: 6px;
         background: transparent;
-        color: inherit;
-        font: inherit;
-      }
-      body[data-mode="current"] .wt-menu {
-        display: none;
       }
 
-      .legacy {
+      /* ---------- 旧浮层（对比模式）：动作簇压住首轮提示，半透明 bar 盖住对话末尾 ---------- */
+      .legacy-cluster,
+      .legacy-bar,
+      body[data-mode="legacy"] .turn-header {
         display: none;
+      }
+      body[data-mode="legacy"] .legacy-cluster,
+      body[data-mode="legacy"] .legacy-bar {
+        display: flex;
+      }
+      .legacy-cluster {
         position: absolute;
         z-index: 4;
-        width: 248px;
-        padding: 6px;
-        border-radius: 12px;
-        background: rgb(20 20 20 / 86%);
-        box-shadow: var(--shadow);
-      }
-
-      body[data-mode="current"] .legacy {
-        display: block;
-      }
-
-      .legacy.workspace {
-        top: 18px;
-        right: 18px;
-      }
-
-      .legacy.actions {
-        top: 168px;
-        right: 28px;
-        display: none;
-        flex-direction: column;
-        align-items: flex-end;
+        top: 26px;
+        right: 40px;
         gap: 6px;
-        width: auto;
-        padding: 0;
-        background: transparent;
-        box-shadow: none;
       }
-
-      body[data-mode="current"] .legacy.actions {
-        display: flex;
-      }
-
-      .legacy-row {
-        display: flex;
+      .legacy-bar {
+        position: absolute;
+        z-index: 12;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        translate: -50% 0;
+        width: min(760px, calc(100% - 36px));
         align-items: center;
-        gap: 8px;
-        height: 28px;
-        padding: 0 10px;
-        border: 1px solid rgb(127 127 127 / 22%);
+        gap: 6px;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
         border-radius: 10px;
-        background: rgb(127 127 127 / 8%);
-        font-size: 12px;
-        white-space: nowrap;
-        overflow: hidden;
-      }
-
-      .legacy-files {
-        padding: 6px 8px;
-        color: var(--muted);
+        background: rgb(17 17 17 / 72%);
+        backdrop-filter: blur(16px);
         font-size: 11px;
       }
-
+      .legacy-bar .files-toggle {
+        margin-left: auto;
+      }
       .toast {
         position: fixed;
         right: 24px;
         bottom: 24px;
-        display: none;
         padding: 10px 12px;
         border: 1px solid var(--border);
         border-radius: 10px;
         background: #151515;
         box-shadow: var(--shadow);
       }
-
-      .toast[data-show="true"] {
-        display: block;
-      }
-
       @media (max-width: 980px) {
         .page {
           grid-template-columns: 1fr;
         }
-
         .brief {
           border-right: 0;
           border-bottom: 1px solid var(--border);
@@ -867,100 +797,89 @@
   <body data-mode="target">
     <div class="page">
       <aside class="brief">
-        <h1>对话浮层改成这样</h1>
+        <h1>对话浮层改成钉顶的轮次头部</h1>
         <p class="lede">
-          截图里两块红圈都是同一类错：Host
-          控件漂在对话中间，挡住正文和官方按钮。目标不是换皮，是把职责拆开。
+          原来两块浮层——轮次右上角的动作簇、Composer 上方的工作区
+          bar——合并成一条钉在对话区顶边的「轮次头部」。它不透明、对齐 Composer
+          列、把首轮往下顶；Composer 上方不再漂任何东西，正文也不再被盖。
         </p>
 
         <h2>你要的</h2>
         <ol>
           <li>
-            <b>工作区 / 变更缩成单行浮层</b>，贴在 Composer 正上方。左侧只展示改动文件所在的
-            Worktree 和分支；右侧展示文件数与对话文件增删统计，并展开具体文件。
+            <b>第一行</b>：「第 n/N
+            轮」；本轮提示一行省略，只在用户气泡滚到头部之下才出现，点它回到该轮，▾ 展开全文；编辑 /
+            回滚 / Redo 右对齐，不透明 chip，禁用只压暗文字。
           </li>
           <li>
-            <b>编辑 / 回滚 / Redo 长在选中的那一轮上</b>，做横向
-            chip，给官方「提交变更」留出右上角。没选中轮次时不出现。
+            <b>第二行</b>永远单行：核心工作树 chip（绿点）在前，涉及的 root 各一枚带增删，放不下的进
+            <code>+N</code>（悬停列出、点击钉住）；右缘「变更 N
+            个文件」向下展开，本轮文件标「本轮」并排前；悬停文件在头部与 Composer 之间看 diff。
           </li>
           <li>
-            按钮要有 <b>即时悬浮说明</b>、<b>按下反馈</b>，以及
-            <b>二次确认</b>。回滚/编辑会丢后续对话，不能一碰就执行。
+            <b>当前轮由滚动决定</b
+            >：最后一个顶边滑到头部之下的轮次；滚到末尾就是最后一轮。回复进行中整簇禁用并说明；官方编辑打开在本轮时
+            chip 隐藏，提示槽显示「正在编辑本轮」。
           </li>
         </ol>
 
         <div class="mode-switch" role="tablist" aria-label="预览模式">
-          <button type="button" id="mode-target" aria-pressed="true">目标样式</button>
-          <button type="button" id="mode-current" aria-pressed="false">当前烂样式</button>
+          <button type="button" id="mode-target" aria-pressed="true">轮次头部（新）</button>
+          <button type="button" id="mode-legacy" aria-pressed="false">旧浮层（对比）</button>
+        </div>
+        <div class="options" aria-label="本轮状态演示">
+          <label><input type="checkbox" id="opt-busy" /> 回复进行中</label>
+          <label><input type="checkbox" id="opt-native-edit" /> 官方编辑打开在本轮</label>
+          <label><input type="checkbox" id="opt-last-turn-only" /> Harness 只能回滚最后一轮</label>
         </div>
         <p class="hint">
-          右侧可以悬停轮次看「⋯」、点轮次选中、悬停按钮看说明、点回滚看确认框；底部「2
-          个文件」展开列表并悬停看 diff 预览；Composer 右下「工作树
-          ▾」打开选择器。当前模式是按你截图复原的漂浮层。
+          右侧滚动对话区看序号和提示行实时变化；点提示行回到该轮、点 ▾ 看全文；悬停动作 chip
+          看说明，点回滚看确认；点右缘「变更 8 个文件」向下展开、悬停文件看 diff；悬停
+          <code>+N</code> 看被折叠的仓库；Composer 右下「工作树
+          ▾」打开草稿选择器。「旧浮层」模式复原旧问题：动作簇压住首轮提示，半透明 bar
+          盖住对话最后几行。
         </p>
 
         <h2>怎么实现</h2>
         <ul>
           <li>
-            工作区节点挂在 <code>document.body</code> 上，用固定定位贴住
-            <code>[data-codex-composer-root]</code>
-            顶边并对齐其横向盒子；不再放进 Composer 父节点，避免祖先 transform 让它漂移。
+            <code>renderer-turn-header.ts</code> 把头部挂在 body 上固定定位：<code
+              >turnHeaderBox</code
+            >
+            取滚动区顶边（标题栏之下）与 Composer 列的并集，<code>reserveTranscriptTop</code>
+            给对话内容列补 padding-top，首轮滚到顶也不被盖；留不出空间就卸载。
           </li>
           <li>
-            左侧第一枚是<b>核心工作区</b>（线程 cwd，绿点标记，无变更也常驻）；其后每个涉及的 root
-            各一枚 chip，带该 root 自己的增删；0 行变更的 root 不出现；不在任何已巡检 root
-            下的绝对路径经 Host <code>extraPaths</code> 解析成 <code>external</code> chip；放不下的
-            chip 收进 <code>+N</code>。
+            当前轮：<code>resolveCurrentTurn</code> 按 rect 二分——最后一个顶边 ≤
+            头部底边的轮次，末尾在视口内取最后一轮，6px 迟滞防抖；<code>promptPinned</code>
+            只在用户气泡底边滚过头部底边时把提示搬进头部。滚动、resize、ResizeObserver 与 DOM
+            变更合并到一帧。
           </li>
           <li>
-            右侧折叠控件展示文件数和聚合增删，文件列表贴右边向上展开、按 root 分组；悬浮 diff
-            预览放大到 560×420 以内、贴在列表左侧、可进入滚动，Esc
-            关闭；点击进入该文件的官方变更展示。原生 Changes / Review 重复区只在文件披露可用时隐藏。
+            第一行由 <code>renderer-turn-header-row.ts</code> 绘制，动作簇仍是
+            <code>renderTurnActionCluster</code>，状态与 Host RPC 在
+            <code>renderer-turn-action-controller.ts</code>：回复进行中给
+            <code>blocked.busy</code>，官方编辑模式让位，回滚能力位不足时诚实禁用，Redo
+            是线程级槽；tooltip 在头部里向下展开。
           </li>
           <li>
-            轮次操作仍是 Host 自有节点（不能写进 React transcript），但坐标锚到选中
-            <code>[data-turn-key]</code>
-            的顶栏右侧；和官方 summary 按钮撞框时让位。左侧 8px
-            圆点已去掉：悬停任一轮次时其右上角出现半透明「⋯」chip，点击即选中该轮并展开 编辑 / 回滚
-            / Redo；滚动、缩放、轮次尺寸变化与 DOM 变更合并到一帧内重定位。
-          </li>
-          <li>
-            回滚按钮按 Host <code>inspect.rollback</code>
-            能力位禁用并给出原因（如「此线程只能回滚最后一轮」）；编辑找不到官方铅笔时把本轮提示回填
-            Composer 并聚焦；文案不再承诺「还原文件」，也不再暗中点官方 Undo。
-          </li>
-          <li>
-            动作簇只在对话滚动区里活动：长轮次滚过顶边时它贴住对话区上沿，不会漂进标题栏挡住
-            Share；轮次只剩一条缝或滑到 Composer 之下就隐藏。
-          </li>
-          <li>
-            Redo 是线程级状态：只有 Host <code>inspect</code> 报
-            <code>historyRedoAvailable</code>（任意长度的回滚之后，整段被回滚的 Session
-            进同一个槽）才亮；官方 Redo 只给 Codex 自己的线程兜底，外部线程没槽就只提示。
-          </li>
-          <li>
-            在 <code>renderer-turn-actions.ts</code> 补 hover/active/focus、自定义
-            tooltip、锚定确认气泡。Edit / Rollback / Redo 都先确认再调现有 Host RPC。
-          </li>
-          <li>
-            改 <code>renderer-overlay-layout.ts</code>：删掉右栏
-            <code>conversationRailBox</code>
-            当主摆放；底栏用 Composer 宽度，动作条用 turn rect。
+            第二行由 <code>renderer-turn-header-workspace.ts</code> 从
+            <code>renderer-workspace-files-state.ts</code> 绘制：<code>fitWorkspaceChips</code>
+            保证单行、尾部 chip 收进 +N、核心 chip 永不隐藏；<code>renderFileDisclosure</code> 按
+            root 分组、本轮文件带标签排前；<code>previewOrigin</code> 把 diff
+            预览放在列表旁、头部之下、Composer 之上。原生 Changes / Review
+            重复区只在文件披露可用时隐藏。
           </li>
         </ul>
 
         <h2>本轮状态</h2>
         <p class="hint">
-          状态栏切片（挂 body、核心 chip 常驻、按 root 分组与 <code>external</code>
-          解析、Item 级文件集、大预览）已进入
-          <code>renderer-workspace-bar.ts</code>；轮次动作切片已进入
-          <code>renderer-turn-actions.ts</code>；Worktree 选择器切片已进入
-          <code>renderer-draft-worktree-picker.ts</code>（Host
-          <code>codexhost/workspace/worktree/list|create</code> + desktop-control 草稿
-          <code>cwd</code> 改写，见下方 Composer 右下的「工作树 ▾」）；多轮回滚切片已进入 Host
-          <code>external-thread-rollback.ts</code>（现存线程在自身 checkpoint fork，分页线程回滚 /
-          Redo 后补发 <code>thread/reverted</code>）。四个切片均已落地，真机量测项见
-          <code>vibe/specs/260903/0929-worktree-surface-overhaul/plan.md</code> §8。
+          轮次头部已落地：<code>renderer-turn-header.ts</code> 及其 row / workspace
+          子模块、<code>turn-header.css</code>、<code>workspace-surface.css</code>；旧的 Composer
+          上方状态栏与轮次右侧动作簇（含 hover「⋯」）已删除；「工作树
+          ▾」选择器（<code>renderer-draft-worktree-picker.ts</code>）与多轮回滚 / Redo（Host
+          <code>external-thread-rollback.ts</code>）不变。真机量测项见
+          <code>vibe/specs/260903/1631-transcript-turn-header/</code>。
         </p>
       </aside>
 
@@ -968,110 +887,164 @@
         <section class="desktop" aria-label="Codex Desktop 对话预览">
           <header class="titlebar">
             <span class="dot"></span>
-            <span class="title">260901-对话浮层预览</span>
-            <button class="share" type="button" tabindex="-1">Share</button>
+            <span class="title">260903-轮次头部预览</span>
+            <span class="share">Share</span>
           </header>
-          <div class="thread">
-            <div class="transcript" id="transcript">
-              <article class="turn" data-role="user" data-turn="t1">
-                <span class="turn-hover" title="编辑 / 回滚 / Redo 此轮">⋯</span>
-                <div class="turn-kicker">
-                  你
-                  <span class="turn-actions" data-actions-for="t1"></span>
+          <div class="thread" id="thread">
+            <div class="turn-header" id="turn-header">
+              <div class="th-row">
+                <span class="th-index" id="th-index" aria-live="polite">还没有轮次</span>
+                <button class="th-prompt" id="th-prompt" type="button" hidden></button>
+                <span class="th-spacer" id="th-spacer"></span>
+                <button class="chip th-expand" id="th-expand" type="button" hidden>▾</button>
+                <div class="turn-actions" id="turn-actions"></div>
+              </div>
+              <div class="th-row workspace">
+                <div class="chips" id="chips"></div>
+                <div class="files" id="files" data-open="false">
+                  <button class="files-toggle" id="files-toggle" type="button">
+                    <span id="files-count"></span>
+                    <span class="stats" id="files-stats"></span>
+                    <span class="files-chevron" id="files-chevron" aria-hidden="true">▾</span>
+                  </button>
+                  <div class="file-list" id="file-list"></div>
                 </div>
-                <p>这种样式烂透了。先梳理我想要的，再出 preview。</p>
-              </article>
-              <article class="turn" data-role="assistant" data-turn="t2" data-selected="true">
-                <span class="turn-hover" title="编辑 / 回滚 / Redo 此轮">⋯</span>
-                <div class="turn-kicker">
-                  Grok · 本轮
-                  <span class="turn-actions" data-actions-for="t2"></span>
-                </div>
-                <p>按批量提交技能先盘点两个仓库的脏文件，再按行为分批提交；这次只提交、不推送。</p>
-                <p>
-                  文档与实现对齐。按行为拆成几批本地提交：Composer 残留、Grok steer/标题、Host
-                  通路、文档。
-                </p>
-                <span class="native-commit">提交所有的代码变更进行提交</span>
-              </article>
-              <article class="turn" data-role="user" data-turn="t3">
-                <span class="turn-hover" title="编辑 / 回滚 / Redo 此轮">⋯</span>
-                <div class="turn-kicker">
-                  你
-                  <span class="turn-actions" data-actions-for="t3"></span>
-                </div>
-                <p>按钮要有悬浮提示、真实点击效果，以及二次确认。</p>
-              </article>
+              </div>
+              <div class="th-panel" id="th-panel" role="region" hidden></div>
+              <div class="th-notice" id="th-notice" hidden></div>
+            </div>
+            <div class="file-preview" id="file-preview" hidden>
+              <div class="preview-head">
+                <code id="preview-path"></code>
+                <span class="stats" id="preview-stats"></span>
+              </div>
+              <div class="preview-body" id="preview-body"></div>
+            </div>
+            <div class="legacy-cluster" aria-hidden="true">
+              <button class="chip" type="button" tabindex="-1">编辑</button>
+              <button class="chip" type="button" tabindex="-1" data-tone="danger">回滚</button>
+              <button class="chip" type="button" tabindex="-1" disabled>Redo</button>
             </div>
 
-            <div class="legacy workspace" aria-hidden="true">
-              <div class="legacy-row">
-                <b>codex-h...</b>
-                <span>czz-d...</span>
-                <span class="add">+1,226</span>
-                <span class="del">-181</span>
+            <div class="transcript" id="transcript">
+              <div class="column" id="column">
+                <article class="turn" data-turn-key="t1">
+                  <div class="prompt" data-message-role="user">
+                    这种样式烂透了。先梳理我想要的，再出 preview。
+                  </div>
+                  <div class="reply">
+                    <div class="turn-kicker">Grok · 第 1 轮</div>
+                    <p>
+                      截图里两块红圈是同一类错：Host
+                      控件漂在对话中间，压住正文和官方按钮。先把职责拆开：轮次动作属于「当前轮」，工作区状态属于「这个线程」，两者都不该跟着某个气泡漂。
+                    </p>
+                    <p>我先出一版 preview 页，把目标样式和旧样式并排，你看完再定。</p>
+                  </div>
+                </article>
+                <article class="turn" data-turn-key="t2">
+                  <div class="prompt" data-message-role="user">
+                    工作区 bar 不要再漂在 Composer 上面了，文件列表也别往上弹。
+                  </div>
+                  <div class="reply">
+                    <div class="turn-kicker">Grok · 第 2 轮</div>
+                    <p>
+                      去掉挂在 body 上贴 Composer 顶边的状态栏，transcript
+                      也不再为它预留底部空间；文件列表、+N 列表统一向下展开。
+                    </p>
+                    <p>
+                      顺手把 <code>turnHeaderBox</code>
+                      的落点改到滚动区顶边：标题栏之下、Composer 列宽。
+                    </p>
+                  </div>
+                </article>
+                <article class="turn" data-turn-key="t3">
+                  <div class="prompt" data-message-role="user">
+                    把编辑 / 回滚 / Redo
+                    从轮次右上角挪走，做成一条钉在对话区顶部的轮次头部：第一行是序号、本轮提示和动作，第二行是工作区；滚动时头部跟着当前轮走，不能盖住任何正文。
+                  </div>
+                  <div class="reply">
+                    <div class="turn-kicker">Grok · 第 3 轮</div>
+                    <p>
+                      头部不透明、下圆角、带阴影，<code>position: fixed</code> 挂在 body，横向对齐
+                      Composer 列。首轮被头部高度顶下去，滚到顶也不会被盖。
+                    </p>
+                    <p>
+                      当前轮由 <code>resolveCurrentTurn</code> 按 rect
+                      决定：最后一个顶边滑到头部之下的轮次；末尾在视口内就是最后一轮。提示行只在用户气泡整个滚过头部之后才出现，点它回到本轮开始。
+                    </p>
+                    <p>
+                      回复进行中整簇禁用并说明原因；官方编辑模式打开时簇让位，提示槽显示「正在编辑本轮」。
+                    </p>
+                  </div>
+                </article>
+                <article class="turn" data-turn-key="t4">
+                  <div class="prompt" data-message-role="user">
+                    规则文档同步一下，把这个设计决定写进 CodeNote 的偏好和 plan。
+                  </div>
+                  <div class="reply">
+                    <div class="turn-kicker">Grok · 第 4 轮</div>
+                    <p>
+                      已在 design-preferences 记下「Host 浮层不得漂在正文之上，统一钉顶」；plan
+                      补了真机量测项：滚动序号、提示行钉住时机、首轮不被盖。
+                    </p>
+                  </div>
+                </article>
+                <article class="turn" data-turn-key="t5">
+                  <div class="prompt" data-message-role="user">
+                    本轮改的文件要在列表里标出来并排在前面，悬停要能看 diff。
+                  </div>
+                  <div class="reply">
+                    <div class="turn-kicker">Grok · 第 5 轮</div>
+                    <p>
+                      文件披露按 root
+                      分组，当前轮涉及的文件带「本轮」标签并排到组内最前；悬停某个文件时 diff
+                      预览贴在列表旁边、头部之下、Composer 之上，指针进入预览不会关闭。
+                    </p>
+                    <p>文件集来自 Item 级快照，切换当前轮只重排标签，不重新拉数据。</p>
+                  </div>
+                </article>
+                <article class="turn" data-turn-key="t6">
+                  <div class="prompt" data-message-role="user">
+                    EyPc 那边的线程列表也要能看到外部线程的归档状态。
+                  </div>
+                  <div class="reply">
+                    <div class="turn-kicker">Grok · 第 6 轮</div>
+                    <p>
+                      EyPc 靠委托 Host 的 thread list 感知外部线程，归档目前不透出；补了
+                      <code>archived</code> 字段的透传，UI 侧下一轮再接。
+                    </p>
+                  </div>
+                </article>
+                <article class="turn" data-turn-key="t7">
+                  <div class="prompt" data-message-role="user">
+                    最后把 preview 页更新成新设计，滚动时序号和提示行要实时变。
+                  </div>
+                  <div class="reply">
+                    <div class="turn-kicker">Grok · 第 7 轮</div>
+                    <p>
+                      预览页改成固定高度的可滚动对话区，七轮对话；头部按同一套 rect
+                      逻辑算当前轮，滚动即更新。旧浮层留作对比模式。
+                    </p>
+                    <p>
+                      滚到这里头部应显示「第 7/7 轮」；回滚任一轮后，之后的轮次消失，Redo 亮起。
+                    </p>
+                  </div>
+                </article>
               </div>
-              <div class="legacy-row">
-                <b>c...</b>
-                <span>codex/2...</span>
-                <span>wt 260...</span>
-                <span class="add">+0</span>
-                <span class="del">-0</span>
-              </div>
-              <div class="legacy-files">▸ 0 files this turn</div>
-            </div>
-            <div class="legacy actions" aria-hidden="true">
-              <button class="chip" type="button">Edit</button>
-              <button class="chip" type="button">Rollback</button>
-              <button class="chip" type="button">Redo</button>
             </div>
 
             <div class="footer">
-              <aside class="mask" aria-label="工作区变更浮层">
-                <div class="chips">
-                  <span class="repo" data-core="true" title="核心工作区">
-                    <b>260903-worktree-surface</b>
-                    <span class="tree">codex-host 的工作树</span>
-                    <span class="branch">· codex/260903-worktree-surface</span>
-                    <span class="add">+126</span>
-                    <span class="del">-21</span>
-                  </span>
-                  <span class="repo" title="涉及的外部仓库">
-                    <b>CodeNote</b>
-                    <span class="branch">· main</span>
-                    <span class="add">+18</span>
-                    <span class="del">-2</span>
-                  </span>
-                  <span class="repo more" title="更多涉及的仓库">+1</span>
-                </div>
-                <div class="files" id="files" data-open="false">
-                  <button class="files-toggle" type="button" id="files-toggle">
-                    <span>2 个文件</span>
-                    <span class="add">+126</span>
-                    <span class="del">-21</span>
-                    <span id="files-chevron">▸</span>
-                  </button>
-                  <div class="file-list" title="悬浮文件可预览 diff">
-                    <button class="file" type="button">
-                      <code>packages/renderer-extension/src/renderer-turn-actions.ts</code>
-                      <span class="add">+86</span>
-                      <span class="del">-12</span>
-                    </button>
-                    <button class="file" type="button">
-                      <code>packages/renderer-extension/src/renderer-workspace-bar.ts</code>
-                      <span class="add">+40</span>
-                      <span class="del">-9</span>
-                    </button>
-                  </div>
-                  <div class="file-preview" aria-hidden="true">
-                    <span class="add">+ const compact = true;</span>
-                    <span class="del">- const inventory = allRepositories;</span>
-                    // changed-file owner only
-                  </div>
-                </div>
+              <aside class="legacy-bar" aria-hidden="true">
+                <span class="repo" data-core="true">
+                  <b>260903-worktree-surface</b>
+                  <span class="branch">· codex/260903-worktree-surface</span>
+                </span>
+                <span class="repo"><b>CodeNote</b><span class="branch">· main</span></span>
+                <span class="chip more">+1</span>
+                <span class="files-toggle">2 个文件 <span class="add">+126</span> ▸</span>
               </aside>
-              <div class="composer">
-                <div class="placeholder">Do anything</div>
+              <div class="composer" id="composer">
+                <div class="placeholder" id="composer-text">Do anything</div>
                 <div class="composer-meta">
                   <span class="pill">58%</span>
                   <span>Always approve</span>
@@ -1129,248 +1102,595 @@
         </section>
       </main>
     </div>
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast" hidden></div>
     <script>
-      // 文案与 renderer-turn-actions.ts 的 turnActionCopy 对齐：不承诺还原文件。
-      // t1 演示 Host inspect.rollback = { lastTurn: true, multiTurn: false } 时的诚实禁用。
-      const copy = {
-        t1: {
-          later: 2,
-          unsupported: "此线程只能回滚最后一轮，选中轮次之后还有 2 轮",
-          edit: "此线程只能回滚最后一轮，选中轮次之后还有 2 轮；编辑会把本轮提示回填到输入框重新发送",
-          rollback: "此线程只能回滚最后一轮，选中轮次之后还有 2 轮",
-          redo: "只有回滚之后才能 Redo",
+      // 文案与 renderer-turn-actions.ts 的 turnActionCopy（中文分支）逐字对齐：不承诺还原文件；
+      // Redo 是线程级槽位；blocked 三态由头部决定（官方编辑 / 回复进行中 / 无轮次）。
+      function turnActionCopy(input) {
+        const redoAvailable = input.redoAvailable === true;
+        const support = input.rollbackSupport ?? "full";
+        const rollbackUnsupported =
+          input.laterTurns > 0 &&
+          (support === "none" || (support === "lastTurnOnly" && input.laterTurns > 1));
+        const rollbackPossible = input.laterTurns > 0 && !input.rolledBack && !rollbackUnsupported;
+        const editNeedsConfirm = rollbackPossible;
+        const unsupportedReason =
+          support === "none"
+            ? "此线程的 Harness 不支持回滚"
+            : `此线程只能回滚最后一轮，选中轮次之后还有 ${input.laterTurns} 轮`;
+        return {
+          editLabel: "编辑",
+          editTitle: editNeedsConfirm
+            ? "将先回滚该轮之后的对话，再到本轮开始处编辑；文件不会自动回退"
+            : rollbackUnsupported
+              ? `${unsupportedReason}；编辑会把本轮提示回填到输入框重新发送`
+              : input.rolledBack
+                ? "已回滚到本轮开始，可直接编辑提示"
+                : "这是最后一轮，直接编辑提示",
+          editConfirm:
+            "编辑会先回滚该轮之后的对话，再打开提示。文件不会自动回退，如需回退请用官方 Undo 或 Git。确定继续？",
+          editConfirmAction: "确认编辑",
+          rollbackLabel: "回滚",
+          rollbackTitle: rollbackUnsupported
+            ? unsupportedReason
+            : rollbackPossible
+              ? "回滚到本轮开始：取消之后的对话；文件不会自动回退"
+              : "没有后续轮次可回滚",
+          rollbackConfirm:
+            "回滚到本轮开始，将取消之后的对话。文件不会自动回退，如需回退请用官方 Undo 或 Git。",
+          rollbackConfirmAction: "确认回滚",
+          rollbackDisabled: !rollbackPossible,
+          redoLabel: "Redo",
+          redoTitle: redoAvailable ? "恢复刚回滚掉的对话" : "只有回滚之后才能 Redo",
+          redoConfirm: "恢复刚回滚掉的对话。文件不会自动再改回去。",
+          redoConfirmAction: "确认 Redo",
+          redoDisabled: !redoAvailable,
+          editNeedsConfirm,
+          cancelLabel: "取消",
+          editNotice: "已回滚到本轮开始，后续对话已取消，可以编辑后重新发送",
+          editFallbackNotice: "官方编辑不可用，已把本轮提示回填到输入框",
+          rollbackNotice: "已回滚到本轮开始，后续对话已取消",
+          redoNotice: "已恢复刚回滚掉的对话",
+          blocked: {
+            nativeEdit: "正在使用官方编辑，本轮动作已停用",
+            busy: "回复进行中，结束后再编辑或回滚",
+            noTurns: "还没有轮次",
+          },
+        };
+      }
+
+      // 与 renderer-overlay-layout.ts 的 resolveCurrentTurn 一致：按 rect 二分找最后一个顶边
+      // 已滑到头部底边之下的轮次；末尾在视口内取最后一轮；6px 迟滞让边界停在头部上时不抖。
+      function resolveCurrentTurn({ count, topAt, atBottom, headerBottom, previous }) {
+        if (count <= 0) return null;
+        const last = count - 1;
+        if (atBottom) return last;
+        let low = 0;
+        let high = last;
+        while (low < high) {
+          const middle = Math.ceil((low + high) / 2);
+          if (topAt(middle) <= headerBottom) low = middle;
+          else high = middle - 1;
+        }
+        const base = topAt(low) <= headerBottom ? low : 0;
+        if (previous !== null && previous >= 0 && previous <= last) {
+          if (base === previous + 1 && topAt(base) > headerBottom - 6) return previous;
+          if (base === previous - 1 && topAt(previous) < headerBottom + 6) return previous;
+        }
+        return base;
+      }
+
+      // 工作区数据（示意）：核心工作区常驻，涉及的 root 各一枚 chip；
+      // 文件一行一个：root|路径|+|-|所属轮次|diff（⏎ 代表换行）。
+      const roots = [
+        { id: "core", core: true, name: "codex-host", branch: "czz-dev", role: "核心工作区" },
+        {
+          id: "codenote",
+          name: "CodeNote",
+          branch: "codex/260903-turn-header-rules",
+          role: "涉及的仓库",
         },
-        t2: {
-          later: 1,
-          edit: "将先回滚该轮之后的对话，再到本轮开始处编辑；文件不会自动回退",
-          rollback: "回滚到本轮开始：取消之后的对话；文件不会自动回退",
-          redo: "只有回滚之后才能 Redo",
-        },
-        t3: {
-          later: 0,
-          edit: "这是最后一轮，直接编辑提示",
-          rollback: "没有后续轮次可回滚",
-          redo: "只有回滚之后才能 Redo",
-        },
-      };
+        { id: "eypc", name: "EyPc", branch: "feature/thread-archive-sync", role: "涉及的仓库" },
+        { id: "dsh", name: "dsh-harness", branch: "main", role: "涉及的外部仓库" },
+      ];
+      const files = `
+core|packages/renderer-extension/src/renderer-turn-header.ts|5|1|t3|@@ -246,3 +246,7 @@ const measure = (state) => {⏎-    const headerBottom = box.top;⏎+    const headerBottom = box.top + height;⏎+    // Reserve transcript space so the first Turn clears the header.⏎+    reserveTranscriptTop(state.column, need);
+core|packages/renderer-extension/src/turn-header.css|3|0|t3|@@ -1,4 +1,7 @@⏎ .codexhost-turn-header {⏎+  position: fixed;⏎+  border-radius: 0 0 12px 12px;⏎+  background: rgb(17 17 17);
+core|packages/renderer-extension/src/renderer-workspace-surface.ts|2|1|t5|@@ -278,2 +278,3 @@⏎-    for (const file of section.files) {⏎+    const ordered = [...section.files].sort((l, r) => Number(isCurrent(r)) - Number(isCurrent(l)));⏎+    for (const file of ordered) {
+core|packages/renderer-extension/src/renderer-overlay-layout.ts|1|1|t2|@@ -271,1 +271,1 @@ export function turnHeaderBox(input) {⏎-  const top = Math.round(input.composerTop - input.height - 8);⏎+  const top = Math.max(0, Math.round(input.scrollerTop), Math.round(input.chromeBottom ?? 0));
+codenote|AiRef/VibePractice/Vibe_Rules/design-preferences/README.md|2|0|t4|@@ -40,0 +41,2 @@⏎+- Host 浮层不得漂在正文之上；线程级状态统一钉在对话区顶边。⏎+- 动作簇随「当前轮」走，而不是随选中气泡走。
+codenote|vibe/specs/260903/0929-worktree-surface-overhaul/plan.md|1|0|t4|@@ -215,0 +216,1 @@ ## 8. Execution Journal⏎+- 轮次头部：真机量测滚动序号、提示行钉住时机、首轮不被盖。
+eypc|src/host/thread-list.ts|1|0|t6|@@ -88,0 +89,1 @@⏎+      archived: thread.archived ?? false,
+dsh|docs/harness-notes.md|1|0|t7|@@ -12,0 +13,1 @@⏎+- codexhost 轮次头部：DSH 线程只支持回滚最后一轮，头部按能力位禁用。`
+        .trim()
+        .split("\n")
+        .map((line) => {
+          const [root, path, add, del, turn, diff] = line.split("|");
+          return {
+            root,
+            path,
+            add: Number(add),
+            del: Number(del),
+            turn,
+            diff: diff.replaceAll("⏎", "\n"),
+          };
+        });
 
       const state = {
         mode: "target",
-        selected: "t2",
-        rolledBack: false,
+        index: null,
+        key: null,
+        count: 0,
+        pinned: false,
         confirming: null,
+        rolledBackKey: null,
+        redoAvailable: false,
+        dropped: [],
+        busy: false,
+        editingKey: null,
+        rollbackSupport: "full",
+        headerWidth: 0,
+        filesKey: undefined,
+        rowSig: "",
+        clusterSig: "",
       };
 
-      const toastEl = document.getElementById("toast");
-      let toastTimer = 0;
+      const $ = (id) => document.getElementById(id);
+      const thread = $("thread");
+      const transcript = $("transcript");
+      const column = $("column");
+      const composer = $("composer");
+      const header = $("turn-header");
+      const thPrompt = $("th-prompt");
+      const thExpand = $("th-expand");
+      const thPanel = $("th-panel");
+      const actionsHost = $("turn-actions");
+      const chips = $("chips");
+      const fileList = $("file-list");
+      const preview = $("file-preview");
 
-      function toast(text) {
-        toastEl.textContent = text;
-        toastEl.dataset.show = "true";
-        window.clearTimeout(toastTimer);
-        toastTimer = window.setTimeout(() => {
-          toastEl.dataset.show = "false";
-        }, 2200);
+      function el(tag, text, className) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
       }
+      function statsInto(node, add, del) {
+        node.replaceChildren(el("span", `+${add}`, "add"), el("span", `-${del}`, "del"));
+        return node;
+      }
+      const sumStats = (list) =>
+        list.reduce((sum, f) => ({ add: sum.add + f.add, del: sum.del + f.del }), {
+          add: 0,
+          del: 0,
+        });
+      const turns = () => [...column.querySelectorAll(".turn:not([hidden])")];
+      const promptTextOf = (turn) =>
+        turn.querySelector('[data-message-role="user"]').textContent.trim().replace(/\s+/g, " ");
+      const currentTurn = () => (state.index === null ? null : turns()[state.index]);
+      const nativeEditNow = () => state.editingKey !== null && state.editingKey === state.key;
+      const blockedNow = () =>
+        nativeEditNow() ? "nativeEdit" : state.busy ? "busy" : state.count === 0 ? "noTurns" : null;
+      const currentCopy = () =>
+        turnActionCopy({
+          rolledBack: state.key !== null && state.rolledBackKey === state.key,
+          laterTurns: state.index === null ? 0 : state.count - 1 - state.index,
+          redoAvailable: state.redoAvailable,
+          rollbackSupport: state.rollbackSupport,
+        });
+
+      const timers = new Map();
+      function flash(node, text, ms) {
+        node.textContent = text;
+        node.hidden = false;
+        window.clearTimeout(timers.get(node));
+        timers.set(
+          node,
+          window.setTimeout(() => (node.hidden = true), ms),
+        );
+      }
+      const toast = (text) => flash($("toast"), text, 2200);
+      const notify = (text) => flash($("th-notice"), text, 4000);
+
+      function setPromptPanel(open) {
+        thPanel.hidden = !open;
+        thExpand.ariaExpanded = String(open);
+      }
+      function setFilesOpen(open) {
+        $("files").dataset.open = String(open);
+        $("files-toggle").ariaExpanded = String(open);
+        $("files-chevron").textContent = open ? "▴" : "▾";
+        if (!open) hidePreview();
+      }
+      function collapseAll() {
+        setPromptPanel(false);
+        setFilesOpen(false);
+        for (const more of chips.querySelectorAll(".more")) more.ariaExpanded = "false";
+      }
+      function dismiss() {
+        collapseAll();
+        if (!state.confirming) return;
+        state.confirming = null;
+        paintCluster();
+      }
+
+      // ---------- 第一行 ----------
+      function paintRow() {
+        const nativeEdit = nativeEditNow();
+        const text = state.pinned && currentTurn() ? promptTextOf(currentTurn()) : "";
+        const sig = `${state.index}|${state.count}|${state.pinned}|${nativeEdit}|${state.busy}|${text}`;
+        if (sig === state.rowSig) return;
+        state.rowSig = sig;
+        $("th-index").textContent =
+          state.index === null ? "还没有轮次" : `第 ${state.index + 1}/${state.count} 轮`;
+        header.dataset.nativeEdit = String(nativeEdit);
+        header.dataset.streaming = String(state.busy);
+        const showPrompt = nativeEdit || (state.pinned && text);
+        thPrompt.hidden = !showPrompt;
+        thPrompt.textContent = nativeEdit ? "正在编辑本轮" : text.slice(0, 200);
+        thPrompt.title = nativeEdit ? "" : "回到本轮开始";
+        thPanel.textContent = text;
+        thExpand.hidden = !(showPrompt && !nativeEdit);
+        thExpand.ariaLabel = "展开完整提示词";
+        $("th-spacer").hidden = Boolean(showPrompt);
+        if (!showPrompt || nativeEdit) setPromptPanel(false);
+      }
+
+      function confirmBox(copy, text, actionLabel, danger) {
+        const box = el("div", undefined, "confirm");
+        const row = el("div", undefined, "confirm-row");
+        const cancelClick = () => ((state.confirming = null), paintCluster());
+        for (const [label, className, onClick] of [
+          [copy.cancelLabel, "ghost", cancelClick],
+          [actionLabel, danger ? "primary danger" : "primary", confirmAction],
+        ]) {
+          const button = el("button", label, className);
+          button.type = "button";
+          button.addEventListener("click", (event) => (event.stopPropagation(), onClick()));
+          row.append(button);
+        }
+        box.append(el("p", text), row);
+        return box;
+      }
+
+      // 与 renderTurnActionCluster 一致：blocked 时整簇禁用并把原因写进 tooltip；确认气泡挂在对应 chip 下方
+      function paintCluster() {
+        const copy = currentCopy();
+        const blocked = blockedNow();
+        const sig = `${state.key}|${state.count}|${state.index}|${blocked}|${state.confirming}|${copy.editTitle}|${copy.rollbackTitle}|${copy.redoTitle}`;
+        if (sig === state.clusterSig) return;
+        state.clusterSig = sig;
+        actionsHost.replaceChildren();
+        for (const id of ["edit", "rollback", "redo"]) {
+          // 最后一轮 / 已回滚的编辑不确认，直接回填 Composer
+          const plainEdit = id === "edit" && !copy.editNeedsConfirm;
+          const title = blocked ? copy.blocked[blocked] : copy[`${id}Title`];
+          const wrap = el("span", undefined, "action");
+          const button = el("button", copy[`${id}Label`], "chip");
+          button.type = "button";
+          button.dataset.action = id;
+          button.ariaLabel = title;
+          button.disabled = blocked !== null || (id !== "edit" && copy[`${id}Disabled`]);
+          if (id === "rollback" || (id === "edit" && !plainEdit)) button.dataset.tone = "danger";
+          if (state.confirming === id) button.dataset.busy = "true";
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            if (!button.disabled) activate(id);
+          });
+          wrap.append(button, el("span", title, "tooltip"));
+          if (!blocked && state.confirming === id && !plainEdit) {
+            wrap.append(
+              confirmBox(copy, copy[`${id}Confirm`], copy[`${id}ConfirmAction`], id !== "redo"),
+            );
+          }
+          actionsHost.append(wrap);
+        }
+      }
+
+      // 与 renderer-turn-action-controller.ts 一致：真会回滚才二次确认；最后一轮的编辑直接回填 Composer
+      function activate(id) {
+        const copy = currentCopy();
+        if (state.confirming === id) {
+          state.confirming = null;
+          paintCluster();
+          return;
+        }
+        if (id === "edit" && !copy.editNeedsConfirm) {
+          clickEdit(copy);
+          return;
+        }
+        if (id !== "edit" && copy[`${id}Disabled`]) return;
+        state.confirming = id;
+        paintCluster();
+      }
+      function clickEdit(copy) {
+        // Harness 轮次没有官方铅笔：把本轮提示回填到 Composer
+        const editor = $("composer-text");
+        editor.textContent = currentTurn() ? promptTextOf(currentTurn()) : "";
+        editor.dataset.filled = "true";
+        notify(copy.editFallbackNotice);
+      }
+      function runRollback() {
+        const later = turns().slice(state.index + 1);
+        state.rolledBackKey = state.key;
+        if (later.length === 0) return;
+        for (const turn of later) turn.hidden = true;
+        state.dropped.push(...later);
+        state.redoAvailable = true; // Host 把被回滚掉的整段 Session 放进同一个 Redo 槽
+      }
+      function confirmAction() {
+        const pending = state.confirming;
+        state.confirming = null;
+        const copy = currentCopy();
+        if (pending === "edit") {
+          runRollback();
+          notify(copy.editNotice);
+          clickEdit(copy);
+        } else if (pending === "rollback") {
+          runRollback();
+          notify(copy.rollbackNotice);
+        } else if (pending === "redo") {
+          for (const turn of state.dropped) turn.hidden = false;
+          state.dropped = [];
+          state.rolledBackKey = null;
+          state.redoAvailable = false;
+          notify(copy.redoNotice);
+        }
+        schedule();
+      }
+
+      // ---------- 第二行 ----------
+      function renderChips() {
+        chips.replaceChildren();
+        for (const root of roots) {
+          const row = el("div", undefined, "repo");
+          if (root.core) row.dataset.core = "true";
+          row.title = `${root.role}\n~/work/${root.name}\n${root.branch}`;
+          row.append(el("b", root.name), el("span", `· ${root.branch}`, "branch"));
+          const stats = sumStats(files.filter((file) => file.root === root.id));
+          if (stats.add + stats.del > 0)
+            row.append(statsInto(el("span", undefined, "stats"), stats.add, stats.del));
+          chips.append(row);
+        }
+        const more = el("button", undefined, "chip more");
+        more.type = "button";
+        more.title = "更多涉及的仓库";
+        more.hidden = true;
+        more.addEventListener("click", (event) => {
+          event.stopPropagation();
+          more.ariaExpanded = more.ariaExpanded === "true" ? "false" : "true";
+        });
+        more.append(document.createTextNode(""), el("div", undefined, "more-list"));
+        chips.append(more);
+      }
+
+      // 与 fitWorkspaceChips 一致：尾部 chip 放不下就藏进 +N，核心 chip 永不隐藏；列表列出被藏的 chip
+      function fitChips() {
+        const rows = [...chips.querySelectorAll(":scope > .repo")];
+        const more = chips.querySelector(":scope > .more");
+        const list = more.querySelector(".more-list");
+        for (const row of rows) row.hidden = false;
+        more.hidden = true;
+        list.replaceChildren();
+        let hidden = 0;
+        while (chips.scrollWidth > chips.clientWidth + 1 && rows.length - hidden > 1) {
+          rows[rows.length - 1 - hidden].hidden = true;
+          hidden += 1;
+          more.hidden = false;
+          more.firstChild.data = `+${hidden}`;
+        }
+        for (const row of rows.slice(rows.length - hidden)) {
+          const clone = row.cloneNode(true);
+          clone.hidden = false;
+          list.append(clone);
+        }
+      }
+
+      // 与 renderFileDisclosure 一致：按 root 分组；本轮涉及的文件带「本轮」标签并排到组内最前
+      function renderFiles() {
+        const total = sumStats(files);
+        $("files-count").textContent = `变更 ${files.length} 个文件`;
+        statsInto($("files-stats"), total.add, total.del);
+        fileList.replaceChildren();
+        const groups = roots.filter((root) => files.some((file) => file.root === root.id));
+        const isCurrent = (file) => file.turn === state.key;
+        for (const root of groups) {
+          if (groups.length > 1) fileList.append(el("div", root.name, "file-group"));
+          const ordered = files
+            .filter((file) => file.root === root.id)
+            .sort((left, right) => Number(isCurrent(right)) - Number(isCurrent(left)));
+          for (const file of ordered) {
+            const row = el("button", undefined, "file");
+            row.type = "button";
+            row.append(el("code", file.path));
+            if (isCurrent(file)) {
+              row.dataset.turnFile = "true";
+              row.append(el("span", "本轮", "turn-tag"));
+            }
+            row.append(statsInto(el("span", undefined, "stats"), file.add, file.del));
+            const show = () => showPreview(file, row);
+            row.addEventListener("mouseenter", show);
+            row.addEventListener("focus", show);
+            row.addEventListener("mouseleave", scheduleHidePreview);
+            row.addEventListener("blur", scheduleHidePreview);
+            row.addEventListener("click", (event) => {
+              event.stopPropagation();
+              hidePreview();
+              toast("打开该文件的官方 diff 展示");
+            });
+            fileList.append(row);
+          }
+        }
+      }
+
+      // ---------- diff 预览：列表旁边、头部之下、Composer 之上（previewOrigin 的左优先 / 右兜底，视口换成模拟窗口） ----------
+      let previewTimer = 0;
+      let previewingRow = null;
+      function hidePreview() {
+        window.clearTimeout(previewTimer);
+        preview.hidden = true;
+        previewingRow?.removeAttribute("data-previewing");
+        previewingRow = null;
+      }
+      function scheduleHidePreview() {
+        window.clearTimeout(previewTimer);
+        previewTimer = window.setTimeout(hidePreview, 120);
+      }
+      function showPreview(file, row) {
+        window.clearTimeout(previewTimer);
+        previewingRow?.removeAttribute("data-previewing");
+        previewingRow = row;
+        row.dataset.previewing = "true";
+        $("preview-path").textContent = file.path;
+        $("preview-path").title = file.path;
+        statsInto($("preview-stats"), file.add, file.del);
+        const body = $("preview-body");
+        body.replaceChildren();
+        for (const line of file.diff.split("\n")) {
+          const tone = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "preview-meta";
+          body.append(el("div", line, tone));
+        }
+        preview.hidden = false;
+        const bounds = thread.getBoundingClientRect();
+        const list = fileList.getBoundingClientRect();
+        const composerTop = composer.getBoundingClientRect().top;
+        const minTop = header.getBoundingClientRect().bottom + 8;
+        // 宽度先按列表左侧剩余空间收（最小 280），窗口太窄再退到列表右侧
+        const room = Math.max(280, list.left - bounds.left - 16);
+        const width = Math.min(560, Math.floor(bounds.width * 0.6), room);
+        preview.style.width = `${width}px`;
+        preview.style.maxHeight = `min(420px, 50vh, ${Math.max(80, composerTop - minTop - 8)}px)`;
+        const height = preview.offsetHeight || 200;
+        const leftCandidate = list.left - width - 8;
+        const left =
+          leftCandidate >= bounds.left + 8
+            ? leftCandidate
+            : list.right + width + 8 <= bounds.right - 8
+              ? list.right + 8
+              : Math.max(bounds.left + 8, leftCandidate);
+        const top = Math.max(
+          minTop,
+          Math.min(row.getBoundingClientRect().top, composerTop - height),
+        );
+        preview.style.left = `${Math.round(left - bounds.left)}px`;
+        preview.style.top = `${Math.round(top - bounds.top)}px`;
+      }
+      preview.addEventListener("mouseenter", () => window.clearTimeout(previewTimer));
+      preview.addEventListener("mouseleave", scheduleHidePreview);
+
+      // ---------- 布局与当前轮：滚动 / resize / 尺寸变化合并到一帧 ----------
+      let frame = 0;
+      function schedule() {
+        if (!frame) frame = window.requestAnimationFrame(measure);
+      }
+      function measure() {
+        frame = 0;
+        const list = turns();
+        const count = list.length;
+        const target = state.mode === "target";
+        const bounds = thread.getBoundingClientRect();
+        const scrollerRect = transcript.getBoundingClientRect();
+        const composerRect = composer.getBoundingClientRect();
+        // 头部横向对齐 Composer 列（真实实现 turnHeaderBox：anchor 取 Composer 与首轮的并集）
+        const firstRect = list[0]?.getBoundingClientRect();
+        const left = Math.min(composerRect.left, firstRect?.left ?? composerRect.left);
+        const right = Math.max(composerRect.right, firstRect?.right ?? composerRect.right);
+        header.style.left = `${Math.round(left - bounds.left)}px`;
+        header.style.width = `${Math.round(right - left)}px`;
+        const headerBottom = target ? header.getBoundingClientRect().bottom : scrollerRect.top;
+        // 首轮被头部顶下去（真实实现 reserveTranscriptTop）：内容列补 padding-top，滚到顶也不被盖
+        column.style.paddingTop = target
+          ? `${Math.max(0, Math.round(headerBottom + 8 - scrollerRect.top - 18))}px`
+          : "0px";
+        const rects = list.map((turn) => turn.getBoundingClientRect());
+        const visibleBottom = Math.min(composerRect.top, scrollerRect.bottom);
+        const atBottom = count > 0 && rects[count - 1].bottom <= visibleBottom + 24;
+        const index = resolveCurrentTurn({
+          count,
+          topAt: (position) => rects[position].top,
+          atBottom,
+          headerBottom,
+          previous: state.index,
+        });
+        const turn = index === null ? null : list[index];
+        const key = turn ? turn.dataset.turnKey : null;
+        const keyChanged = key !== state.key;
+        let pinned = false;
+        if (turn) {
+          // 真实实现 promptPinned：用户气泡底边滚过头部底边才把提示搬进头部；钉住后多 8px 迟滞
+          const bubble = turn.querySelector('[data-message-role="user"]').getBoundingClientRect();
+          pinned = bubble.bottom <= headerBottom + (state.pinned && !keyChanged ? 8 : 2);
+        }
+        if (keyChanged) {
+          state.confirming = null;
+          setPromptPanel(false);
+        }
+        Object.assign(state, { index, key, count, pinned });
+        paintRow();
+        paintCluster();
+        if (Math.round(right - left) !== state.headerWidth) {
+          state.headerWidth = Math.round(right - left);
+          fitChips();
+        }
+        if (key !== state.filesKey) {
+          state.filesKey = key;
+          renderFiles();
+        }
+        const room = Math.max(80, Math.round(composerRect.top - headerBottom - 24));
+        fileList.style.maxHeight = `min(300px, 42vh, ${room}px)`;
+      }
+
+      // ---------- 交互 ----------
+      thPrompt.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const turn = currentTurn();
+        if (!turn || nativeEditNow()) return;
+        const delta =
+          turn.getBoundingClientRect().top - (header.getBoundingClientRect().bottom + 8);
+        transcript.scrollBy({ top: Math.round(delta), behavior: "smooth" });
+      });
+      thExpand.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setPromptPanel(thPanel.hidden);
+      });
+      $("files-toggle").addEventListener("click", (event) => {
+        event.stopPropagation();
+        setFilesOpen($("files").dataset.open !== "true");
+      });
+      transcript.addEventListener("scroll", () => (collapseAll(), schedule()), { passive: true });
+      window.addEventListener("resize", schedule);
+      const observer = new ResizeObserver(schedule);
+      for (const node of [header, column, composer]) observer.observe(node);
 
       function setMode(mode) {
         state.mode = mode;
         document.body.dataset.mode = mode;
-        document
-          .getElementById("mode-target")
-          .setAttribute("aria-pressed", String(mode === "target"));
-        document
-          .getElementById("mode-current")
-          .setAttribute("aria-pressed", String(mode === "current"));
-        renderActions();
+        $("mode-target").ariaPressed = String(mode === "target");
+        $("mode-legacy").ariaPressed = String(mode === "legacy");
+        state.headerWidth = 0; // 头部 display:none 期间量不到宽度，切回时重新收 +N
+        dismiss();
+        schedule();
       }
+      $("mode-target").addEventListener("click", () => setMode("target"));
+      $("mode-legacy").addEventListener("click", () => setMode("legacy"));
 
-      function selectTurn(id) {
-        state.selected = id;
-        state.confirming = null;
-        for (const turn of document.querySelectorAll(".turn")) {
-          turn.dataset.selected = String(turn.dataset.turn === id);
-        }
-        renderActions();
-      }
-
-      function actionButton(label, title, options) {
-        const wrap = document.createElement("span");
-        wrap.className = "action";
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "chip";
-        button.textContent = label;
-        if (options.tone) button.dataset.tone = options.tone;
-        button.disabled = Boolean(options.disabled);
-        if (options.busy) button.dataset.busy = "true";
-        const tooltip = document.createElement("span");
-        tooltip.className = "tooltip";
-        tooltip.textContent = title;
-        button.append(tooltip);
-        if (!options.disabled && options.confirmText) {
-          button.addEventListener("click", (event) => {
-            event.stopPropagation();
-            if (state.confirming === options.id) {
-              state.confirming = null;
-              renderActions();
-              return;
-            }
-            state.confirming = options.id;
-            renderActions();
-          });
-        } else if (!options.disabled && options.onPlainClick) {
-          button.addEventListener("click", (event) => {
-            event.stopPropagation();
-            state.confirming = null;
-            options.onPlainClick();
-            renderActions();
-          });
-        }
-        wrap.append(button);
-        return wrap;
-      }
-
-      function confirmBox(text, confirmLabel, danger, onConfirm) {
-        const box = document.createElement("div");
-        box.className = "confirm";
-        const p = document.createElement("p");
-        p.textContent = text;
-        const row = document.createElement("div");
-        row.className = "confirm-row";
-        const cancel = document.createElement("button");
-        cancel.type = "button";
-        cancel.className = "ghost";
-        cancel.textContent = "取消";
-        cancel.addEventListener("click", (event) => {
-          event.stopPropagation();
-          state.confirming = null;
-          renderActions();
+      const option = (id, apply) =>
+        $(id).addEventListener("change", (event) => {
+          apply(event.target.checked);
+          dismiss();
+          schedule();
         });
-        const ok = document.createElement("button");
-        ok.type = "button";
-        ok.className = danger ? "primary danger" : "primary";
-        ok.textContent = confirmLabel;
-        ok.addEventListener("click", (event) => {
-          event.stopPropagation();
-          onConfirm();
-        });
-        row.append(cancel, ok);
-        box.append(p, row);
-        return box;
-      }
-
-      function renderActions() {
-        for (const host of document.querySelectorAll(".turn-actions")) {
-          host.replaceChildren();
-          const turnId = host.getAttribute("data-actions-for");
-          if (state.mode !== "target" || turnId !== state.selected) continue;
-          const item = copy[turnId];
-          const rolled = state.rolledBack && turnId === "t2";
-          // 真会回滚时才二次确认；能力位不支持时编辑直接回填 Composer
-          const rollbackPossible = item.later > 0 && !rolled && !item.unsupported;
-          const edit = actionButton(
-            "编辑",
-            rolled ? "已回滚到本轮开始，可直接编辑提示" : item.edit,
-            {
-              id: "edit",
-              confirmText: rollbackPossible,
-              onPlainClick: () =>
-                toast(
-                  item.unsupported || rolled || item.later === 0
-                    ? "官方编辑不可用，已把本轮提示回填到输入框"
-                    : "已打开官方编辑",
-                ),
-            },
-          );
-          const rollback = actionButton("回滚", item.rollback, {
-            id: "rollback",
-            tone: "danger",
-            disabled: !rollbackPossible,
-            confirmText: true,
-          });
-          const redo = actionButton("Redo", rolled ? "恢复刚回滚掉的对话" : item.redo, {
-            id: "redo",
-            disabled: !rolled,
-            busy: rolled && state.confirming === "redo",
-            confirmText: true,
-          });
-          host.append(edit, rollback, redo);
-          const editBtn = edit.querySelector(".chip");
-          const rollbackBtn = rollback.querySelector(".chip");
-          const redoBtn = redo.querySelector(".chip");
-          if (state.confirming === "edit") {
-            editBtn.dataset.busy = "true";
-            edit.append(
-              confirmBox(
-                "编辑会先回滚该轮之后的对话，再打开提示。文件不会自动回退，如需回退请用官方 Undo 或 Git。确定继续？",
-                "确认编辑",
-                true,
-                () => {
-                  state.rolledBack = true;
-                  state.confirming = null;
-                  toast("已回滚到本轮开始，可以改提示后重发");
-                  renderActions();
-                },
-              ),
-            );
-          }
-          if (state.confirming === "rollback") {
-            rollbackBtn.dataset.busy = "true";
-            rollback.append(
-              confirmBox(
-                "回滚到本轮开始，将取消之后的对话。文件不会自动回退，如需回退请用官方 Undo 或 Git。",
-                "确认回滚",
-                true,
-                () => {
-                  state.rolledBack = true;
-                  state.confirming = null;
-                  toast("已回滚。Redo 现在可用");
-                  renderActions();
-                },
-              ),
-            );
-          }
-          if (state.confirming === "redo") {
-            redoBtn.dataset.busy = "true";
-            redo.append(
-              confirmBox("恢复刚回滚掉的对话。文件不会自动再改回去。", "确认 Redo", false, () => {
-                state.rolledBack = false;
-                state.confirming = null;
-                toast("已恢复后续对话");
-                renderActions();
-              }),
-            );
-          }
-        }
-      }
-
-      document.getElementById("mode-target").addEventListener("click", () => setMode("target"));
-      document.getElementById("mode-current").addEventListener("click", () => setMode("current"));
-
-      for (const turn of document.querySelectorAll(".turn")) {
-        turn.addEventListener("click", () => selectTurn(turn.dataset.turn));
-      }
-
-      const files = document.getElementById("files");
-      document.getElementById("files-toggle").addEventListener("click", () => {
-        const open = files.dataset.open === "true";
-        files.dataset.open = String(!open);
-        document.getElementById("files-chevron").textContent = open ? "▸" : "▾";
-      });
-      // diff 预览贴在列表左侧，宽度在 560 与「模拟窗口左缘」之间取小（真实实现按视口 clamp）
-      const filePreview = files.querySelector(".file-preview");
-      files.addEventListener("pointerover", () => {
-        const desktop = document.querySelector(".desktop").getBoundingClientRect();
-        const list = files.querySelector(".file-list").getBoundingClientRect();
-        filePreview.style.width = `${Math.max(280, Math.min(560, list.left - desktop.left - 16))}px`;
-        filePreview.style.right = `${Math.round(list.width) + 8}px`;
+      option("opt-busy", (on) => (state.busy = on));
+      option("opt-last-turn-only", (on) => (state.rollbackSupport = on ? "lastTurnOnly" : "full"));
+      option("opt-native-edit", (on) => {
+        for (const turn of column.querySelectorAll(".turn")) delete turn.dataset.editing;
+        state.editingKey = on ? state.key : null;
+        if (on) currentTurn().dataset.editing = "true";
       });
 
       // 「工作树 ▾」选择器：默认收起，点 chip 切换，点菜单项即选中并收起
-      const wtChip = document.getElementById("wt-chip");
-      const wtMenu = document.getElementById("wt-menu");
+      const wtChip = $("wt-chip");
+      const wtMenu = $("wt-menu");
       function setWorktreeMenu(open) {
         wtMenu.dataset.open = String(open);
         wtChip.setAttribute("aria-expanded", String(open));
@@ -1393,31 +1713,25 @@
         );
       });
 
-      document.addEventListener("click", (event) => {
+      document.addEventListener("pointerdown", (event) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
-        if (target.closest("[data-open-review], .file")) {
-          toast("打开官方审查 / 文件 diff");
-        }
-        if (state.confirming && !target.closest(".action")) {
-          state.confirming = null;
-          renderActions();
-        }
+        if (!target.closest("#turn-header, #file-preview")) dismiss();
         if (wtMenu.dataset.open === "true" && !target.closest("#wt-menu, #wt-chip")) {
           setWorktreeMenu(false);
         }
       });
-
       document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape") return;
-        if (state.confirming) {
-          state.confirming = null;
-          renderActions();
-        }
+        dismiss();
+        hidePreview();
         if (wtMenu.dataset.open === "true") setWorktreeMenu(false);
       });
 
-      renderActions();
+      renderChips();
+      setPromptPanel(false);
+      setFilesOpen(false);
+      measure();
     </script>
   </body>
 </html>

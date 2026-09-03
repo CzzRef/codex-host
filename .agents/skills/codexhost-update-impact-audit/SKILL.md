@@ -69,6 +69,7 @@ Inventory contracts by surface:
 | Sidebar | `data-app-action-sidebar-thread-row`, `data-thread-title-trigger`, `data-thread-title` |
 | Settings | `data-testid="app-shell-header-context-menu-surface"` and structural insertion slot |
 | Fork | `data-response-annotation-conversation`, `data-content-search-turn-key`, owning callback/Fiber state |
+| Transcript / Turn header | `[data-turn-key]` order and rects (`[data-content-search-turn-key]` fallback), the user prompt bubble (`data-message-role="user"`-style marker, else the Turn's first block), the transcript scroller's `flex-direction: column-reverse` with the content column as its first child (`.thread-scroll-container` is evidence only), `header[data-pip-obstacle="app-shell-header"]` title chrome, native pencil label `edit message` / `编辑消息`, native edit mode `textarea` / `contenteditable` inside the Turn, Composer Stop label, `data-slot="thread-summary-panel-item-button"`, `[data-review-path]` |
 
 Marker counts are triage signals, not conclusions. If a marker moves to another chunk with the same use and live relationship, classify it as relocation. If counts remain equal, still inspect changed relationships and API shape.
 
@@ -88,6 +89,7 @@ Read the current call sites and follow each surface independently from discovery
 - sidebar decoration;
 - settings entry;
 - Fork;
+- Turn header: current-Turn tracking, prompt pinning, top reservation on the transcript column, and the workspace row (`renderer-turn-header.ts`, `renderer-turn-header-workspace.ts`);
 - Host create and subsequent-Turn routing.
 
 Prefer unique semantic candidates plus ownership checks. Record fail-closed behavior for absent or ambiguous candidates. Keep source relocation separate from an actual anchor or ownership change.
@@ -110,7 +112,8 @@ Inspect only sanitized summaries:
 - codexhost control presence, visibility, ordering, overlap, and containment;
 - Renderer Adapter, title policy, and draft-prewarm policy readiness;
 - Harness availability;
-- sidebar rows/icons, settings trigger, and Fork candidates.
+- sidebar rows/icons, settings trigger, and Fork candidates;
+- Turn header placement below the title chrome, the transcript column's reserved `padding-top`, the first Turn clearing the header at scroll-top, and no codexhost node over a visible prompt bubble.
 
 Interpret visibility in state. A Credits, Permission, Usage, or Model control hidden because the current Agent, phase, or data availability does not require it is not an impact. For visible controls, alignment and ownership matter more than a fixed pixel height. Equal heights alone do not prove correct placement.
 
