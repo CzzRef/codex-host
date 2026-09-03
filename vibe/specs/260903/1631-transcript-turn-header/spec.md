@@ -2,7 +2,7 @@
 
 Tool: claude-code
 Date: 2026-09-03 16:31 (+08:00)
-Status: `implemented-local / focused-verified / live-pending`
+Status: `implemented / focused-verified / partially live-verified`（2026-09-03 20:33 源码重启后真机量测通过；真机发现的四处缺陷已修，其中三处需再次重启才进入运行中的 Desktop）
 Documentation level: `standard requirement`
 
 Raw source: [raw-requirement.md](raw-requirement.md)
@@ -90,6 +90,9 @@ Plan of record（会话外）: `~/.claude/plans/codex-host-codex-iterative-flask
 | add-external-thread-multi-turn-rollback proposal Impact / tasks 2.4–2.5 | `changed` / `added 2.6` | hover chip 与 rAF 重定位被置顶栏取代 |
 | 已发布 `openspec/specs/external-thread-fork-routing/spec.md` L57-60「原线程 rollback 应拒绝」 | `conflicting / pending-archive` | 前序任务已登记的漂移，本任务不动已发布 spec |
 | 本计划自定的 D-1…D-6（文件语义对话级、生成中禁用、向下浮层不改高度、原生编辑不整条消失、短线程放宽滚动容器判定、OpenSpec 落在同一 change） | `added` | 均在计划文件与本文记录；用户批准计划即接受 |
+| Host 契约 `codexhost/thread/inspect` 新增可选 `turnIds`（有序 Host Turn id） | `added` | 真机证明 Desktop 对长线程做窗口化渲染，DOM 数不出后续轮，回滚数量必须来自 Host；突破了计划「不改 Host」的假设，属实现正确性所需，`00510e0` |
+| 置顶栏「‹ ›」步进当前轮（显式覆盖，用户滚动后交回视口） | `added` | 真机证明不溢出的短线程永远只能把最后一轮当当前轮，早先轮次不可触达，`18b4a46` |
+| `history-gap:` 占位排除、只认 `data-user-message-bubble`、无气泡轮次不钉提示词 | `changed` | 真机测得的 Desktop 26.831 DOM 事实，`891e4fe` |
 | Decision source | `explicit-current-request` | 用户四个回答（见 raw-requirement）+ 批准的计划 |
 
 ## Prior Task Overlap
@@ -109,9 +112,23 @@ Plan of record（会话外）: `~/.claude/plans/codex-host-codex-iterative-flask
 | 置顶栏几何、预留、滚动切轮、提示词、动作、原生编辑、生成中、第二行、`+N`、预览、卸载 | Playwright `renderer-composer-workspace-surface` | 通过 |
 | 类型、边界、格式 | `npm run typecheck`、`npm run lint`（eslint + `tools/check-boundaries.mjs`）、prettier、`git diff --check`、`npm run build:renderer` | 通过（每个提交） |
 | 全量 `npm test`、`gate:*` | — | 未跑（按 AGENTS.md 默认不跑） |
-| 真机（顶缘 chrome、用户气泡节点、分页、`thread/reverted` 重读、三条投诉） | 见 §真机清单 | `[待真机]` |
+| 真机（顶缘 chrome、用户气泡节点、分页、三条投诉、回滚 / Redo） | 见 §真机量测结果 | 通过（2026-09-03 20:33 重启，Desktop 26.831 PID 15137）|
+| 真机（分页线程 `thread/reverted` 重读、Stop 标签、原生编辑 DOM）| — | `[待真机]`：只有 legacy 模式的临时线程可用；未跑生成中；未开官方编辑 |
+| Host inspect `turnIds`（`app-server-host.test.ts`「rolls a live external Thread back…」）| vitest | 通过 |
+| `laterTurnCount` 与控制器按 Host id 发 `numTurns`（`renderer-turn-action-controller.test.ts`）| vitest | 通过 |
+| 箭头步进、history-gap 排除（E2E）| Playwright | 通过 |
 
-Verification Decision: focused（renderer 单测 + Composer E2E + 静态门），真机留待重启。
+Verification Decision: focused（renderer 单测 + Composer E2E + 静态门）+ 真机只读量测；运行中的 Desktop 仍是 `cbfc9c2` 的 Renderer / Host，`891e4fe`、`18b4a46`、`00510e0` 三处修正要再次授权重启后才生效。
+
+## 真机量测结果（2026-09-03 20:33–21:3x，源码重启，Desktop 26.831 PID 15137，Host runtime PID 15598）
+
+- 路径：主进程 inspector `127.0.0.1:49725` → `process.mainModule.require('electron').webContents`（挑 `app://-/index.html` 且含 Composer 的那个，另一个是 `avatar-overlay` 副窗口）→ `executeJavaScript` 只读 DOM；脚本在 scratchpad，未进仓；委派 CLI 的 `CODEXHOST_RUNTIME_ENDPOINT/TOKEN` 取自 Host 子进程环境。
+- 几何：标题栏 `header[data-pip-obstacle="app-shell-header"]` fixed 0–46px、z 30、透明；置顶栏 `x=846 w=736`（= Composer）、`y=46`（另一线程视图滚动容器起于 47 时为 47）、实色 `rgb(17,17,17)`、无模糊、z 32、body 子节点；四个滚动位置 rect 逐字节相同；`elementsFromPoint` 在索引 / 提示词 / 动作 / 第二行四点都命中置顶栏。
+- 滚动容器 `.thread-scroll-container`：`flex column-reverse`、`overflow-y: auto`、自带 `padding-top` 78px（单轮线程）/ 32px（五轮线程）、背景透明；`scrollTop` 顶部 −656、底部 0；内容列 `min-h-full`、`flex-shrink: 0`；Composer 容器是滚动容器内 `sticky bottom-0` 的 213px 块。预留：内容列 inline `padding-top` 49px，首轮从 126px 开始（置顶栏底 119）。
+- 轮次：`history-content:turn:<uuid>`；分页缺口占位 `history-gap:[null,"boundary:tail:0:older"]` 也带 `data-turn-key`（144px、无气泡）；长线程窗口化（22 轮线程底部 DOM 19 轮、顶部 15 轮）；存在无用户气泡的轮。用户气泡 `[data-user-message-bubble="true"]`（class `bg-user-message…`）右对齐 515px、22px 圆角、`rgba(50,50,50,.85)`，深度 8，轮次首子块横跨整轮。
+- 行为：单轮线程滚动时提示词在气泡滚出后出现（`Without using any tools, list 40 well-known Rust c…`）；五轮线程 `Turn 1/5 → 2/5 → 4/5 → 5/5`，动作按 later 数正确启用 / 禁用；官方轮静止时即有 `Edit message` 按钮；工作区行核心 chip「codex-host · czz-dev」/「EzAgentPlatform · codex/rust-v4-runtime」。
+- 回滚 / Redo（临时 Pi 线程 `22839360…`，22 轮均因「usage limit」失败但有 checkpoint）：顶部 `Turn 2/15` 回滚 → 确认 → Host 保留 9 轮（DOM 窗口数 13 而非 20，缺陷已修为 `turnIds`）→ 通知「Rolled back…」、`redo:on`；Redo → Host 恢复 22 轮、`rollback:on`；Desktop transcript 两次都保持 15 轮（legacy 模式无 `thread/reverted`，现已加提示）。线程已归档。
+- 侧栏行内第一个 `button` 是 Unpin，误点一次无效果（行仍 pinned）；导航用行本身 `role=button`。
 
 ## 真机清单（用户授权正常退出 + `codexhost launch` 之后）
 
@@ -133,7 +150,7 @@ Verification Decision: focused（renderer 单测 + Composer E2E + 静态门）�
 
 - `requirement-canonical`：OpenSpec `add-composer-workspace-bar`（四段 Requirement、proposal、design Decision 8 / Migration 5、tasks §13）与 `add-external-thread-multi-turn-rollback`（Impact、tasks 2.6）。
 - `project-current`：本 owner、[PROJECT_STATUS.md](../../PROJECT_STATUS.md)、预览页、README 三语矩阵、update-impact 清单、术语表。
-- 错误记忆：不写。「body 挂载 fixed 面层需在内容列预留空间」只在真机验证后登记。
+- 错误记忆候选（真机已验证，可登记）：「Desktop 长线程 transcript 是窗口化的，任何按 DOM 轮次数发出的 Host 请求都会算错，数量必须来自 Host 契约」；本轮未写入仓库错误记忆索引，留给合入后的收尾。
 
 ## Execution Journal
 
@@ -144,8 +161,11 @@ Verification Decision: focused（renderer 单测 + Composer E2E + 静态门）�
 | E3 | 17:3x | 切片 1 `5ca8085`：纯搬迁 + 置顶栏纯几何 + 单测拆分 |
 | E4 | 17:4x–17:5x | 切片 2 `6513243`：第一行 + 控制器；E2E 夹具改 column-reverse（发现内容列必须 `flex-shrink: 0` 才会溢出、`scrollTop` 在底部为 0 向上为负）；官方线程保留本地 Redo 标记 |
 | E5 | 18:0x | 切片 3 `98fe202`：第二行 + 删底部栏；发现向下列表需以置顶栏为定位基准、Composer 尺寸变化需 ResizeObserver、核心 chip 先让宽 |
-| E6 | 18:1x | 切片 4：文档、预览页、README、清单、术语表 |
-| E7 | 待办 | 用户重启后真机量测，登记结果，按需写错误记忆 |
+| E6 | 18:1x | 切片 4：文档、预览页、README、清单、术语表（`3a4b6b8`，rebase 后 `cbfc9c2`） |
+| E7 | 20:2x–20:33 | 用户选 F-1；`czz-dev` 已被 `c852197` 推进，四提交 rebase（`5eca7b8` `d7b96eb` `4668afe` `cbfc9c2`）后主检出快进、重建 TS + Renderer、`codexhost launch` 成功（launcher 15134 / Desktop 15137 / Host 15598） |
+| E8 | 20:4x–21:0x | 真机只读量测；修正 `891e4fe`（history-gap、气泡标记、无气泡不钉） |
+| E9 | 21:1x–21:3x | 临时 Pi 线程回滚 / Redo；发现短线程不可触达早先轮 → `18b4a46` 箭头；发现窗口化导致回滚数量错误 → `00510e0` `turnIds`；线程归档 |
+| E10 | 待办 | 再次授权重启后复核 891e4fe / 18b4a46 / 00510e0；分页线程的 `thread/reverted` 重读、Stop 标签、原生编辑 DOM |
 
 ## Closeout
 
