@@ -2053,7 +2053,7 @@ export class AppServerHost {
       }
     }
     const inspection = cwd
-      ? await inspectGitWorkspace(cwd, extraRoots)
+      ? await inspectGitWorkspace(cwd, extraRoots, params.data.extraPaths ?? [])
       : { cwd: "", repositories: [], watchPaths: [] };
     if (cwd) this.#workspaceWatch.track(params.data.threadId, inspection);
     const result = threadWorkspaceSnapshotSchema.parse({

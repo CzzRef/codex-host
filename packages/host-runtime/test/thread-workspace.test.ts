@@ -112,6 +112,36 @@ describe("inspectGitWorkspace", () => {
     });
   });
 
+  it("resolves conversation paths outside every root to external repositories", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codexhost-workspace-external-"));
+    cleanups.push(root);
+    const app = join(root, "app");
+    const notes = join(root, "notes");
+    await initRepo(app);
+    await initRepo(notes, "notes");
+    const inspection = await inspectGitWorkspace(
+      app,
+      [],
+      [
+        join(notes, "docs", "missing", "deleted.md"), // parent dirs may be gone
+        join(app, "src", "inside.ts"), // inside the primary root: no new row
+        "relative/path.md", // ignored
+        join(root, "not-a-repo", "x.md"), // no Git toplevel: ignored
+      ],
+    );
+    expect(inspection.repositories.map((repository) => repository.kind)).toEqual([
+      "primary",
+      "external",
+    ]);
+    expect(
+      inspection.repositories.find((repository) => repository.kind === "external"),
+    ).toMatchObject({
+      name: "notes",
+      branch: "notes",
+      root: await realpath(notes),
+    });
+  });
+
   it("lists an extra workspace root as its own additional repository", async () => {
     const root = await mkdtemp(join(tmpdir(), "codexhost-workspace-extra-"));
     cleanups.push(root);

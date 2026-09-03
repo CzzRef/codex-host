@@ -130,12 +130,31 @@ const { outputFiles } = await build({
           inspectThread: unavailable,
           forkThread: unavailable,
           inspectThreadUsage: unavailable,
-          inspectThreadWorkspace: async () => {
+          inspectThreadWorkspace: async (params) => {
             globalThis.__workspaceInspectCalls = (globalThis.__workspaceInspectCalls ?? 0) + 1;
+            globalThis.__workspaceInspectExtraPaths = params.extraPaths ?? null;
+            const external = (params.extraPaths ?? []).some((path) => path.startsWith("/notes/CodeNote/"))
+              ? [
+                  {
+                    root: "/notes/CodeNote",
+                    name: "CodeNote",
+                    kind: "external",
+                    branch: "main",
+                    headSha: "0badf00",
+                    isWorktree: false,
+                    worktreeName: null,
+                    primaryRoot: "/notes/CodeNote",
+                    addedLines: 0,
+                    deletedLines: 0,
+                    dirty: true,
+                  },
+                ]
+              : [];
             return {
             threadId,
             cwd: "/workspace/app",
             repositories: [
+              ...external,
               {
                 root: "/workspace/app",
                 name: "app",
@@ -188,9 +207,26 @@ const { outputFiles } = await build({
         if (!fileListener) throw new Error("File-change listener is unavailable");
         fileListener({
           threadId,
+          itemId: "item-a",
           files: [{ path: "src/bar.ts", addedLines: 8, deletedLines: 2, preview: "+keep" }],
           turnId: "turn-a",
         });
+      };
+      globalThis.emitExternalFiles = () => {
+        if (!fileListener) throw new Error("File-change listener is unavailable");
+        fileListener({
+          threadId,
+          itemId: "item-b",
+          files: [
+            { path: "/notes/CodeNote/README.md", addedLines: 3, deletedLines: 0, preview: "+note" },
+            { path: "vendor/lib.ts", addedLines: 0, deletedLines: 0, preview: "" },
+          ],
+          turnId: "turn-b",
+        });
+      };
+      globalThis.revertExternalFiles = () => {
+        if (!fileListener) throw new Error("File-change listener is unavailable");
+        fileListener({ threadId, itemId: "item-b", files: [], turnId: "turn-b" });
       };
       globalThis.disposeBinding = () => binding.dispose();
       } catch (error) {
@@ -228,9 +264,28 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
   const bar = page.locator("[data-codexhost-workspace-bar]");
   const nativeChanges = page.locator('[data-slot="thread-summary-panel-item-button"]');
   const nativeReview = page.locator('[data-tab-id="diff"]');
-  await expect(bar).toHaveCount(0);
+  const composer = page.locator("[data-codex-composer-root]");
+  // The core workspace chip is always present once the Host knows the cwd,
+  // even before any file changed; native diff controls stay until the bar
+  // has a file disclosure to replace them with.
+  await expect(bar).toBeVisible();
+  await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
+  await expect(page.locator('[data-codexhost-workspace-core="true"]')).toContainText("app-feature");
+  await expect(page.locator("[data-codexhost-workspace-files]")).toHaveCount(0);
   await expect(nativeChanges).toBeVisible();
   await expect(nativeReview).toBeVisible();
+  // Mounted on <body> so `position: fixed` is viewport-relative, yet aligned
+  // to the Composer's horizontal box.
+  expect(await bar.evaluate((node) => node.parentElement === node.ownerDocument.body)).toBe(true);
+  const alignedBarBox = await bar.boundingBox();
+  const composerBox = await composer.boundingBox();
+  expect(alignedBarBox && composerBox && Math.abs(alignedBarBox.x - composerBox.x) <= 1).toBe(true);
+  expect(
+    alignedBarBox && composerBox && Math.abs(alignedBarBox.width - composerBox.width) <= 1,
+  ).toBe(true);
+  expect(
+    alignedBarBox && composerBox && alignedBarBox.y + alignedBarBox.height <= composerBox.y,
+  ).toBe(true);
 
   await page.evaluate("globalThis.emitWorkspaceFiles()");
   await expect(bar).toBeVisible();
@@ -241,12 +296,6 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
   await expect(bar).not.toContainText("+12");
   await expect(nativeChanges).toBeHidden();
   await expect(nativeReview).toBeHidden();
-  const composer = page.locator("[data-codex-composer-root]");
-  expect(
-    await bar.evaluate(
-      (node) => node.nextElementSibling?.hasAttribute("data-codex-composer-root") === true,
-    ),
-  ).toBe(true);
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("file change");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("+8");
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("-2");
@@ -274,10 +323,49 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
       Math.abs(fileListBox.x + fileListBox.width - (barBox.x + barBox.width)) <= 12,
   ).toBe(true);
   await fileRow.hover();
-  await expect(page.locator("[data-codexhost-workspace-preview]")).toBeVisible();
-  await expect(page.locator("[data-codexhost-workspace-preview]")).toContainText("+keep");
+  const preview = page.locator("[data-codexhost-workspace-preview]");
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText("+keep");
+  await expect(preview).toContainText("src/bar.ts");
+  // The preview sits beside the list (never over it) and above the Composer.
+  const previewBox = await preview.boundingBox();
+  expect(
+    previewBox &&
+      fileListBox &&
+      (previewBox.x + previewBox.width <= fileListBox.x ||
+        previewBox.x >= fileListBox.x + fileListBox.width),
+  ).toBe(true);
+  expect(previewBox && barBox && previewBox.y + previewBox.height <= barBox.y + barBox.height).toBe(
+    true,
+  );
+  // Moving the pointer into the preview keeps it (interactive, scrollable).
+  await preview.hover();
+  await page.waitForTimeout(250);
+  await expect(preview).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(preview).toBeHidden();
+  await fileRow.hover();
+  await expect(preview).toBeVisible();
   await fileRow.click();
+  await expect(preview).toBeHidden();
   await expect.poll(async () => page.evaluate("globalThis.__changesClicks ?? 0")).toBe(1);
+
+  // A file outside every inspected root is resolved through the Host
+  // (`extraPaths`) into an `external` chip; a 0-line file adds no root; the
+  // Item's later empty change set retires its files again.
+  await page.evaluate("globalThis.emitExternalFiles()");
+  await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(2);
+  await expect(page.locator('[data-codexhost-workspace-row="external"]')).toContainText("CodeNote");
+  // The 0-line vendor file is listed under "Other paths" but earns no chip.
+  await expect(page.locator(".codexhost-workspace-chips")).not.toContainText("vendor");
+  await expect(page.locator("[data-codexhost-workspace-file-list]")).toContainText("vendor/lib.ts");
+  expect(await page.evaluate("globalThis.__workspaceInspectExtraPaths")).toEqual([
+    "/notes/CodeNote/README.md",
+  ]);
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("3 files");
+  await page.evaluate("globalThis.revertExternalFiles()");
+  await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
+  await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("1 file change");
   await page.locator("[data-turn-key]").click();
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("this turn");
   await expect(page.locator("[data-codexhost-turn-files]")).toHaveCount(1);

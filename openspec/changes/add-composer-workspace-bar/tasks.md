@@ -89,3 +89,13 @@
 - [x] 10.2 Persist the preference only from an explicit checkbox change, never from an observed Desktop mode
 - [x] 10.3 Cover default, opt-in/opt-out, unpersisted Desktop-side switch, and next-draft fallback in unit and Composer E2E
 - [x] 10.4 Run focused renderer tests, TypeScript typecheck, and strict OpenSpec validation
+
+## 11. Status bar overhaul (worktree surface overhaul slice 1)
+
+- [x] 11.1 Mount the bar on `document.body` (fixed, Composer-aligned) instead of the Composer's parent
+- [x] 11.2 Always show the core (Thread cwd) chip once inspection succeeds; add the file disclosure and hide native diff controls only when files exist
+- [x] 11.3 Group conversation files by owning root with per-root additions/deletions; hide non-core roots with zero changed lines; collapse overflow behind `+N`
+- [x] 11.4 Contract kind `external` and inspect `extraPaths`; Host resolves out-of-root changed paths to `external` rows; Renderer re-inspects once and keeps the paths on later inspections
+- [x] 11.5 Key conversation files by File Change Item so replaced or empty change sets retire files
+- [x] 11.6 Larger interactive hover preview beside the list with grace hide and `Escape`
+- [x] 11.7 Unit (contracts, Host, Renderer grouping/preview origin/item sets) and Composer E2E coverage; typecheck, lint, boundaries

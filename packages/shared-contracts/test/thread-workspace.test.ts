@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { hostThreadIdSchema, threadWorkspaceSnapshotSchema } from "@codexhost/shared-contracts";
+import {
+  hostThreadIdSchema,
+  threadWorkspaceInspectParamsSchema,
+  threadWorkspaceSnapshotSchema,
+} from "@codexhost/shared-contracts";
 
 const threadId = hostThreadIdSchema.parse("thread-workspace");
 
@@ -111,6 +115,34 @@ describe("thread workspace snapshot", () => {
         { isWorktree: true, worktreeName: "app-feature", primaryRoot: "/workspace/app" },
       ],
     });
+  });
+
+  it("accepts external roots resolved from extra conversation paths", () => {
+    expect(
+      threadWorkspaceInspectParamsSchema.parse({
+        threadId,
+        extraPaths: ["/notes/CodeNote/README.md"],
+      }),
+    ).toEqual({ threadId, extraPaths: ["/notes/CodeNote/README.md"] });
+    expect(threadWorkspaceInspectParamsSchema.parse({ threadId })).toEqual({ threadId });
+    expect(() =>
+      threadWorkspaceInspectParamsSchema.parse({ threadId, extraPaths: [" "] }),
+    ).toThrow();
+    const snapshot = threadWorkspaceSnapshotSchema.parse({
+      threadId,
+      cwd: "/workspace/app",
+      repositories: [
+        repository(),
+        repository({
+          root: "/notes/CodeNote",
+          name: "CodeNote",
+          kind: "external",
+          branch: "main",
+          primaryRoot: "/notes/CodeNote",
+        }),
+      ],
+    });
+    expect(snapshot.repositories[1]?.kind).toBe("external");
   });
 
   it("rejects a worktree without a name and a list without a primary root", () => {

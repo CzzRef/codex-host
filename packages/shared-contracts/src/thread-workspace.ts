@@ -13,12 +13,21 @@ export const THREAD_WORKSPACE_PATH_MAX_LENGTH = 16_384;
 export const THREAD_WORKSPACE_NAME_MAX_LENGTH = 256;
 export const THREAD_WORKSPACE_BRANCH_MAX_LENGTH = 256;
 export const THREAD_WORKSPACE_SHA_MAX_LENGTH = 64;
+export const THREAD_WORKSPACE_EXTRA_PATHS_MAX_LENGTH = 64;
 
+/**
+ * `external` marks a Git root that is not part of the Thread cwd's own
+ * checkout family (primary / submodule / sibling worktree / additional runtime
+ * root) but owns a conversation-changed file the Renderer asked about through
+ * `extraPaths`, for example a documentation repository edited from a code
+ * Thread.
+ */
 export const threadWorkspaceRepositoryKindSchema = z.enum([
   "primary",
   "submodule",
   "worktree",
   "additional",
+  "external",
 ]);
 export type ThreadWorkspaceRepositoryKind = z.infer<typeof threadWorkspaceRepositoryKindSchema>;
 
@@ -59,6 +68,16 @@ export type ThreadWorkspaceRepository = z.infer<typeof threadWorkspaceRepository
 export const threadWorkspaceInspectParamsSchema = z
   .object({
     threadId: hostThreadIdSchema,
+    /**
+     * Absolute conversation-changed file paths that fell outside every
+     * inspected root. The Host resolves each to its Git toplevel and reports
+     * it as an `external` repository; relative or unresolvable paths are
+     * ignored, never created.
+     */
+    extraPaths: z
+      .array(nonBlankTextSchema.max(THREAD_WORKSPACE_PATH_MAX_LENGTH))
+      .max(THREAD_WORKSPACE_EXTRA_PATHS_MAX_LENGTH)
+      .optional(),
   })
   .strict();
 

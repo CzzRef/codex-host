@@ -159,9 +159,30 @@ async function pushRepository(
   for (const path of described.watchPaths) watchPaths.add(path);
 }
 
+/**
+ * Nearest existing ancestor directory of a (possibly deleted) file path.
+ * A conversation may report a removed file, so the file itself is not
+ * required to exist; only some parent must, for `git rev-parse` to run.
+ */
+async function nearestDirectory(path: string): Promise<string | null> {
+  let candidate = dirname(path);
+  for (let depth = 0; depth < 16; depth += 1) {
+    try {
+      await realpath(candidate);
+      return candidate;
+    } catch {
+      const parent = dirname(candidate);
+      if (parent === candidate) return null;
+      candidate = parent;
+    }
+  }
+  return null;
+}
+
 export async function inspectGitWorkspace(
   cwd: string,
   extraRoots: readonly string[] = [],
+  extraPaths: readonly string[] = [],
 ): Promise<GitWorkspaceInspection> {
   const resolvedCwd = await realDirectory(cwd);
   const toplevel = await git(resolvedCwd, ["rev-parse", "--show-toplevel"]);
@@ -187,6 +208,21 @@ export async function inspectGitWorkspace(
   for (const extraRoot of extraRoots) {
     if (typeof extraRoot !== "string" || extraRoot.trim().length === 0) continue;
     await pushRepository(repositories, watchPaths, extraRoot, "additional");
+  }
+  for (const extraPath of extraPaths) {
+    if (typeof extraPath !== "string" || !isAbsolute(extraPath)) continue;
+    const directory = await nearestDirectory(extraPath);
+    if (!directory) continue;
+    // A path already inside a known root does not add a repository.
+    if (
+      repositories.some(
+        (repository) =>
+          directory === repository.root || directory.startsWith(`${repository.root}${sep}`),
+      )
+    ) {
+      continue;
+    }
+    await pushRepository(repositories, watchPaths, directory, "external");
   }
   return { cwd: resolvedCwd, repositories, watchPaths: [...watchPaths] };
 }

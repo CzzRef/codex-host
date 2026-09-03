@@ -479,6 +479,27 @@
         color: var(--muted);
       }
 
+      .repo[data-core="true"] {
+        border: 1px solid rgb(255 255 255 / 12%);
+        background: rgb(255 255 255 / 6%);
+      }
+
+      .repo[data-core="true"]::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--green);
+      }
+
+      .repo.more {
+        padding: 0 8px;
+        border: 1px solid rgb(255 255 255 / 12%);
+        border-radius: 999px;
+        background: rgb(255 255 255 / 5%);
+        cursor: pointer;
+      }
+
       .stat {
         position: relative;
         margin-left: 2px;
@@ -578,7 +599,10 @@
         bottom: calc(100% + 8px);
         left: auto;
         display: none;
-        width: min(360px, calc(100vw - 460px));
+        width: min(560px, 60vw);
+        max-height: min(420px, 50vh);
+        overflow: auto;
+        pointer-events: auto;
         padding: 8px 10px;
         border: 1px solid rgb(255 255 255 / 12%);
         border-radius: 10px;
@@ -750,14 +774,20 @@
         <h2>怎么实现</h2>
         <ul>
           <li>
-            工作区节点仍插在 <code>[data-codex-composer-root]</code>
-            前一个兄弟位置，但用固定定位贴住 Composer 顶边；向上展开时不挤动 Composer 或
-            transcript。
+            工作区节点挂在 <code>document.body</code> 上，用固定定位贴住
+            <code>[data-codex-composer-root]</code>
+            顶边并对齐其横向盒子；不再放进 Composer 父节点，避免祖先 transform 让它漂移。
           </li>
           <li>
-            顶部左侧保留变更文件所在 Worktree
-            与分支；右侧折叠控件展示文件数和聚合增删，文件列表贴右边向上展开，并支持悬浮 diff
-            预览与点击进入该文件的官方变更展示。原生 Changes / Review 重复区在替代控件可用时隐藏。
+            左侧第一枚是<b>核心工作区</b>（线程 cwd，绿点标记，无变更也常驻）；其后每个涉及的 root
+            各一枚 chip，带该 root 自己的增删；0 行变更的 root 不出现；不在任何已巡检 root
+            下的绝对路径经 Host <code>extraPaths</code> 解析成 <code>external</code> chip；放不下的
+            chip 收进 <code>+N</code>。
+          </li>
+          <li>
+            右侧折叠控件展示文件数和聚合增删，文件列表贴右边向上展开、按 root 分组；悬浮 diff
+            预览放大到 560×420 以内、贴在列表左侧、可进入滚动，Esc
+            关闭；点击进入该文件的官方变更展示。原生 Changes / Review 重复区只在文件披露可用时隐藏。
           </li>
           <li>
             轮次操作仍是 Host 自有节点（不能写进 React transcript），但坐标锚到选中
@@ -786,9 +816,11 @@
 
         <h2>本轮状态</h2>
         <p class="hint">
-          工作区单行浮层、变更文件向上展开、悬浮 diff 预览与原生重复区条件隐藏已进入
-          <code>renderer-workspace-bar.ts</code> 和自动化测试；Redo / Mapping Store
-          不在本轮改动范围。
+          状态栏切片（挂 body、核心 chip 常驻、按 root 分组与 <code>external</code>
+          解析、Item 级文件集、大预览）已进入
+          <code>renderer-workspace-bar.ts</code> 和自动化测试；轮次动作与 Worktree 选择器按
+          <code>vibe/specs/260903/0929-worktree-surface-overhaul/plan.md</code>
+          的后续切片推进。
         </p>
       </aside>
 
@@ -854,10 +886,20 @@
             <div class="footer">
               <aside class="mask" aria-label="工作区变更浮层">
                 <div class="chips">
-                  <span class="repo">
-                    <b>260902-worktree-checkbox-routing</b>
-                    <span class="branch">· codex/260902-worktree-checkbox-routing</span>
+                  <span class="repo" data-core="true" title="核心工作区">
+                    <b>260903-worktree-surface</b>
+                    <span class="tree">codex-host 的工作树</span>
+                    <span class="branch">· codex/260903-worktree-surface</span>
+                    <span class="add">+126</span>
+                    <span class="del">-21</span>
                   </span>
+                  <span class="repo" title="涉及的外部仓库">
+                    <b>CodeNote</b>
+                    <span class="branch">· main</span>
+                    <span class="add">+18</span>
+                    <span class="del">-2</span>
+                  </span>
+                  <span class="repo more" title="更多涉及的仓库">+1</span>
                 </div>
                 <div class="files" id="files" data-open="false">
                   <button class="files-toggle" type="button" id="files-toggle">
