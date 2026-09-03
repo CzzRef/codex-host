@@ -146,6 +146,7 @@ xattr -dr com.apple.quarantine /Applications/codexhost.app
 | 上下文压缩 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 斜杠命令 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 修订上一条消息 | 原生 | ✅ | ✅ | ✅ | ✅ | — |
+| 置顶轮次头（第 N/M 轮 · 提示词 · 编辑 / 回滚 / Redo · 工作区变更） | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ## 跨 Agent 协作
 

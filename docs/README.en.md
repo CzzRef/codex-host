@@ -144,6 +144,7 @@ Fully quit Codex Desktop, open a new terminal, and start codexhost.
 | Context compaction | Native | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Slash commands | Native | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Edit previous message | Native | ✅ | ✅ | ✅ | ✅ | — |
+| Pinned turn header (Turn N/M · prompt · Edit / Rollback / Redo · workspace changes) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ## Cross-Agent collaboration
 
