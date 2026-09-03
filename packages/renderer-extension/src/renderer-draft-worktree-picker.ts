@@ -28,7 +28,18 @@ const PATH_PROP_KEYS = new Set([
   "workspacePath",
   "rootPath",
   "directory",
+  // Desktop 26.831 composer owner props (measured live 2026-09-03).
+  "gitRootForStartingState",
+  "worktreeEnvironmentWorkspaceRoot",
 ]);
+// Nested execution-target objects Desktop hands the composer; `cwd` is the draft's project directory.
+const PATH_PROP_NESTED_KEYS = [
+  "project",
+  "workspace",
+  "draft",
+  "executionTargetOverride",
+  "localRemoteExecutionTarget",
+];
 
 type DraftWorktreeMode = "local" | "worktree";
 
@@ -105,10 +116,10 @@ export function projectRootFromProps(props: Record<string, unknown>): string | n
     const value = props[key];
     if (isAbsoluteWorkspacePath(value)) return value;
   }
-  for (const nested of ["project", "workspace", "draft"]) {
+  for (const nested of PATH_PROP_NESTED_KEYS) {
     const value = props[nested];
     if (!isRecord(value)) continue;
-    for (const key of ["path", "root", "cwd", "directory"]) {
+    for (const key of ["path", "root", "cwd", "directory", "activeWorkspaceRoot"]) {
       const candidate = value[key];
       if (isAbsoluteWorkspacePath(candidate)) return candidate;
     }
