@@ -108,6 +108,8 @@ import type {
   HarnessInspectInput,
   HarnessInspectResult,
   ThreadArchiveInput,
+  ThreadPinInput,
+  ThreadPinResult,
   ThreadArchiveResult,
   ThreadCancelInput,
   ThreadCancelResult,
@@ -566,6 +568,7 @@ export class AppServerHost {
       list: (input) => this.#delegationCoordinator.list(input),
       rename: (input) => this.#renameDelegationThread(input),
       archive: (input) => this.#archiveDelegationThread(input),
+      pin: (input) => this.#pinDelegationThread(input),
       canHandleStart: (input) => this.#canHandleDelegationStart(input),
       ownsThread: (threadId) => this.#ownsDelegationThread(threadId),
     });
@@ -1691,6 +1694,9 @@ export class AppServerHost {
             // from the live listing, and only this field tells a consumer why.
             // Native rows keep the Desktop's archive authority and omit it.
             ...(record ? { archived: record.archived } : {}),
+            // Host-persisted Desktop pin; native rows keep the app-server
+            // section as their pin authority and omit the field.
+            ...(record ? { pinned: record.pinned === true } : {}),
             // A Turn blocked on a Desktop question or approval is
             // caller-visible attention; consumers surface it instead of a
             // plain "running". Questions map to input; approvals stay
@@ -3116,6 +3122,48 @@ export class AppServerHost {
     await this.#notifyExternalArchiveState(applied.record.hostThreadId, archived);
     await this.#cascadeSideChatArchiveState(applied.record.hostThreadId, archived);
     return { threadId: applied.record.hostThreadId, archived };
+  }
+
+  /**
+   * Delegation CLI `thread pin|unpin`. Same persistence as the Desktop
+   * `thread/section/move` into the built-in Pinned section, so a polling
+   * consumer such as EyPc can pin an extra process without a Desktop round
+   * trip. Codex has no section notification: the sidebar catches up on its
+   * next `thread/list`, which is why the CLI reports the Host state only.
+   */
+  async #pinDelegationThread(input: ThreadPinInput): Promise<ThreadPinResult> {
+    if (typeof input.threadId !== "string" || input.threadId.length === 0) {
+      throw new DelegationControlError("INVALID_ARGUMENT", "Thread identifier is required");
+    }
+    if (input.pinned !== undefined && typeof input.pinned !== "boolean") {
+      throw new DelegationControlError("INVALID_ARGUMENT", "pinned must be a boolean");
+    }
+    const pinned = input.pinned !== false;
+    const location = await this.#locateExternalThread(input.threadId);
+    if (location.kind !== "external") {
+      throw new DelegationControlError(
+        "THREAD_NOT_FOUND",
+        "Thread is not a Host-managed extra process",
+      );
+    }
+    let record: StoredThreadRecordV1;
+    try {
+      record = await this.#repository.assignSection(location.record.hostThreadId, {
+        pinned,
+        sectionId: pinned ? CODEX_PINNED_THREAD_SECTION_ID : null,
+      });
+    } catch {
+      throw new DelegationControlError(
+        "INTERNAL_ERROR",
+        "External Thread pin state could not be persisted",
+      );
+    }
+    const sessionId =
+      location.thread?.sessionId ??
+      (await this.#repository.sessionTreeId(record).catch(() => null));
+    if (sessionId) this.#applyExternalThreadRecord(location, record, sessionId);
+    else if (location.thread) location.thread.record = record;
+    return { threadId: record.hostThreadId, pinned: record.pinned === true };
   }
 
   async #applyHostTitleOverlay(threadId: string, title: string): Promise<void> {

@@ -157,6 +157,17 @@ export interface ThreadArchiveResult {
   archived: boolean;
 }
 
+export interface ThreadPinInput {
+  threadId: string;
+  /** Defaults to true; false moves the Thread out of the Desktop Pinned section. */
+  pinned?: boolean;
+}
+
+export interface ThreadPinResult {
+  threadId: string;
+  pinned: boolean;
+}
+
 export interface ThreadListInput {
   cwd?: string;
   parentThreadId?: string;
@@ -193,6 +204,10 @@ export interface DelegationThreadListItem {
   /** External Threads only: the Host-persisted archive state of the row.
    * Native Codex rows omit it; the Desktop stays their archive authority. */
   archived?: boolean;
+  /** External Threads only: whether the Host holds the row in the Desktop
+   * Pinned section. Native Codex rows omit it; their pin lives in the
+   * app-server section. */
+  pinned?: boolean;
   cwd?: string;
   title?: string;
   createdAt?: string;
@@ -214,6 +229,7 @@ export interface DelegationControlApi {
   list(input: ThreadListInput): Promise<DelegationThreadListResult>;
   rename(input: ThreadRenameInput): Promise<ThreadRenameResult>;
   archive(input: ThreadArchiveInput): Promise<ThreadArchiveResult>;
+  pin(input: ThreadPinInput): Promise<ThreadPinResult>;
 }
 
 export interface DelegationControlRegistration extends DelegationControlApi {

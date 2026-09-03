@@ -35,6 +35,7 @@ describe("delegation control server", () => {
         list: vi.fn(),
         rename: vi.fn(),
         archive: vi.fn(),
+        pin: vi.fn(),
       },
     });
     try {
@@ -88,6 +89,7 @@ describe("delegation control server", () => {
         list: vi.fn(),
         rename: vi.fn(),
         archive: vi.fn(),
+        pin: vi.fn(),
       },
     });
     try {
@@ -128,6 +130,7 @@ describe("delegation control server", () => {
         list: vi.fn(),
         rename: vi.fn(),
         archive: vi.fn(),
+        pin: vi.fn(),
       },
     });
     try {
@@ -157,6 +160,7 @@ describe("delegation control server", () => {
         list: vi.fn(),
         rename,
         archive: vi.fn(),
+        pin: vi.fn(),
       },
     });
     try {
@@ -189,6 +193,7 @@ describe("delegation control server", () => {
         list: vi.fn(),
         rename: vi.fn(),
         archive,
+        pin: vi.fn(),
       },
     });
     try {
@@ -199,6 +204,36 @@ describe("delegation control server", () => {
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({ threadId: "thread-1", archived: true });
       expect(archive).toHaveBeenCalledWith({ threadId: "thread-1", archived: true });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("dispatches thread pin", async () => {
+    const pin = vi.fn(async () => ({ threadId: "thread-1", pinned: true }));
+    const server = await startDelegationControlServer({
+      token,
+      api: {
+        inspect: vi.fn(),
+        start: vi.fn(),
+        send: vi.fn(),
+        cancel: vi.fn(),
+        read: vi.fn(),
+        wait: vi.fn(),
+        list: vi.fn(),
+        rename: vi.fn(),
+        archive: vi.fn(),
+        pin,
+      },
+    });
+    try {
+      const response = await fetch(
+        `${server.endpoint}/v1/thread/pin`,
+        authorized({ threadId: "thread-1", pinned: true }),
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ threadId: "thread-1", pinned: true });
+      expect(pin).toHaveBeenCalledWith({ threadId: "thread-1", pinned: true });
     } finally {
       await server.close();
     }
@@ -219,6 +254,7 @@ describe("delegation control server", () => {
         list: vi.fn(),
         rename: vi.fn(),
         archive: vi.fn(),
+        pin: vi.fn(),
       },
     });
     try {
