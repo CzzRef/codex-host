@@ -110,20 +110,23 @@ describe("Turn DOM helpers", () => {
     expect(nativeTurnButton(onlyOverlay, /^redo$/i)).toBeNull();
   });
 
-  it("finds the prompt bubble behind single-child wrappers", async () => {
-    const { turnPromptElement } = await import("../src/renderer-turn-actions.js");
-    const bubble = { children: [], firstElementChild: null, matches: () => false };
-    const wrapper = { children: [bubble], firstElementChild: bubble, matches: () => false };
-    const turn = {
-      querySelector: () => null,
-      firstElementChild: wrapper,
-    } as unknown as Element;
-    expect(turnPromptElement(turn)).toBe(bubble);
-    const marked = { children: [] };
+  it("reads the prompt only from Desktop's user bubble, never from the Turn's first block", async () => {
+    const { turnPromptElement, turnPromptText } = await import("../src/renderer-turn-actions.js");
+    const wrapper = { children: [{}], firstElementChild: {}, textContent: "assistant text" };
+    const bare = { querySelector: () => null, firstElementChild: wrapper } as unknown as Element;
+    expect(turnPromptElement(bare)).toBeNull();
+    const marked = { children: [], textContent: "  the prompt  " };
     const markedTurn = {
-      querySelector: () => marked,
+      querySelector: (selector: string) =>
+        selector.includes("[data-user-message-bubble]") ? marked : null,
       firstElementChild: wrapper,
+      cloneNode: () => ({ querySelectorAll: () => [], querySelector: () => marked }),
     } as unknown as Element;
     expect(turnPromptElement(markedTurn)).toBe(marked);
+    expect(turnPromptText(markedTurn)).toBe("the prompt");
+    const bareClone = {
+      cloneNode: () => ({ querySelectorAll: () => [], querySelector: () => null }),
+    } as unknown as Element;
+    expect(turnPromptText(bareClone)).toBe("");
   });
 });

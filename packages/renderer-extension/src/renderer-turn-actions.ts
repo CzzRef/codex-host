@@ -18,8 +18,14 @@ export type RollbackSupport = "full" | "lastTurnOnly" | "none";
 /** Why every action is unavailable for the moment, independent of the Turn. */
 export type TurnActionBlock = "nativeEdit" | "busy" | "noTurns";
 
+/**
+ * Desktop 26.831 marks the prompt bubble with `data-user-message-bubble`
+ * (measured live 2026-09-03); the other markers are fallbacks for older or
+ * future markup. The Turn's first block spans the whole Turn there, so the
+ * marker is the only reliable way to find the bubble.
+ */
 const USER_PROMPT_SELECTOR =
-  '[data-message-role="user"], [data-role="user"], [data-slot="user-message"], [data-slot*="user-message"], [class*="user-message"], [class*="UserMessage"]';
+  '[data-user-message-bubble], [data-message-role="user"], [data-role="user"], [data-slot="user-message"], [data-slot*="user-message"], [class*="user-message"], [class*="UserMessage"]';
 const TURN_CONTROL_SELECTOR = `button, [role="button"], ${OVERLAY_ROOT_SELECTOR}`;
 
 export function orderedTurnKeys(root: ParentNode): string[] {
@@ -211,21 +217,13 @@ export function nativeTurnButton(scope: Element, pattern: RegExp): HTMLButtonEle
 }
 
 /**
- * The node that renders a Turn's user prompt: an explicitly user-marked node
- * when Desktop provides one, otherwise the Turn's first block (where Desktop
- * renders the prompt), unwrapped through single-child wrappers so a container
- * spanning the whole Turn is not mistaken for the bubble.
+ * The node that renders a Turn's user prompt: the user-marked bubble. A Turn
+ * without one (Desktop renders some Turns with no user message, and its first
+ * block spans the whole Turn) has no prompt to show or refill, so this is
+ * `null` rather than a guess that would surface assistant text.
  */
 export function turnPromptElement(turn: Element): Element | null {
-  const marked = turn.querySelector(USER_PROMPT_SELECTOR);
-  if (marked) return marked;
-  let node: Element | null = turn.firstElementChild;
-  while (node && node.children.length === 1) {
-    const only = node.firstElementChild;
-    if (!only || only.matches(TURN_CONTROL_SELECTOR)) break;
-    node = only;
-  }
-  return node;
+  return turn.querySelector(USER_PROMPT_SELECTOR);
 }
 
 /**
@@ -236,7 +234,8 @@ export function turnPromptElement(turn: Element): Element | null {
 export function turnPromptText(turn: Element): string {
   const clone = turn.cloneNode(true) as Element;
   for (const node of clone.querySelectorAll(TURN_CONTROL_SELECTOR)) node.remove();
-  const source = turnPromptElement(clone) ?? clone;
+  const source = turnPromptElement(clone);
+  if (!source) return "";
   const text = normalizeComposerPrompt(source.textContent ?? "");
   return text.slice(0, PROMPT_REUSE_MAX_LENGTH);
 }

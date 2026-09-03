@@ -49,6 +49,11 @@ const { outputFiles } = await build({
         ["turn-b", 320, "second prompt"],
         ["turn-c", 600, "third prompt"],
       ];
+      // Desktop stamps data-turn-key on its paginated-history gap placeholder too.
+      const gap = document.createElement("div");
+      gap.setAttribute("data-turn-key", 'history-gap:[null,"boundary:tail:0:older"]');
+      gap.style.cssText = "height:40px;width:480px";
+      column.append(gap);
       for (const [key, height, prompt] of turnSpecs) {
         const turn = document.createElement("div");
         turn.setAttribute("data-turn-key", "history-content:turn:" + key);
@@ -427,7 +432,8 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
         return column instanceof HTMLElement ? Number.parseFloat(column.style.paddingTop) : null;
       }),
     )
-    .toBe(Math.round((headerBox?.height ?? 0) + 8));
+    // The 40px gap placeholder already spaces the first Turn; only the rest is padded.
+    .toBe(Math.max(24, Math.round((headerBox?.height ?? 0) + 8 - 40)));
   await expect(page.locator("[data-codexhost-turn-hover]")).toHaveCount(0);
   await expect(page.locator("[data-codexhost-turn-rail]")).toHaveCount(0);
   await expect(header.locator("[data-codexhost-turn-actions]")).toHaveCount(1);
@@ -436,6 +442,7 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   // Scrolling moves the current Turn; the prompt appears only once its bubble
   // has passed under the header.
   await page.evaluate("globalThis.scrollTranscriptToTop()");
+  // The gap placeholder is not a Turn: three Turns, and the first real Turn is current.
   await expect(headerIndex).toHaveText("Turn 1/3");
   await expect(headerPrompt).toBeHidden();
   const firstTurnBox = await page
