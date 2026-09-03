@@ -135,9 +135,13 @@
       }
 
       .stage {
+        /* 说明栏很长；模拟窗口钉在视口里，不跟着说明栏拉高到 Composer 掉出首屏 */
+        position: sticky;
+        top: 0;
         display: flex;
         flex-direction: column;
         min-width: 0;
+        height: 100vh;
         padding: 20px 24px 24px;
       }
 
@@ -145,7 +149,7 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        min-height: 720px;
+        min-height: 0;
         border: 1px solid var(--border);
         border-radius: 16px;
         overflow: hidden;
@@ -259,6 +263,34 @@
         align-items: center;
         gap: 6px;
         margin-left: auto;
+      }
+
+      /* 悬停任一未选中轮次：右上角出现半透明「⋯」，点击即选中并展开动作簇 */
+      .turn-hover {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 22px;
+        border: 1px solid rgb(255 255 255 / 12%);
+        border-radius: 7px;
+        background: rgb(20 20 20 / 70%);
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1;
+        opacity: 0;
+        transition: opacity 120ms ease;
+      }
+
+      body[data-mode="target"] .turn:not([data-selected="true"]) .turn-hover {
+        display: inline-flex;
+      }
+
+      body[data-mode="target"] .turn:not([data-selected="true"]):hover .turn-hover {
+        opacity: 0.85;
       }
 
       .action {
@@ -477,6 +509,17 @@
       .repo .branch,
       .repo .tree {
         color: var(--muted);
+        /* 只有核心 chip 收缩省略；其余 chip 不挤，放不下的进 +N（真实实现 fitWorkspaceChips） */
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .repo:not([data-core="true"]),
+      .repo b,
+      .repo .add,
+      .repo .del {
+        flex: none;
       }
 
       .repo[data-core="true"] {
@@ -670,11 +713,16 @@
       .wt-chip b {
         font-weight: 600;
       }
+      .wt-chip[aria-expanded="true"] {
+        background: rgb(255 255 255 / 8%);
+      }
       .wt-menu {
         position: absolute;
         right: 16px;
         bottom: 58px;
-        /* 打开态是瞬时浮层，压在工作区 bar 之上（真实实现 z-index 同样高于 bar） */
+        /* 打开态是瞬时浮层，压在工作区 bar 之上（真实实现 z-index 同样高于 bar）；
+           默认收起，点「工作树 ▾」打开，Esc / 点外面关闭，不然会一直盖住 bar 右侧的文件披露 */
+        display: none;
         z-index: 20;
         min-width: 260px;
         padding: 6px;
@@ -684,6 +732,9 @@
         box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
         font-size: 12px;
         line-height: 16px;
+      }
+      .wt-menu[data-open="true"] {
+        display: block;
       }
       .wt-menu .section {
         padding: 6px 8px 2px;
@@ -842,7 +893,9 @@
           <button type="button" id="mode-current" aria-pressed="false">当前烂样式</button>
         </div>
         <p class="hint">
-          右侧可以点轮次、悬停按钮、点回滚看确认框。当前模式是按你截图复原的漂浮层。
+          右侧可以悬停轮次看「⋯」、点轮次选中、悬停按钮看说明、点回滚看确认框；底部「2
+          个文件」展开列表并悬停看 diff 预览；Composer 右下「工作树
+          ▾」打开选择器。当前模式是按你截图复原的漂浮层。
         </p>
 
         <h2>怎么实现</h2>
@@ -881,8 +934,8 @@
           </li>
           <li>
             Redo 是线程级状态：只有 Host <code>inspect</code> 报
-            <code>historyRedoAvailable</code>（回滚最后一轮之后）才亮；官方 Redo 只给 Codex
-            自己的线程兜底，外部线程没槽就只提示。
+            <code>historyRedoAvailable</code>（任意长度的回滚之后，整段被回滚的 Session
+            进同一个槽）才亮；官方 Redo 只给 Codex 自己的线程兜底，外部线程没槽就只提示。
           </li>
           <li>
             在 <code>renderer-turn-actions.ts</code> 补 hover/active/focus、自定义
@@ -903,8 +956,10 @@
           <code>renderer-turn-actions.ts</code>；Worktree 选择器切片已进入
           <code>renderer-draft-worktree-picker.ts</code>（Host
           <code>codexhost/workspace/worktree/list|create</code> + desktop-control 草稿
-          <code>cwd</code> 改写，见下方 Composer 右下的「工作树 ▾」与打开态菜单示意）。剩余切片按
-          <code>vibe/specs/260903/0929-worktree-surface-overhaul/plan.md</code> 推进。
+          <code>cwd</code> 改写，见下方 Composer 右下的「工作树 ▾」）；多轮回滚切片已进入 Host
+          <code>external-thread-rollback.ts</code>（现存线程在自身 checkpoint fork，分页线程回滚 /
+          Redo 后补发 <code>thread/reverted</code>）。四个切片均已落地，真机量测项见
+          <code>vibe/specs/260903/0929-worktree-surface-overhaul/plan.md</code> §8。
         </p>
       </aside>
 
@@ -918,6 +973,7 @@
           <div class="thread">
             <div class="transcript" id="transcript">
               <article class="turn" data-role="user" data-turn="t1">
+                <span class="turn-hover" title="编辑 / 回滚 / Redo 此轮">⋯</span>
                 <div class="turn-kicker">
                   你
                   <span class="turn-actions" data-actions-for="t1"></span>
@@ -925,6 +981,7 @@
                 <p>这种样式烂透了。先梳理我想要的，再出 preview。</p>
               </article>
               <article class="turn" data-role="assistant" data-turn="t2" data-selected="true">
+                <span class="turn-hover" title="编辑 / 回滚 / Redo 此轮">⋯</span>
                 <div class="turn-kicker">
                   Grok · 本轮
                   <span class="turn-actions" data-actions-for="t2"></span>
@@ -937,6 +994,7 @@
                 <span class="native-commit">提交所有的代码变更进行提交</span>
               </article>
               <article class="turn" data-role="user" data-turn="t3">
+                <span class="turn-hover" title="编辑 / 回滚 / Redo 此轮">⋯</span>
                 <div class="turn-kicker">
                   你
                   <span class="turn-actions" data-actions-for="t3"></span>
@@ -1019,13 +1077,26 @@
                   <span>CH 99.1%</span>
                   <span>Grok 4.6 Extra High</span>
                   <span class="pill" title="官方 Switch branch">⎇ czz-dev</span>
-                  <span class="wt-chip" title="新建对话草稿才出现；替代原勾选框">
+                  <button
+                    class="wt-chip"
+                    type="button"
+                    id="wt-chip"
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    title="新建对话草稿才出现；替代原勾选框。点击展开"
+                  >
                     <span class="kind">工作树 ·</span>
                     <b>260903-worktree-surface</b>
                     <span>▾</span>
-                  </span>
+                  </button>
                 </div>
-                <div class="wt-menu" role="menu" aria-label="工作树选择器（示意，打开态）">
+                <div
+                  class="wt-menu"
+                  id="wt-menu"
+                  role="menu"
+                  data-open="false"
+                  aria-label="工作树选择器（示意）"
+                >
                   <div class="item" role="menuitemradio" aria-checked="false">
                     <b>本地</b><span class="meta">在项目主目录里开始</span>
                   </div>
@@ -1043,9 +1114,10 @@
                     <span class="meta">codex/260901-composer-workspace-bar · 上次</span>
                   </div>
                   <div class="item" role="menuitem">
-                    <b>新建工作树…</b><span class="meta">yyMMdd-功能核心，分支 codex/&lt;名称&gt;</span>
+                    <b>新建工作树…</b
+                    ><span class="meta">yyMMdd-功能核心，分支 codex/&lt;名称&gt;</span>
                   </div>
-                  <form onsubmit="return false">
+                  <form onsubmit="return false;">
                     <input type="text" value="260903-" aria-label="新建工作树名称" />
                     <button type="button" class="chip">创建</button>
                   </form>
@@ -1058,24 +1130,27 @@
     </div>
     <div class="toast" id="toast"></div>
     <script>
+      // 文案与 renderer-turn-actions.ts 的 turnActionCopy 对齐：不承诺还原文件。
+      // t1 演示 Host inspect.rollback = { lastTurn: true, multiTurn: false } 时的诚实禁用。
       const copy = {
         t1: {
-          later: true,
-          edit: "将先回滚该轮之后的对话与文件，再到本轮开始处编辑",
-          rollback: "回滚到本轮开始：取消之后的对话，并尽量还原本轮文件",
-          redo: "回滚之后才能重做",
+          later: 2,
+          unsupported: "此线程只能回滚最后一轮，选中轮次之后还有 2 轮",
+          edit: "此线程只能回滚最后一轮，选中轮次之后还有 2 轮；编辑会把本轮提示回填到输入框重新发送",
+          rollback: "此线程只能回滚最后一轮，选中轮次之后还有 2 轮",
+          redo: "只有回滚之后才能 Redo",
         },
         t2: {
-          later: true,
-          edit: "将先回滚该轮之后的对话与文件，再到本轮开始处编辑",
-          rollback: "回滚到本轮开始：取消之后的对话，并尽量还原本轮文件",
-          redo: "回滚之后才能重做",
+          later: 1,
+          edit: "将先回滚该轮之后的对话，再到本轮开始处编辑；文件不会自动回退",
+          rollback: "回滚到本轮开始：取消之后的对话；文件不会自动回退",
+          redo: "只有回滚之后才能 Redo",
         },
         t3: {
-          later: false,
-          edit: "已是最后一轮，可直接编辑提示",
+          later: 0,
+          edit: "这是最后一轮，直接编辑提示",
           rollback: "没有后续轮次可回滚",
-          redo: "回滚之后才能重做",
+          redo: "只有回滚之后才能 Redo",
         },
       };
 
@@ -1144,6 +1219,13 @@
             state.confirming = options.id;
             renderActions();
           });
+        } else if (!options.disabled && options.onPlainClick) {
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            state.confirming = null;
+            options.onPlainClick();
+            renderActions();
+          });
         }
         wrap.append(button);
         return wrap;
@@ -1185,21 +1267,29 @@
           if (state.mode !== "target" || turnId !== state.selected) continue;
           const item = copy[turnId];
           const rolled = state.rolledBack && turnId === "t2";
+          // 真会回滚时才二次确认；能力位不支持时编辑直接回填 Composer
+          const rollbackPossible = item.later > 0 && !rolled && !item.unsupported;
           const edit = actionButton(
             "编辑",
             rolled ? "已回滚到本轮开始，可直接编辑提示" : item.edit,
             {
               id: "edit",
-              confirmText: true,
+              confirmText: rollbackPossible,
+              onPlainClick: () =>
+                toast(
+                  item.unsupported || rolled || item.later === 0
+                    ? "官方编辑不可用，已把本轮提示回填到输入框"
+                    : "已打开官方编辑",
+                ),
             },
           );
           const rollback = actionButton("回滚", item.rollback, {
             id: "rollback",
             tone: "danger",
-            disabled: !item.later || rolled,
+            disabled: !rollbackPossible,
             confirmText: true,
           });
-          const redo = actionButton("Redo", rolled ? "恢复刚回滚掉的后续对话" : item.redo, {
+          const redo = actionButton("Redo", rolled ? "恢复刚回滚掉的对话" : item.redo, {
             id: "redo",
             disabled: !rolled,
             busy: rolled && state.confirming === "redo",
@@ -1213,7 +1303,7 @@
             editBtn.dataset.busy = "true";
             edit.append(
               confirmBox(
-                "编辑会先回滚该轮之后的对话和文件，再打开提示。确定继续？",
+                "编辑会先回滚该轮之后的对话，再打开提示。文件不会自动回退，如需回退请用官方 Undo 或 Git。确定继续？",
                 "确认编辑",
                 true,
                 () => {
@@ -1229,7 +1319,7 @@
             rollbackBtn.dataset.busy = "true";
             rollback.append(
               confirmBox(
-                "回滚到本轮开始，将取消之后的对话，并尽量还原本轮文件。",
+                "回滚到本轮开始，将取消之后的对话。文件不会自动回退，如需回退请用官方 Undo 或 Git。",
                 "确认回滚",
                 true,
                 () => {
@@ -1244,17 +1334,12 @@
           if (state.confirming === "redo") {
             redoBtn.dataset.busy = "true";
             redo.append(
-              confirmBox(
-                "恢复刚回滚掉的后续对话。文件不会自动再改回去。",
-                "确认 Redo",
-                false,
-                () => {
-                  state.rolledBack = false;
-                  state.confirming = null;
-                  toast("已恢复后续对话");
-                  renderActions();
-                },
-              ),
+              confirmBox("恢复刚回滚掉的对话。文件不会自动再改回去。", "确认 Redo", false, () => {
+                state.rolledBack = false;
+                state.confirming = null;
+                toast("已恢复后续对话");
+                renderActions();
+              }),
             );
           }
         }
@@ -1273,6 +1358,39 @@
         files.dataset.open = String(!open);
         document.getElementById("files-chevron").textContent = open ? "▸" : "▾";
       });
+      // diff 预览贴在列表左侧，宽度在 560 与「模拟窗口左缘」之间取小（真实实现按视口 clamp）
+      const filePreview = files.querySelector(".file-preview");
+      files.addEventListener("pointerover", () => {
+        const desktop = document.querySelector(".desktop").getBoundingClientRect();
+        const list = files.querySelector(".file-list").getBoundingClientRect();
+        filePreview.style.width = `${Math.max(280, Math.min(560, list.left - desktop.left - 16))}px`;
+        filePreview.style.right = `${Math.round(list.width) + 8}px`;
+      });
+
+      // 「工作树 ▾」选择器：默认收起，点 chip 切换，点菜单项即选中并收起
+      const wtChip = document.getElementById("wt-chip");
+      const wtMenu = document.getElementById("wt-menu");
+      function setWorktreeMenu(open) {
+        wtMenu.dataset.open = String(open);
+        wtChip.setAttribute("aria-expanded", String(open));
+      }
+      wtChip.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setWorktreeMenu(wtMenu.dataset.open !== "true");
+      });
+      wtMenu.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const item = event.target.closest('.item[role="menuitemradio"]');
+        if (!item) return;
+        for (const radio of wtMenu.querySelectorAll('[role="menuitemradio"]')) {
+          radio.setAttribute("aria-checked", String(radio === item));
+        }
+        wtChip.querySelector("b").textContent = item.querySelector("b").textContent;
+        setWorktreeMenu(false);
+        toast(
+          "下一条 thread/start 的 cwd 改写为该工作树；Desktop 分支 pill 仍显示项目主目录的分支",
+        );
+      });
 
       document.addEventListener("click", (event) => {
         const target = event.target;
@@ -1284,13 +1402,18 @@
           state.confirming = null;
           renderActions();
         }
+        if (wtMenu.dataset.open === "true" && !target.closest("#wt-menu, #wt-chip")) {
+          setWorktreeMenu(false);
+        }
       });
 
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && state.confirming) {
+        if (event.key !== "Escape") return;
+        if (state.confirming) {
           state.confirming = null;
           renderActions();
         }
+        if (wtMenu.dataset.open === "true") setWorktreeMenu(false);
       });
 
       renderActions();
