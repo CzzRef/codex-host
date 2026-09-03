@@ -4,7 +4,7 @@ import {
   isComposerSubmissionKey,
   isComposerSubmitButton,
 } from "./renderer-composer-dom.js";
-import { threadIdForComposer } from "./renderer-workspace-bar.js";
+import { threadIdForComposer } from "./renderer-thread-composer.js";
 
 export const PROMPT_GHOST_ATTRIBUTE = "data-codexhost-prompt-ghost";
 export const PROMPT_GHOST_ACTIVE_ATTRIBUTE = "data-codexhost-prompt-ghost-active";
