@@ -1,6 +1,12 @@
 import { hostThreadIdSchema } from "@codexhost/shared-contracts";
 
-import { CODEX_COMPOSER_SELECTOR } from "./renderer-composer-dom.js";
+import { CODEX_COMPOSER_SELECTOR, EDITOR_SELECTOR } from "./renderer-composer-dom.js";
+import {
+  clearComposerEditor,
+  insertComposerText,
+  normalizeComposerPrompt,
+  PROMPT_REUSE_MAX_LENGTH,
+} from "./renderer-composer-prompt-reuse.js";
 import { turnKeyMatches } from "./renderer-conversation-files.js";
 import {
   ensureOverlayChromeStyle,
@@ -15,16 +21,21 @@ import { isNativeWorkspaceDiffControl } from "./renderer-workspace-bar.js";
 
 export const TURN_ACTIONS_ATTRIBUTE = "data-codexhost-turn-actions";
 export const TURN_RAIL_ATTRIBUTE = "data-codexhost-turn-rail";
+export const TURN_HOVER_ATTRIBUTE = "data-codexhost-turn-hover";
 export const TURN_SELECTED_EVENT = "codexhost:turn-files-selected";
 export const TURN_CONFIRM_ATTRIBUTE = "data-codexhost-turn-confirm";
 export const TURN_ACTION_ATTRIBUTE = "data-codexhost-turn-action";
 
 const STYLE_ATTRIBUTE = "data-codexhost-turn-actions-style";
+const HOVER_HIDE_GRACE_MS = 160;
 
 export interface RendererTurnActions {
   refresh(): void;
   dispose(): void;
 }
+
+/** What the Host reports `thread/rollback` can do for the selected Thread. */
+export type RollbackSupport = "full" | "lastTurnOnly" | "none";
 
 function ensureStyle(ownerDocument: Document): void {
   ensureOverlayChromeStyle(ownerDocument);
@@ -47,23 +58,40 @@ function ensureStyle(ownerDocument: Document): void {
     .codexhost-turn-actions[data-empty="true"] { display: none; }
     .codexhost-turn-rail {
       position: fixed;
-      z-index: 6;
+      z-index: 12;
       pointer-events: none;
     }
     .codexhost-turn-rail button {
       position: fixed;
       pointer-events: auto;
-      width: 8px;
-      height: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 22px;
       padding: 0;
-      border: 1px solid rgba(127, 127, 127, 0.55);
-      border-radius: 999px;
-      background: rgba(127, 127, 127, 0.35);
+      border: 1px solid rgba(127, 127, 127, 0.28);
+      border-radius: 7px;
+      background: rgba(20, 20, 20, 0.62);
+      color: rgba(255, 255, 255, 0.78);
       cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+    .codexhost-turn-rail button[data-visible="true"] {
+      opacity: 1;
+    }
+    .codexhost-turn-rail button:hover {
+      background: rgba(40, 40, 40, 0.92);
+      color: #fff;
     }
     .codexhost-turn-rail button[data-selected="true"] {
-      background: #3fb950;
       border-color: #3fb950;
+      color: #3fb950;
     }
     .codexhost-turn-notice {
       position: fixed;
@@ -96,6 +124,19 @@ export function turnsAfterKey(keys: readonly string[], selected: string): number
   return Math.max(0, keys.length - index - 1);
 }
 
+/**
+ * Collapses the Host's `rollback` capability bits into what the selected Turn
+ * can do. Official Codex Threads (no bits) keep Desktop's own `thread/rollback`
+ * behaviour, so they read as `full`.
+ */
+export function rollbackSupportFor(
+  capability: { lastTurn: boolean; multiTurn: boolean } | null | undefined,
+): RollbackSupport {
+  if (!capability) return "full";
+  if (capability.multiTurn) return "full";
+  return capability.lastTurn ? "lastTurnOnly" : "none";
+}
+
 export function turnActionCopy(input: {
   chinese: boolean;
   /** This session already rolled the Thread back to the selected Turn. */
@@ -103,6 +144,8 @@ export function turnActionCopy(input: {
   laterTurns: number;
   /** Host holds a last-Turn Redo slot for the Thread (thread-level, not per Turn). */
   redoAvailable?: boolean;
+  /** Host-reported rollback ability; defaults to `full` for official Threads. */
+  rollbackSupport?: RollbackSupport;
 }): {
   editLabel: string;
   editTitle: string;
@@ -113,6 +156,8 @@ export function turnActionCopy(input: {
   rollbackConfirm: string;
   rollbackConfirmAction: string;
   rollbackDisabled: boolean;
+  /** Rollback is impossible for this Turn on this Thread (not merely "nothing later"). */
+  rollbackUnsupported: boolean;
   redoLabel: string;
   redoTitle: string;
   redoConfirm: string;
@@ -121,27 +166,44 @@ export function turnActionCopy(input: {
   editNeedsConfirm: boolean;
   cancelLabel: string;
   editNotice: string;
+  editFallbackNotice: string;
+  editFailedNotice: string;
 } {
   const redoAvailable = input.redoAvailable === true;
-  const editNeedsConfirm = input.laterTurns > 0 && !input.rolledBack;
+  const support = input.rollbackSupport ?? "full";
+  const rollbackUnsupported =
+    input.laterTurns > 0 &&
+    (support === "none" || (support === "lastTurnOnly" && input.laterTurns > 1));
+  const rollbackPossible = input.laterTurns > 0 && !input.rolledBack && !rollbackUnsupported;
+  const editNeedsConfirm = rollbackPossible;
   if (input.chinese) {
+    const unsupportedReason =
+      support === "none"
+        ? "此线程的 Harness 不支持回滚"
+        : `此线程只能回滚最后一轮，选中轮次之后还有 ${input.laterTurns} 轮`;
     return {
       editLabel: "编辑",
       editTitle: editNeedsConfirm
-        ? "将先回滚该轮之后的对话与文件，再到本轮开始处编辑"
-        : input.rolledBack
-          ? "已回滚到本轮开始，可直接编辑提示"
-          : "这是最后一轮，直接编辑提示",
-      editConfirm: "编辑会先回滚该轮之后的对话和文件，再打开提示。确定继续？",
+        ? "将先回滚该轮之后的对话，再到本轮开始处编辑；文件不会自动回退"
+        : rollbackUnsupported
+          ? `${unsupportedReason}；编辑会把本轮提示回填到输入框重新发送`
+          : input.rolledBack
+            ? "已回滚到本轮开始，可直接编辑提示"
+            : "这是最后一轮，直接编辑提示",
+      editConfirm:
+        "编辑会先回滚该轮之后的对话，再打开提示。文件不会自动回退，如需回退请用官方 Undo 或 Git。确定继续？",
       editConfirmAction: "确认编辑",
       rollbackLabel: "回滚",
-      rollbackTitle:
-        input.laterTurns > 0 && !input.rolledBack
-          ? "回滚到本轮开始：取消之后的对话，并尽量还原本轮文件"
+      rollbackTitle: rollbackUnsupported
+        ? unsupportedReason
+        : rollbackPossible
+          ? "回滚到本轮开始：取消之后的对话；文件不会自动回退"
           : "没有后续轮次可回滚",
-      rollbackConfirm: "回滚到本轮开始，将取消之后的对话，并尽量还原本轮文件。",
+      rollbackConfirm:
+        "回滚到本轮开始，将取消之后的对话。文件不会自动回退，如需回退请用官方 Undo 或 Git。",
       rollbackConfirmAction: "确认回滚",
-      rollbackDisabled: input.laterTurns === 0 || input.rolledBack,
+      rollbackDisabled: !rollbackPossible,
+      rollbackUnsupported,
       redoLabel: "Redo",
       redoTitle: redoAvailable ? "恢复刚回滚掉的最后一轮对话" : "只有回滚最后一轮之后才能 Redo",
       redoConfirm: "恢复刚回滚掉的最后一轮对话。文件不会自动再改回去。",
@@ -150,26 +212,37 @@ export function turnActionCopy(input: {
       editNeedsConfirm,
       cancelLabel: "取消",
       editNotice: "已回滚到本轮开始，后续对话已取消，可以编辑后重新发送",
+      editFallbackNotice: "官方编辑不可用，已把本轮提示回填到输入框",
+      editFailedNotice: "找不到官方编辑按钮，也读不到本轮提示文本",
     };
   }
+  const unsupportedReason =
+    support === "none"
+      ? "This Thread's Harness does not support rollback"
+      : `This Thread can only roll back its last turn; ${input.laterTurns} turns follow the selected one`;
   return {
     editLabel: "Edit",
     editTitle: editNeedsConfirm
-      ? "Rollback later turns and files to this turn, then edit"
-      : input.rolledBack
-        ? "Already rolled back to this turn; edit the prompt"
-        : "Last turn; edit the prompt",
+      ? "Roll back later turns to this turn, then edit; files are not rewritten"
+      : rollbackUnsupported
+        ? `${unsupportedReason}; Edit places this turn's prompt in the Composer to resend`
+        : input.rolledBack
+          ? "Already rolled back to this turn; edit the prompt"
+          : "Last turn; edit the prompt",
     editConfirm:
-      "Editing will first roll back later turns and files, then open the prompt. Continue?",
+      "Editing will first roll back later turns, then open the prompt. Files are not rewritten; use the official Undo or Git for that. Continue?",
     editConfirmAction: "Confirm edit",
     rollbackLabel: "Rollback",
-    rollbackTitle:
-      input.laterTurns > 0 && !input.rolledBack
-        ? "Roll back to this turn: drop later turns and undo this turn's files"
+    rollbackTitle: rollbackUnsupported
+      ? unsupportedReason
+      : rollbackPossible
+        ? "Roll back to this turn: drop later turns; files are not rewritten"
         : "No later turns to roll back",
-    rollbackConfirm: "Roll back to this turn, drop later conversation, and undo this turn's files.",
+    rollbackConfirm:
+      "Roll back to this turn and drop later conversation. Files are not rewritten; use the official Undo or Git for that.",
     rollbackConfirmAction: "Confirm rollback",
-    rollbackDisabled: input.laterTurns === 0 || input.rolledBack,
+    rollbackDisabled: !rollbackPossible,
+    rollbackUnsupported,
     redoLabel: "Redo",
     redoTitle: redoAvailable
       ? "Restore the last turn dropped by rollback"
@@ -180,6 +253,8 @@ export function turnActionCopy(input: {
     editNeedsConfirm,
     cancelLabel: "Cancel",
     editNotice: "Rolled back to this turn. Later turns were dropped; you can edit and resend.",
+    editFallbackNotice: "Native edit is unavailable; the prompt was placed in the Composer",
+    editFailedNotice: "Neither a native Edit control nor this turn's prompt text was found",
   };
 }
 
@@ -197,6 +272,28 @@ export function nativeTurnButton(turn: Element, pattern: RegExp): HTMLButtonElem
       return pattern.test(label);
     }) ?? null
   );
+}
+
+/**
+ * The user prompt of a transcript Turn, for refilling the Composer when
+ * Desktop offers no native Edit control (Harness Turns usually do not).
+ * Prefers an explicitly user-marked node; otherwise the Turn's first block,
+ * which is where Desktop renders the prompt. Controls and codexhost overlays
+ * are excluded. Returns `""` when nothing readable is found.
+ */
+export function turnPromptText(turn: Element): string {
+  const clone = turn.cloneNode(true) as Element;
+  for (const node of clone.querySelectorAll(
+    `button, [role="button"], [data-codexhost-turn-files], [${TURN_ACTIONS_ATTRIBUTE}], [${TURN_RAIL_ATTRIBUTE}], [data-codexhost-workspace-bar]`,
+  )) {
+    node.remove();
+  }
+  const marked = clone.querySelector(
+    '[data-message-role="user"], [data-role="user"], [data-slot="user-message"], [data-slot*="user-message"], [class*="user-message"], [class*="UserMessage"]',
+  );
+  const source = marked ?? clone.firstElementChild ?? clone;
+  const text = normalizeComposerPrompt(source.textContent ?? "");
+  return text.slice(0, PROMPT_REUSE_MAX_LENGTH);
 }
 
 function chineseLocale(ownerDocument: Document): boolean {
@@ -231,21 +328,34 @@ export function installRendererTurnActions(options: {
   const root = options.root ?? document;
   const documentNode =
     root instanceof Document ? root : ((root as Element).ownerDocument ?? document);
+  const view = documentNode.defaultView;
   ensureStyle(documentNode);
   const row = documentNode.createElement("div");
   row.setAttribute(TURN_ACTIONS_ATTRIBUTE, "true");
   row.className = "codexhost-turn-actions";
   row.setAttribute("data-empty", "true");
   (documentNode.body ?? documentNode.documentElement).append(row);
+  // One floating "⋯" chip that follows the hovered Turn; replaces the old
+  // per-Turn rail dots that sat over transcript text.
   const rail = documentNode.createElement("div");
   rail.setAttribute(TURN_RAIL_ATTRIBUTE, "true");
   rail.className = "codexhost-turn-rail";
+  const hoverChip = documentNode.createElement("button");
+  hoverChip.type = "button";
+  hoverChip.setAttribute(TURN_HOVER_ATTRIBUTE, "true");
+  hoverChip.textContent = "⋯";
+  hoverChip.style.top = "-999px";
+  rail.append(hoverChip);
   (documentNode.body ?? documentNode.documentElement).append(rail);
+  let hoveredTurn: Element | null = null;
+  let hoverHideTimer: ReturnType<typeof setTimeout> | null = null;
   let selected: { threadId: string; turnKey: string } | null = null;
   // Turn-scoped: this session rolled the Thread back to the selected Turn.
   let rolledBack = false;
   // Thread-scoped: Host reports a last-Turn Redo slot for the selected Thread.
   let redoAvailable = false;
+  // Thread-scoped: Host-reported rollback ability (null = official / unknown).
+  let rollbackCapability: { lastTurn: boolean; multiTurn: boolean } | null = null;
   // Who owns the selected Thread. Official Desktop Redo is only a fallback
   // for Codex-owned Threads; an external Thread without a slot gets nothing.
   let owner: "external" | "official" | "unknown" = "unknown";
@@ -274,6 +384,12 @@ export function installRendererTurnActions(options: {
       return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
     }) ?? null;
 
+  const composerEditor = (): HTMLElement | null => {
+    const composer = composerForPlacement();
+    const editor = composer?.querySelector(EDITOR_SELECTOR);
+    return editor instanceof HTMLElement ? editor : null;
+  };
+
   const placeNotice = (): void => {
     if (notice.hidden) return;
     const origin = row.getBoundingClientRect();
@@ -288,7 +404,7 @@ export function installRendererTurnActions(options: {
       },
       size: { width: notice.offsetWidth || 240, height: notice.offsetHeight || 36 },
       composerTop,
-      viewportWidth: documentNode.defaultView?.innerWidth ?? origin.right,
+      viewportWidth: view?.innerWidth ?? origin.right,
       minTop: (scroller?.getBoundingClientRect().top ?? 0) + 8,
     });
     notice.style.left = `${box.left}px`;
@@ -320,7 +436,7 @@ export function installRendererTurnActions(options: {
       turn: turnRect,
       size: { width: row.offsetWidth || 200, height: row.offsetHeight || 32 },
       composerTop: composerRect.top,
-      viewportWidth: documentNode.defaultView?.innerWidth ?? turnRect.right,
+      viewportWidth: view?.innerWidth ?? turnRect.right,
       scroller: scrollerRect,
       avoid: nativeTurnChromeBox(turn),
     });
@@ -333,47 +449,121 @@ export function installRendererTurnActions(options: {
     placeNotice();
   };
 
-  const paintRail = (): void => {
-    rail.replaceChildren();
+  const hideHoverChip = (): void => {
+    hoveredTurn = null;
+    hoverChip.removeAttribute("data-visible");
+    hoverChip.style.top = "-999px";
+  };
+
+  /**
+   * Places the hover chip at the hovered Turn's top-right, inside the
+   * conversation viewport and clear of native Turn chrome. Hidden while the
+   * selected Turn's action cluster already occupies that corner.
+   */
+  const placeHoverChip = (): void => {
+    const turn = hoveredTurn;
+    if (!turn || !turn.isConnected) {
+      hideHoverChip();
+      return;
+    }
+    const key = turn.getAttribute("data-turn-key") ?? "";
+    const isSelected =
+      selected !== null &&
+      (turnKeyMatches(selected.turnKey, key) || turnKeyMatches(key, selected.turnKey));
+    if (isSelected && row.getAttribute("data-empty") !== "true") {
+      hoverChip.removeAttribute("data-visible");
+      hoverChip.style.top = "-999px";
+      return;
+    }
+    const rect = turn.getBoundingClientRect();
+    if (rect.height <= 0 || rect.width <= 0) {
+      hideHoverChip();
+      return;
+    }
     const composerTop =
       composerForPlacement()?.getBoundingClientRect().top ??
-      documentNode.defaultView?.innerHeight ??
+      view?.innerHeight ??
       Number.POSITIVE_INFINITY;
-    for (const turn of root.querySelectorAll("[data-turn-key]")) {
-      const key = turn.getAttribute("data-turn-key");
-      if (!key) continue;
-      const rect = turn.getBoundingClientRect();
-      if (rect.height <= 0 || rect.width <= 0) continue;
-      const scrollerRect = overflowScroller(turn)?.getBoundingClientRect() ?? null;
-      if (!railDotVisible({ top: rect.top + 10, scroller: scrollerRect, composerTop })) continue;
-      const dot = documentNode.createElement("button");
-      dot.type = "button";
-      dot.setAttribute("aria-label", chineseLocale(documentNode) ? "选择此轮" : "Select this turn");
-      dot.title = chineseLocale(documentNode)
-        ? "选择此轮以编辑或回滚"
-        : "Select this turn to edit or roll back";
-      if (
-        selected &&
-        (turnKeyMatches(selected.turnKey, key) || turnKeyMatches(key, selected.turnKey))
-      ) {
-        dot.setAttribute("data-selected", "true");
-      }
-      dot.style.left = `${Math.max(4, Math.round(rect.left - 14))}px`;
-      dot.style.top = `${Math.round(rect.top + 10)}px`;
-      dot.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        turn.dispatchEvent(
-          new MouseEvent("click", {
-            bubbles: true,
-            cancelable: true,
-            view: documentNode.defaultView,
-          }),
-        );
-      });
-      rail.append(dot);
+    const scrollerRect = overflowScroller(turn)?.getBoundingClientRect() ?? null;
+    const size = { width: hoverChip.offsetWidth || 26, height: hoverChip.offsetHeight || 22 };
+    const origin = turnActionPlacement({
+      turn: rect,
+      size,
+      composerTop,
+      viewportWidth: view?.innerWidth ?? rect.right,
+      scroller: scrollerRect,
+      avoid: nativeTurnChromeBox(turn),
+    });
+    if (!origin || !railDotVisible({ top: origin.top, scroller: scrollerRect, composerTop })) {
+      hoverChip.removeAttribute("data-visible");
+      hoverChip.style.top = "-999px";
+      return;
+    }
+    const chinese = chineseLocale(documentNode);
+    hoverChip.setAttribute("aria-label", chinese ? "此轮操作" : "Turn actions");
+    hoverChip.title = chinese ? "编辑 / 回滚 / Redo 此轮" : "Edit / roll back / redo this turn";
+    if (isSelected) hoverChip.setAttribute("data-selected", "true");
+    else hoverChip.removeAttribute("data-selected");
+    hoverChip.style.left = `${origin.left}px`;
+    hoverChip.style.top = `${origin.top}px`;
+    hoverChip.setAttribute("data-visible", "true");
+  };
+
+  const cancelHoverHide = (): void => {
+    if (hoverHideTimer === null) return;
+    clearTimeout(hoverHideTimer);
+    hoverHideTimer = null;
+  };
+
+  const scheduleHoverHide = (): void => {
+    cancelHoverHide();
+    hoverHideTimer = setTimeout(() => {
+      hoverHideTimer = null;
+      hideHoverChip();
+    }, HOVER_HIDE_GRACE_MS);
+  };
+
+  const onPointerOver = (event: Event): void => {
+    if (disposed) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.closest(`[${TURN_RAIL_ATTRIBUTE}], [${TURN_ACTIONS_ATTRIBUTE}]`)) {
+      cancelHoverHide();
+      return;
+    }
+    const turn = target.closest("[data-turn-key]");
+    if (!turn) {
+      if (hoveredTurn) scheduleHoverHide();
+      return;
+    }
+    cancelHoverHide();
+    if (turn !== hoveredTurn) {
+      hoveredTurn = turn;
+      placeHoverChip();
     }
   };
+
+  const onPointerOut = (event: Event): void => {
+    if (disposed || !hoveredTurn) return;
+    const next = (event as MouseEvent).relatedTarget;
+    const nextElement = next instanceof Element ? next : null;
+    if (
+      nextElement &&
+      (nextElement.closest("[data-turn-key]") === hoveredTurn ||
+        nextElement.closest(`[${TURN_RAIL_ATTRIBUTE}], [${TURN_ACTIONS_ATTRIBUTE}]`))
+    ) {
+      return;
+    }
+    scheduleHoverHide();
+  };
+
+  hoverChip.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const turn = hoveredTurn;
+    if (!turn) return;
+    turn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view }));
+  });
 
   const paintActions = (): void => {
     row.replaceChildren();
@@ -386,11 +576,16 @@ export function installRendererTurnActions(options: {
     }
     row.setAttribute("data-empty", "false");
     const later = turnsAfterKey(orderedTurnKeys(root), selected.turnKey);
-    const copy = turnActionCopy({ chinese, rolledBack, laterTurns: later, redoAvailable });
+    const copy = turnActionCopy({
+      chinese,
+      rolledBack,
+      laterTurns: later,
+      redoAvailable,
+      rollbackSupport: rollbackSupportFor(rollbackCapability),
+    });
     const selectedTurn = selectedTurnElement();
     const runRollback = (): Promise<void> => {
       const current = selected;
-      if (selectedTurn) nativeTurnButton(selectedTurn, /^undo$|^撤销$/i)?.click();
       if (later > 0 && current) {
         return (
           options.getClient()?.rollbackThread?.({
@@ -408,10 +603,28 @@ export function installRendererTurnActions(options: {
       rolledBack = true;
       return Promise.resolve();
     };
+    /**
+     * Prefers Desktop's own pencil (official Turns). Harness Turns rarely have
+     * one, so the prompt is refilled into the Composer instead.
+     */
     const clickEdit = (): void => {
-      if (selectedTurn) {
-        nativeTurnButton(selectedTurn, /edit message|编辑消息|^edit$|^编辑$/i)?.click();
+      const pencil = selectedTurn
+        ? nativeTurnButton(selectedTurn, /edit message|编辑消息|^edit$|^编辑$/i)
+        : null;
+      if (pencil) {
+        pencil.click();
+        return;
       }
+      const text = selectedTurn ? turnPromptText(selectedTurn) : "";
+      const editor = composerEditor();
+      if (!editor || text.length === 0) {
+        showNotice(copy.editFailedNotice);
+        return;
+      }
+      clearComposerEditor(editor);
+      insertComposerText(editor, text);
+      editor.focus();
+      showNotice(copy.editFallbackNotice);
     };
     const runRedo = (): void => {
       const current = selected;
@@ -593,17 +806,34 @@ export function installRendererTurnActions(options: {
       onRun: runRedo,
     });
     placeActions();
-    documentNode.defaultView?.requestAnimationFrame(placeActions);
+    scheduleReposition();
+  };
+
+  // The selected Turn's own size changes (streaming, collapsing tool cards)
+  // move its top-right corner; a ResizeObserver catches what scroll does not.
+  let resizeObserver: ResizeObserver | null = null;
+  let observedTurn: Element | null = null;
+  const observeSelectedTurn = (): void => {
+    const turn = selectedTurnElement();
+    if (turn === observedTurn) return;
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    observedTurn = turn;
+    if (!turn || typeof ResizeObserver === "undefined") return;
+    resizeObserver = new ResizeObserver(() => scheduleReposition());
+    resizeObserver.observe(turn);
   };
 
   const paintAll = (): void => {
     if (disposed) return;
     paintActions();
-    paintRail();
+    placeHoverChip();
+    observeSelectedTurn();
   };
 
-  // Thread-level truth from the Host: who owns the Thread and whether a
-  // last-Turn Redo slot exists. Survives Renderer refresh and Turn reselect.
+  // Thread-level truth from the Host: who owns the Thread, whether a
+  // last-Turn Redo slot exists, and what rollback can do. Survives Renderer
+  // refresh and Turn reselect.
   const inspectSelected = (): Promise<void> => {
     const current = selected;
     if (!current) return Promise.resolve();
@@ -616,6 +846,7 @@ export function installRendererTurnActions(options: {
         if (disposed || selected?.threadId !== current.threadId) return;
         owner = inspection.owner === "external" ? "external" : "official";
         redoAvailable = inspection.owner === "external" && inspection.historyRedoAvailable === true;
+        rollbackCapability = inspection.owner === "external" ? (inspection.rollback ?? null) : null;
         paintAll();
       })
       .catch(() => undefined);
@@ -628,6 +859,7 @@ export function installRendererTurnActions(options: {
     };
     if (typeof detail?.threadId !== "string") return;
     confirming = null;
+    const previousThread = selected?.threadId ?? null;
     selected =
       typeof detail.turnKey === "string" && detail.turnKey.length > 0
         ? { threadId: detail.threadId, turnKey: detail.turnKey }
@@ -635,17 +867,34 @@ export function installRendererTurnActions(options: {
     rolledBack = false;
     if (!selected) {
       redoAvailable = false;
+      rollbackCapability = null;
       owner = "unknown";
       paintAll();
       return;
     }
+    if (previousThread !== selected.threadId) rollbackCapability = null;
     paintAll();
     void inspectSelected();
   };
 
+  // Scroll, resize, and DOM mutations all coalesce into one layout pass per
+  // animation frame, so the cluster tracks the Turn without lagging behind
+  // or thrashing layout.
+  let repositionFrame: number | null = null;
   const reposition = (): void => {
-    paintRail();
+    repositionFrame = null;
+    if (disposed) return;
     placeActions();
+    placeHoverChip();
+    observeSelectedTurn();
+  };
+  const scheduleReposition = (): void => {
+    if (disposed || repositionFrame !== null) return;
+    if (!view?.requestAnimationFrame) {
+      reposition();
+      return;
+    }
+    repositionFrame = view.requestAnimationFrame(reposition);
   };
 
   const onDocumentClick = (event: Event): void => {
@@ -660,18 +909,24 @@ export function installRendererTurnActions(options: {
     paintAll();
   };
 
-  documentNode.defaultView?.addEventListener(TURN_SELECTED_EVENT, onSelected);
-  documentNode.defaultView?.addEventListener("scroll", reposition, true);
-  documentNode.defaultView?.addEventListener("resize", reposition);
+  view?.addEventListener(TURN_SELECTED_EVENT, onSelected);
+  view?.addEventListener("scroll", scheduleReposition, true);
+  view?.addEventListener("resize", scheduleReposition);
   documentNode.addEventListener("click", onDocumentClick, true);
   documentNode.addEventListener("keydown", onKeyDown);
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const observer = new MutationObserver(() => {
-    if (disposed || timer !== null) return;
-    timer = setTimeout(() => {
-      timer = null;
-      reposition();
-    }, 250);
+  documentNode.addEventListener("mouseover", onPointerOver, true);
+  documentNode.addEventListener("mouseout", onPointerOut, true);
+  const observer = new MutationObserver((mutations) => {
+    if (disposed) return;
+    const ours = (node: Node): boolean =>
+      node instanceof Element &&
+      Boolean(
+        node.closest(
+          `[${TURN_ACTIONS_ATTRIBUTE}], [${TURN_RAIL_ATTRIBUTE}], .codexhost-turn-notice, [data-codexhost-workspace-bar], [data-codexhost-workspace-preview]`,
+        ),
+      );
+    if (mutations.every((mutation) => ours(mutation.target))) return;
+    scheduleReposition();
   });
   observer.observe(documentNode.documentElement ?? documentNode, {
     childList: true,
@@ -690,12 +945,16 @@ export function installRendererTurnActions(options: {
       if (disposed) return;
       disposed = true;
       observer.disconnect();
-      if (timer !== null) clearTimeout(timer);
-      documentNode.defaultView?.removeEventListener(TURN_SELECTED_EVENT, onSelected);
-      documentNode.defaultView?.removeEventListener("scroll", reposition, true);
-      documentNode.defaultView?.removeEventListener("resize", reposition);
+      resizeObserver?.disconnect();
+      if (repositionFrame !== null) view?.cancelAnimationFrame?.(repositionFrame);
+      cancelHoverHide();
+      view?.removeEventListener(TURN_SELECTED_EVENT, onSelected);
+      view?.removeEventListener("scroll", scheduleReposition, true);
+      view?.removeEventListener("resize", scheduleReposition);
       documentNode.removeEventListener("click", onDocumentClick, true);
       documentNode.removeEventListener("keydown", onKeyDown);
+      documentNode.removeEventListener("mouseover", onPointerOver, true);
+      documentNode.removeEventListener("mouseout", onPointerOut, true);
       if (noticeTimer !== null) clearTimeout(noticeTimer);
       notice.remove();
       rail.remove();

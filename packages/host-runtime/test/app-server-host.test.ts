@@ -1967,6 +1967,9 @@ describe("AppServerHost HarnessAdapter projection", () => {
         transportModelId: "codexhost/pi-native",
         effectiveModel: { id: "fake-model-v1.primary" },
         history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: false },
+        // Not Fork-derived and no last-Turn rollback: the Renderer disables
+        // the control up front instead of receiving -32076 later.
+        rollback: { lastTurn: false, multiTurn: false },
         locked: true,
       },
     });

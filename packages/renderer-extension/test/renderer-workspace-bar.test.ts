@@ -33,7 +33,7 @@ import {
   turnActionOrigin,
   turnActionPlacement,
 } from "../src/renderer-overlay-layout.js";
-import { turnActionCopy, turnsAfterKey } from "../src/renderer-turn-actions.js";
+import { rollbackSupportFor, turnActionCopy, turnsAfterKey } from "../src/renderer-turn-actions.js";
 
 function element(attributes: Record<string, string>, children: Element[] = []): Element {
   return {
@@ -319,6 +319,50 @@ describe("conversation file-change notifications", () => {
     expect(
       turnActionCopy({ chinese: true, rolledBack: false, laterTurns: 2 }).rollbackConfirmAction,
     ).toBe("确认回滚");
+    // Copy never promises to rewrite files; rollback is conversation-only.
+    expect(
+      turnActionCopy({ chinese: true, rolledBack: false, laterTurns: 2 }).rollbackConfirm,
+    ).not.toContain("还原");
+    expect(
+      turnActionCopy({ chinese: false, rolledBack: false, laterTurns: 2 }).rollbackTitle,
+    ).toContain("files are not rewritten");
+    // Host rollback bits drive disablement with a reason instead of a late -32076.
+    expect(rollbackSupportFor(null)).toBe("full");
+    expect(rollbackSupportFor({ lastTurn: true, multiTurn: true })).toBe("full");
+    expect(rollbackSupportFor({ lastTurn: true, multiTurn: false })).toBe("lastTurnOnly");
+    expect(rollbackSupportFor({ lastTurn: false, multiTurn: false })).toBe("none");
+    expect(
+      turnActionCopy({
+        chinese: true,
+        rolledBack: false,
+        laterTurns: 2,
+        rollbackSupport: "lastTurnOnly",
+      }),
+    ).toMatchObject({
+      rollbackDisabled: true,
+      rollbackUnsupported: true,
+      editNeedsConfirm: false,
+      rollbackTitle: "此线程只能回滚最后一轮，选中轮次之后还有 2 轮",
+    });
+    expect(
+      turnActionCopy({
+        chinese: true,
+        rolledBack: false,
+        laterTurns: 1,
+        rollbackSupport: "lastTurnOnly",
+      }),
+    ).toMatchObject({
+      rollbackDisabled: false,
+      rollbackUnsupported: false,
+      editNeedsConfirm: true,
+    });
+    expect(
+      turnActionCopy({ chinese: false, rolledBack: false, laterTurns: 1, rollbackSupport: "none" }),
+    ).toMatchObject({
+      rollbackDisabled: true,
+      rollbackTitle: "This Thread's Harness does not support rollback",
+      editTitle: expect.stringContaining("places this turn's prompt in the Composer"),
+    });
     expect(overlayTopAboveComposer(400, 80, 8)).toBe(312);
     expect(
       turnActionOrigin({

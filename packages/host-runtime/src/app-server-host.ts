@@ -61,7 +61,10 @@ import {
   listExternalTurns,
 } from "./external-thread-history.js";
 import { decodeThreadRedoRequest, executeExternalThreadRedo } from "./external-thread-redo.js";
-import { executeExternalThreadRollback } from "./external-thread-rollback.js";
+import {
+  executeExternalThreadRollback,
+  externalRollbackCapabilities,
+} from "./external-thread-rollback.js";
 import {
   createExternalThreadRecordInput,
   createProductionExternalThreadStore,
@@ -1954,6 +1957,7 @@ export class AppServerHost {
               : {}),
             history: resolution.thread.session.capabilities.history,
             ...(resolution.thread.record.historyRedo ? { historyRedoAvailable: true } : {}),
+            rollback: externalRollbackCapabilities(resolution.thread),
             ...(resolution.thread.latestUsage ? { usage: resolution.thread.latestUsage } : {}),
             locked: true,
           },

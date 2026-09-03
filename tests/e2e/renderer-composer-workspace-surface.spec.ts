@@ -366,7 +366,24 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
   await page.evaluate("globalThis.revertExternalFiles()");
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("1 file change");
-  await page.locator("[data-turn-key]").click();
+  // Hovering a Turn shows one floating "⋯" chip at its top-right (no rail dots
+  // over the text); clicking it selects the Turn.
+  await expect(page.locator("[data-codexhost-turn-hover]")).not.toHaveAttribute(
+    "data-visible",
+    "true",
+  );
+  await page.locator("[data-turn-key]").hover();
+  const hoverChip = page.locator('[data-codexhost-turn-hover][data-visible="true"]');
+  await expect(hoverChip).toBeVisible();
+  const hoverBox = await hoverChip.boundingBox();
+  const hoveredTurnBox = await page.locator("[data-turn-key]").boundingBox();
+  expect(hoverBox && hoveredTurnBox && hoverBox.y >= hoveredTurnBox.y).toBe(true);
+  expect(
+    hoverBox &&
+      hoveredTurnBox &&
+      hoverBox.x + hoverBox.width <= hoveredTurnBox.x + hoveredTurnBox.width,
+  ).toBe(true);
+  await hoverChip.click();
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("this turn");
   await expect(page.locator("[data-codexhost-turn-files]")).toHaveCount(1);
   await expect(page.locator("[data-codexhost-turn-actions]")).toContainText("Edit");
@@ -390,6 +407,14 @@ test("Composer shows a compact changed-files workspace surface, branch worktree 
   await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(0);
   // Rollback still confirms before dropping anything (nothing later here, so disabled).
   await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeDisabled();
+  // No native pencil on this Turn: Edit refills the Composer with the prompt.
+  const editorForEdit = page.locator('[data-codex-composer][contenteditable="true"]');
+  await page.locator('[data-codexhost-turn-action="edit"]').click();
+  await expect(editorForEdit).toContainText("You said: hello");
+  await expect(page.locator(".codexhost-turn-notice")).toContainText("placed in the Composer");
+  await editorForEdit.evaluate((node) => {
+    node.textContent = "";
+  });
 
   const worktreeToggle = page.locator("[data-codexhost-branch-worktree-toggle] input");
   const runLocation = page.locator('[data-composer-navigation-target="run-location"]');
