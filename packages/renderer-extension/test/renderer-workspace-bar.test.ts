@@ -26,13 +26,7 @@ import {
   worktreeLabel,
   workspaceLocationLabel,
 } from "../src/renderer-workspace-bar.js";
-import {
-  overlayTopAboveComposer,
-  railDotVisible,
-  rectsOverlap,
-  turnActionOrigin,
-  turnActionPlacement,
-} from "../src/renderer-overlay-layout.js";
+import { overlayTopAboveComposer } from "../src/renderer-overlay-layout.js";
 
 function element(attributes: Record<string, string>, children: Element[] = []): Element {
   return {
@@ -280,113 +274,6 @@ describe("conversation file-change notifications", () => {
     expect(filesForTurnSelection(byTurn, null)).toBeNull();
     expect(filesForTurnSelection(byTurn, "missing")).toEqual([]);
     expect(overlayTopAboveComposer(400, 80, 8)).toBe(312);
-    expect(
-      turnActionOrigin({
-        turn: { left: 40, top: 80, right: 520 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-      }),
-    ).toEqual({ left: 332, top: 88 });
-    expect(
-      turnActionOrigin({
-        turn: { left: 40, top: 80, right: 520 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-        avoid: { left: 400, top: 80, right: 520, bottom: 110 },
-      }),
-    ).toEqual({ left: 212, top: 88 });
-    expect(
-      rectsOverlap(
-        { left: 0, top: 0, width: 10, height: 10 },
-        { left: 8, top: 8, width: 10, height: 10 },
-      ),
-    ).toBe(true);
-    // Turn fully inside the conversation viewport: cluster hugs the Turn's top-right.
-    expect(
-      turnActionPlacement({
-        turn: { left: 40, top: 120, right: 520, bottom: 400 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-        scroller: { top: 44, bottom: 640 },
-      }),
-    ).toEqual({ left: 332, top: 128 });
-    // Room in the conversation gutter: the cluster sits beside the Turn, off its text.
-    expect(
-      turnActionPlacement({
-        turn: { left: 40, top: 120, right: 520, bottom: 400 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-        scroller: { top: 44, bottom: 640, right: 900 },
-      }),
-    ).toEqual({ left: 528, top: 128 });
-    // Gutter too narrow for the cluster: back inside the Turn's top-right.
-    expect(
-      turnActionPlacement({
-        turn: { left: 40, top: 120, right: 520, bottom: 400 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-        scroller: { top: 44, bottom: 640, right: 700 },
-      }),
-    ).toEqual({ left: 332, top: 128 });
-    // Long Turn scrolled past the viewport top: the cluster sticks to the
-    // conversation's top edge instead of rising into the Desktop title bar.
-    expect(
-      turnActionPlacement({
-        turn: { left: 40, top: -300, right: 520, bottom: 400 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-        scroller: { top: 44, bottom: 640 },
-      }),
-    ).toEqual({ left: 332, top: 52 });
-    // Only a sliver of the Turn remains: nothing to anchor, so hide.
-    expect(
-      turnActionPlacement({
-        turn: { left: 40, top: -300, right: 520, bottom: 60 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-        scroller: { top: 44, bottom: 640 },
-      }),
-    ).toBeNull();
-    // Turn below the Composer: hidden as well.
-    expect(
-      turnActionPlacement({
-        turn: { left: 40, top: 700, right: 520, bottom: 900 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-        scroller: { top: 44, bottom: 640 },
-      }),
-    ).toBeNull();
-    // Without a scroller (test pages) the viewport top is the bound.
-    expect(
-      turnActionPlacement({
-        turn: { left: 40, top: 80, right: 520, bottom: 400 },
-        size: { width: 180, height: 32 },
-        composerTop: 640,
-        viewportWidth: 900,
-        scroller: null,
-      }),
-    ).toEqual({ left: 332, top: 88 });
-    expect(railDotVisible({ top: 30, scroller: { top: 44, bottom: 640 }, composerTop: 640 })).toBe(
-      false,
-    );
-    expect(railDotVisible({ top: 60, scroller: { top: 44, bottom: 640 }, composerTop: 640 })).toBe(
-      true,
-    );
-    expect(railDotVisible({ top: 636, scroller: null, composerTop: 640 })).toBe(false);
-    expect(
-      rectsOverlap(
-        { left: 0, top: 0, width: 10, height: 10 },
-        { left: 20, top: 20, width: 10, height: 10 },
-      ),
-    ).toBe(false);
     expect(diffPreview("diff --git a/x b/x\n+keep\n")).toBe("+keep");
     expect(reviewPathMatches("/workspace/app/src/a.ts", "src/a.ts")).toBe(true);
     expect(reviewPathMatches("/workspace/app/src/a.ts", "src/b.ts")).toBe(false);

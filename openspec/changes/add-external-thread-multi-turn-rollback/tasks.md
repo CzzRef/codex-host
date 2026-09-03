@@ -11,6 +11,7 @@
 - [x] 2.3 Copy no longer promises to rewrite files; the native Undo control is no longer clicked implicitly
 - [x] 2.4 Replace rail dots with one hover `⋯` chip at the hovered Turn's top-right; scroll/resize/mutation repositioning coalesced into one animation frame; ResizeObserver on the selected Turn
 - [x] 2.5 Unit coverage for support mapping and copy; Composer E2E for hover chip, Edit refill, disabled Rollback
+- [x] 2.6 Superseded by the pinned Turn header (`add-composer-workspace-bar` §13): the hover `⋯` chip and the floating cluster are removed; Edit / Rollback / Redo act on the viewport-derived current Turn from the header
 
 ## 3. Multi-turn Checkpoint rollback (slice 4)
 

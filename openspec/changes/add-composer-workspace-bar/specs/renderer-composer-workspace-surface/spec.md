@@ -93,20 +93,38 @@ The codexhost file-change disclosure SHALL occupy the right edge of the compact 
 - **WHEN** no codexhost file-change disclosure is mounted or the extension is disposed
 - **THEN** native Changes and Review/diff controls SHALL remain visible
 
-### Requirement: Turn actions are honest, reachable, and stay out of the transcript text
+### Requirement: Turn actions live in the Turn header and act on the current Turn
 
-The Renderer SHALL show one floating `⋯` chip beside the hovered `[data-turn-key]` Turn — in the conversation column's empty gutter right of the Turn when it fits, otherwise at the Turn's top-right (inside the conversation viewport, clear of native Turn chrome) — and SHALL NOT paint per-Turn markers over transcript text. The chip and the cluster SHALL use opaque surfaces so transcript text never shows through them, and both SHALL stay hidden while Desktop's own edit-message mode (Cancel / Send) is open on that Turn. Activating the chip SHALL select the Turn and show the Edit / Rollback / Redo cluster. The cluster SHALL reposition on scroll, resize, selected-Turn resize, and DOM mutation, coalesced into one animation frame. Rollback SHALL be disabled with a reason when the Host's `rollback` bits say the request would be refused; Edit SHALL require confirmation only when a rollback will actually run. Edit SHALL prefer Desktop's native pencil and otherwise refill the Composer with the Turn's prompt. Copy SHALL NOT promise to rewrite project files, and the Renderer SHALL NOT click Desktop's Undo implicitly.
+The Renderer SHALL mount one pinned Turn header per verified Thread Composer as a `document.body` child positioned `fixed` at the top edge of the transcript scroller, below Desktop's own title chrome (`header[data-pip-obstacle="app-shell-header"]`), horizontally aligned to the Composer box, with an opaque surface. It SHALL reserve the header's height as extra `padding-top` on the transcript content column so the first Turn is never covered at scroll-top, and SHALL restore the column's own padding on unmount. The header SHALL describe the current Turn — the last `[data-turn-key]` whose top edge sits at or above the header's bottom edge, the last Turn while the transcript end is in view, the first Turn otherwise — with a few pixels of hysteresis, recomputed on scroll, resize, DOM mutation and column resize coalesced into one animation frame. It SHALL show `第 N/M 轮` / `Turn N/M`, and the current Turn's user prompt only while that Turn's prompt bubble has scrolled fully under the header; activating the prompt SHALL scroll the transcript back to the Turn and a chevron SHALL open the full prompt below the header. It SHALL show Edit / Rollback / Redo for the current Turn inside the header and SHALL NOT paint any floating chip, rail dot or cluster over the transcript. The actions SHALL be hidden while Desktop's own edit-message mode (Cancel / Send) is open on the current Turn and disabled with a reason while a Turn is running. Rollback SHALL be disabled with a reason when the Host's `rollback` bits say the request would be refused; Edit SHALL require confirmation only when a rollback will actually run; Edit SHALL prefer Desktop's native pencil and otherwise refill the Composer with the Turn's prompt. Copy SHALL NOT promise to rewrite project files, the Renderer SHALL NOT click Desktop's Undo implicitly, and lookups for native controls SHALL skip codexhost's own overlays. The header SHALL apply to official Codex and external Threads alike and SHALL render nothing for drafts.
+
+#### Scenario: Scrolling changes the current Turn
+
+- **WHEN** the user scrolls so a later Turn's top edge passes under the header
+- **THEN** the index SHALL advance to that Turn and the actions SHALL target it
+- **AND** the header's own box SHALL not move
+
+#### Scenario: Prompt appears only after its bubble scrolls out
+
+- **WHEN** the current Turn's prompt bubble is still visible below the header
+- **THEN** the header SHALL show only the index
+- **WHEN** that bubble has scrolled fully under the header
+- **THEN** the header SHALL repeat the prompt on one line
 
 #### Scenario: Harness Turn without a native pencil
 
-- **WHEN** the user activates Edit on a selected Turn that has no native Edit control
+- **WHEN** the user activates Edit on the current Turn and it has no native Edit control
 - **THEN** the Renderer SHALL place the Turn's prompt text in the Composer, focus it, and show a notice
 
 #### Scenario: Host reports last-turn-only rollback
 
-- **WHEN** inspect reports `rollback: { lastTurn: true, multiTurn: false }` and the selected Turn has more than one later Turn
+- **WHEN** inspect reports `rollback: { lastTurn: true, multiTurn: false }` and the current Turn has more than one later Turn
 - **THEN** Rollback SHALL be disabled with a tooltip explaining only the last Turn can be rolled back
 - **AND** Edit SHALL run without a rollback confirmation and refill the Composer
+
+#### Scenario: Native edit mode on the current Turn
+
+- **WHEN** Desktop's own edit-message mode is open on the current Turn
+- **THEN** the header SHALL hide its actions and mark the prompt slot as editing until that mode closes
 
 ### Requirement: Draft worktree picker selects where a new Thread starts
 
