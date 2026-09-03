@@ -193,6 +193,50 @@ describe("Turn action controller", () => {
     expect(last.calls.some((call) => call.method === "rollback")).toBe(false);
   });
 
+  it("counts later Turns from the Host's Turn ids when the DOM window is shorter", async () => {
+    const { laterTurnCount } = await import("../src/renderer-turn-action-controller.js");
+    expect(
+      laterTurnCount({
+        currentKey: "history-content:turn:b",
+        domKeys: ["history-content:turn:a", "history-content:turn:b", "history-content:turn:c"],
+        hostTurnIds: ["a", "b", "c", "d", "e"],
+      }),
+    ).toBe(3);
+    expect(
+      laterTurnCount({
+        currentKey: "history-content:turn:b",
+        domKeys: ["history-content:turn:a", "history-content:turn:b", "history-content:turn:c"],
+        hostTurnIds: null,
+      }),
+    ).toBe(1);
+    // A key the Host does not know falls back to the DOM count.
+    expect(
+      laterTurnCount({
+        currentKey: "history-content:turn:z",
+        domKeys: ["history-content:turn:z", "history-content:turn:c"],
+        hostTurnIds: ["a", "b"],
+      }),
+    ).toBe(1);
+    const h = harness({
+      keys: ["a", "b", "c"],
+      inspection: {
+        owner: "external",
+        historyRedoAvailable: false,
+        rollback: { lastTurn: true, multiTurn: true },
+        turnIds: ["a", "b", "c", "d", "e"],
+      },
+    });
+    h.controller.setCurrent({ threadId: "thread-1", turnKey: "c", turn: fakeTurn("third") });
+    await flush();
+    h.controller.activate("rollback");
+    h.controller.confirm();
+    await flush();
+    expect(h.calls).toContainEqual({
+      method: "rollback",
+      params: { threadId: "thread-1", numTurns: 2 },
+    });
+  });
+
   it("drops a pending confirmation when the viewport moves to another Turn", () => {
     const h = harness({ keys: ["a", "b", "c"] });
     h.controller.setCurrent({ threadId: "thread-1", turnKey: "a", turn: fakeTurn("first") });

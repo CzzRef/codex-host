@@ -5,7 +5,7 @@ import {
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
 } from "./harness-permission-modes.js";
-import { harnessIdSchema, hostThreadIdSchema } from "./ids.js";
+import { harnessIdSchema, hostThreadIdSchema, hostTurnIdSchema } from "./ids.js";
 import { threadUsageSnapshotSchema } from "./thread-usage.js";
 
 export const HARNESS_MODEL_REF_MAX_LENGTH = 512;
@@ -322,6 +322,12 @@ const externalThreadInspectionSchema = z
       })
       .strict()
       .optional(),
+    /**
+     * The Thread's Host Turn ids in order. Desktop virtualises long
+     * transcripts, so the Renderer cannot count later Turns from the DOM
+     * alone; `thread/rollback` takes a count, and this is the count's source.
+     */
+    turnIds: z.array(hostTurnIdSchema).optional(),
     usage: threadUsageSnapshotSchema.optional(),
     locked: z.literal(true),
   })
