@@ -2,7 +2,7 @@
 
 ### Requirement: Host inspect publishes rollback ability
 
-`codexhost/thread/inspect` for a mapped External Thread SHALL include `rollback: { lastTurn, multiTurn }`. `lastTurn` SHALL be true when `thread/rollback` with `numTurns = 1` would be served (Harness `history.rollbackLastTurn`, an untouched Fork-derived Thread whose source can be re-forked, or a Harness with `history.fork` whose second-to-last retained Turn carries a Native Checkpoint); `multiTurn` SHALL be true when `numTurns > 1` would be served (Fork lineage, or `history.fork` with a Native Checkpoint on any Turn before the last two). Official Codex Threads SHALL NOT carry the field. The bits are advisory: execution SHALL still validate every boundary.
+`codexhost/thread/inspect` for a mapped External Thread SHALL include `rollback: { lastTurn, multiTurn }`. `lastTurn` SHALL be true when `thread/rollback` with `numTurns = 1` would be served (Harness `history.rollbackLastTurn`, an untouched Fork-derived Thread whose source can be re-forked, or a Harness with `history.fork` whose second-to-last retained Turn carries a Native Checkpoint); `multiTurn` SHALL be true when `numTurns > 1` would be served (Fork lineage, or `history.fork` with a Native Checkpoint on any Turn before the last two). Official Codex Threads SHALL NOT carry the field. The bits are advisory: execution SHALL still validate every boundary. Inspection SHALL also publish the Thread's ordered Host Turn ids as `turnIds`, because Desktop virtualises long transcripts and a Renderer counting later Turns from the DOM window would ask for the wrong rollback extent.
 
 #### Scenario: Harness without rollback
 
