@@ -292,13 +292,14 @@ export function installRendererTurnHeader(options: {
     let pinned = false;
     if (turn && index !== null) {
       const promptNode = turnPromptElement(turn);
+      // A Turn without a user bubble has no prompt to repeat.
       pinned = promptNode
         ? promptPinned({
             promptBottom: promptNode.getBoundingClientRect().bottom,
             headerBottom,
             previous: state.pinned && !keyChanged,
           })
-        : rectAt(index).top <= headerBottom - 40;
+        : false;
     }
     state.pinned = pinned;
     const nativeEdit = turn ? turnInNativeEdit(turn) : false;

@@ -19,6 +19,16 @@ export function chineseLocale(ownerDocument: Document): boolean {
 const APP_SHELL_HEADER_SELECTOR = 'header[data-pip-obstacle="app-shell-header"]';
 const TURN_SELECTOR = "[data-turn-key]";
 const SEARCH_TURN_SELECTOR = "[data-content-search-turn-key]";
+/**
+ * Desktop 26.831 also stamps `data-turn-key` on paginated-history gap
+ * placeholders (`history-gap:[null,"boundary:tail:0:older"]`, measured live
+ * 2026-09-03); they hold no message and are not Turns.
+ */
+const HISTORY_GAP_KEY_PREFIX = "history-gap:";
+
+export function isTranscriptGapKey(key: string): boolean {
+  return key.startsWith(HISTORY_GAP_KEY_PREFIX);
+}
 
 export function turnKeyOf(turn: Element): string {
   return (
@@ -43,7 +53,7 @@ export function transcriptTurns(
     if (turn.parentElement?.closest(selector)) continue;
     if (turn.closest(OVERLAY_ROOT_SELECTOR)) continue;
     const key = turnKeyOf(turn);
-    if (key.length === 0) continue;
+    if (key.length === 0 || isTranscriptGapKey(key)) continue;
     if (keys.some((seen) => sameTurn(seen, key))) continue;
     turns.push(turn);
     keys.push(key);
