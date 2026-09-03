@@ -6,6 +6,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  conversationFilesFromItems,
   conversationFilesFromNotification,
   diffLineStats,
   diffPreview,
@@ -16,7 +17,9 @@ import {
 } from "../src/renderer-conversation-files.js";
 import {
   aggregateConversationFileStats,
+  groupConversationFilesByRepository,
   isNativeWorkspaceDiffControl,
+  previewOrigin,
   repositoriesForConversationFiles,
   repositoryDisplayName,
   threadIdForComposer,
@@ -142,6 +145,62 @@ describe("Renderer workspace bar helpers", () => {
         { ...file("src/b.ts"), addedLines: 3, deletedLines: 4 },
       ]),
     ).toEqual({ addedLines: 5, deletedLines: 5 });
+
+    // The Thread cwd root is the core workspace and is always listed, even with
+    // no changes; other roots appear only with non-zero line changes.
+    const empty = groupConversationFilesByRepository(snapshot, []);
+    expect(empty.groups.map((group) => [group.repository.root, group.core])).toEqual([
+      [primary.root, true],
+    ]);
+    const grouped = groupConversationFilesByRepository(snapshot, [
+      { ...file("/workspace/app-feature-two/src/b.ts"), addedLines: 3, deletedLines: 1 },
+      { ...file("vendor/README.md"), addedLines: 0, deletedLines: 0 },
+      file("/notes/CodeNote/README.md"),
+    ]);
+    expect(
+      grouped.groups.map((group) => [group.repository.root, group.core, group.addedLines]),
+    ).toEqual([
+      [primary.root, true, 0],
+      [sibling.root, false, 3],
+    ]);
+    expect(grouped.unresolved).toEqual(["/notes/CodeNote/README.md"]);
+    expect(groupConversationFilesByRepository(null, [file("src/a.ts")])).toEqual({
+      groups: [],
+      unresolved: [],
+    });
+  });
+
+  it("keeps the hover preview beside the file list and above the Composer", () => {
+    // Room on the left of the right-aligned list: preview sits there.
+    expect(
+      previewOrigin({
+        anchor: { top: 300 },
+        list: { left: 500, right: 900 },
+        size: { width: 400, height: 200 },
+        viewportWidth: 1000,
+        composerTop: 640,
+      }),
+    ).toEqual({ left: 92, top: 300 });
+    // No room on the left but room on the right: flip sides.
+    expect(
+      previewOrigin({
+        anchor: { top: 300 },
+        list: { left: 20, right: 420 },
+        size: { width: 400, height: 200 },
+        viewportWidth: 1000,
+        composerTop: 640,
+      }),
+    ).toEqual({ left: 428, top: 300 });
+    // Tall preview near the Composer is pushed up so it never crosses it.
+    expect(
+      previewOrigin({
+        anchor: { top: 600 },
+        list: { left: 500, right: 900 },
+        size: { width: 400, height: 300 },
+        viewportWidth: 1000,
+        composerTop: 640,
+      }),
+    ).toEqual({ left: 92, top: 332 });
   });
 
   it("recognizes the official Changes and Review controls", () => {
@@ -177,9 +236,41 @@ describe("conversation file-change notifications", () => {
       },
     });
     expect(parsed?.turnId).toBeNull();
+    expect(parsed?.itemId).toBeNull();
     expect(parsed?.files).toEqual([
       { path: "src/a.ts", addedLines: 1, deletedLines: 1, preview: "+one\n-two" },
     ]);
+    // An identified Item with an empty change set is a revert and is delivered;
+    // an anonymous empty update is dropped.
+    expect(
+      conversationFilesFromNotification({
+        method: "item/fileChange/patchUpdated",
+        params: { threadId: "thread-workspace", turnId: "t1", itemId: "item-1", changes: [] },
+      }),
+    ).toEqual({ threadId: "thread-workspace", turnId: "t1", itemId: "item-1", files: [] });
+    expect(
+      conversationFilesFromNotification({
+        method: "item/fileChange/patchUpdated",
+        params: { threadId: "thread-workspace", changes: [] },
+      }),
+    ).toBeNull();
+    // Item change sets sum by path; a retired Item's files disappear.
+    const items = new Map([
+      ["item-1", [{ path: "src/a.ts", addedLines: 1, deletedLines: 1, preview: "+one" }]],
+      [
+        "item-2",
+        [
+          { path: "src/a.ts", addedLines: 2, deletedLines: 0, preview: "" },
+          { path: "src/z.ts", addedLines: 5, deletedLines: 0, preview: "+z" },
+        ],
+      ],
+    ]);
+    expect(conversationFilesFromItems(items)).toEqual([
+      { path: "src/a.ts", addedLines: 3, deletedLines: 1, preview: "+one" },
+      { path: "src/z.ts", addedLines: 5, deletedLines: 0, preview: "+z" },
+    ]);
+    items.delete("item-2");
+    expect(conversationFilesFromItems(items).map((file) => file.path)).toEqual(["src/a.ts"]);
     expect(turnKeyMatches("history-content:turn:abc", "abc")).toBe(true);
     expect(turnKeyMatches("history-content:tail:0:local:abc", "local:abc")).toBe(true);
     expect(turnKeyMatches("turn-a", "turn-b")).toBe(false);

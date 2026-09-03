@@ -45,3 +45,10 @@ Host SHALL watch Git identity files for Thread cwds that have been inspected and
 - **WHEN** the Thread record or official `thread/read` carries `runtimeWorkspaceRoots` outside cwd
 - **THEN** Host SHALL inspect each root that is a Git repository and include it as an `additional` row
 - **AND** a root that is not a Git repository SHALL be skipped rather than invented
+
+#### Scenario: Renderer asks about changed paths outside every root
+
+- **WHEN** inspect params carry `extraPaths` with absolute file paths
+- **THEN** Host SHALL resolve each path's nearest existing ancestor directory to its Git toplevel and include a toplevel not already listed as an `external` row
+- **AND** a relative path, a path inside an already listed root, or a path with no Git toplevel SHALL add no row
+- **AND** Host SHALL NOT create, remove, or check out anything while resolving

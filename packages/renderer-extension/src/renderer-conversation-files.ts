@@ -15,6 +15,14 @@ export interface ThreadConversationFile {
 export interface ThreadConversationFileUpdate {
   threadId: string;
   turnId: string | null;
+  /**
+   * File Change Item that owns `files`. Each notification carries that Item's
+   * complete current change set, so a later update for the same Item replaces
+   * the earlier one and an empty set retires the Item's files (revert).
+   * `null` when the notification did not identify an Item; such updates only
+   * merge.
+   */
+  itemId: string | null;
   files: ThreadConversationFile[];
 }
 
@@ -108,7 +116,37 @@ export function conversationFilesFromNotification(
     typeof params.turnId === "string" && params.turnId.trim().length > 0
       ? params.turnId.trim()
       : null;
-  return files.length > 0 ? { threadId: threadId.data, turnId, files } : null;
+  const itemId =
+    typeof params.itemId === "string" && params.itemId.trim().length > 0
+      ? params.itemId.trim()
+      : null;
+  // An identified Item with no changes left is a revert and must still be
+  // delivered; an anonymous empty update carries nothing to merge.
+  if (files.length === 0 && itemId === null) return null;
+  return { threadId: threadId.data, turnId, itemId, files };
+}
+
+/**
+ * Conversation file set derived from per-Item change sets. Files are summed
+ * by path across Items so one path edited by two Items shows once with the
+ * combined line counts and the latest non-empty preview.
+ */
+export function conversationFilesFromItems(
+  items: ReadonlyMap<string, readonly ThreadConversationFile[]>,
+): ThreadConversationFile[] {
+  const byPath = new Map<string, ThreadConversationFile>();
+  for (const files of items.values()) {
+    for (const file of files) {
+      const previous = byPath.get(file.path);
+      byPath.set(file.path, {
+        path: file.path,
+        addedLines: (previous?.addedLines ?? 0) + file.addedLines,
+        deletedLines: (previous?.deletedLines ?? 0) + file.deletedLines,
+        preview: file.preview.length > 0 ? file.preview : (previous?.preview ?? ""),
+      });
+    }
+  }
+  return [...byPath.values()].sort((left, right) => left.path.localeCompare(right.path));
 }
 
 export function mergeConversationFiles(
