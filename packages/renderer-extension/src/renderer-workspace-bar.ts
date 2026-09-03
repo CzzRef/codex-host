@@ -17,6 +17,7 @@ import {
   CONVERSATION_GUTTER_ATTRIBUTE,
   clampFixedBox,
   ensureOverlayChromeStyle,
+  overflowScroller,
   overlayTopAboveComposer,
 } from "./renderer-overlay-layout.js";
 import type { RendererModelClient } from "./renderer-model-client.js";
@@ -856,6 +857,36 @@ function placePreview(
  * the viewport; parked inside the Composer's parent it inherited any
  * transformed or filtered ancestor as its containing block and drifted.
  */
+const RESERVE_ATTRIBUTE = "data-codexhost-workspace-reserve";
+
+/**
+ * Desktop pads the transcript for its own floating Composer only; the bar
+ * floats above it, so the last transcript lines would end up underneath.
+ * Pad the scrolled column by the bar's height so scroll-to-bottom shows them.
+ */
+function reserveTranscriptSpace(composer: Element, extra: number): void {
+  const scroller = overflowScroller(composer);
+  const column = scroller?.firstElementChild;
+  const ownerDocument = composer.ownerDocument;
+  const previous = ownerDocument.querySelector<HTMLElement>(`[${RESERVE_ATTRIBUTE}]`);
+  if (previous && previous !== column) {
+    previous.style.paddingBottom = "";
+    previous.removeAttribute(RESERVE_ATTRIBUTE);
+  }
+  if (!(column instanceof HTMLElement) || column.contains(composer)) return;
+  const value = extra > 0 ? `${extra}px` : "";
+  if (column.style.paddingBottom !== value) column.style.paddingBottom = value;
+  if (value) column.setAttribute(RESERVE_ATTRIBUTE, "true");
+  else column.removeAttribute(RESERVE_ATTRIBUTE);
+}
+
+function releaseTranscriptSpace(ownerDocument: Document): void {
+  const previous = ownerDocument.querySelector<HTMLElement>(`[${RESERVE_ATTRIBUTE}]`);
+  if (!previous) return;
+  previous.style.paddingBottom = "";
+  previous.removeAttribute(RESERVE_ATTRIBUTE);
+}
+
 function placeBar(bar: HTMLElement, composer: Element): void {
   const ownerDocument = bar.ownerDocument;
   const host = ownerDocument.body ?? ownerDocument.documentElement;
@@ -870,6 +901,7 @@ function placeBar(bar: HTMLElement, composer: Element): void {
   bar.style.top = `${top}px`;
   bar.style.maxHeight = "";
   bar.style.overflow = "visible";
+  reserveTranscriptSpace(composer, Math.max(0, Math.round(rect.top - top)));
   const fileList = bar.querySelector<HTMLElement>("[data-codexhost-workspace-file-list]");
   if (fileList) {
     fileList.style.maxHeight = `min(300px, 42vh, ${Math.max(0, top - 20)}px)`;
@@ -980,6 +1012,7 @@ export function installRendererWorkspaceBar(
 
   const removeBar = (composer: Element): void => {
     bars.get(composer)?.remove();
+    releaseTranscriptSpace(documentNode);
     bars.delete(composer);
     signatures.delete(composer);
     generations.delete(composer);
@@ -1080,6 +1113,7 @@ export function installRendererWorkspaceBar(
     if (!fileDisclosureAvailable && grouped.groups.length === 0) {
       bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, "empty");
       bar.remove();
+      releaseTranscriptSpace(documentNode);
       clearConversationGutter(root);
       syncNativeWorkspaceDiffVisibility();
       return;
@@ -1150,16 +1184,19 @@ export function installRendererWorkspaceBar(
     chevron.className = "codexhost-workspace-files-chevron";
     chevron.setAttribute("aria-hidden", "true");
     chevron.textContent = expanded ? "▾" : "▸";
-    heading.append(
-      count,
-      formatStats(
-        documentNode,
-        aggregate.addedLines,
-        aggregate.deletedLines,
-        "codexhost-workspace-summary-stats",
-      ),
-      chevron,
-    );
+    heading.append(count);
+    // "+0 -0" beside "0 files" is noise; counters appear once there is a diff.
+    if (aggregate.addedLines > 0 || aggregate.deletedLines > 0) {
+      heading.append(
+        formatStats(
+          documentNode,
+          aggregate.addedLines,
+          aggregate.deletedLines,
+          "codexhost-workspace-summary-stats",
+        ),
+      );
+    }
+    heading.append(chevron);
     heading.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
