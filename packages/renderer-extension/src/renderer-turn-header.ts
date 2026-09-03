@@ -69,6 +69,8 @@ const RESERVE_GAP = 8;
 const BOTTOM_TOLERANCE = 24;
 /** After a rollback, a briefly empty transcript keeps the previous label. */
 const RELOAD_GRACE_MS = 600;
+/** Scroll events this long after our own scrollBy are ours, not the user's. */
+const OWN_SCROLL_MS = 600;
 
 export interface RendererTurnHeader {
   refresh(): void;
@@ -86,6 +88,13 @@ interface HeaderState {
   keys: string[];
   currentIndex: number | null;
   currentKey: string | null;
+  /**
+   * A Turn the user stepped to with the header arrows. It stays current
+   * until the user scrolls, so short transcripts that cannot scroll can still
+   * target an earlier Turn.
+   */
+  overrideIndex: number | null;
+  ownScrollUntil: number;
   pinned: boolean;
   blocked: TurnActionBlock | null;
   filesExpanded: boolean;
@@ -276,13 +285,16 @@ export function installRendererTurnHeader(options: {
     };
     const visibleBottom = Math.min(composerRect.top, scrollerBottom);
     const atBottom = count > 0 && rectAt(count - 1).bottom <= visibleBottom + BOTTOM_TOLERANCE;
-    const index = resolveCurrentTurn({
-      count,
-      topAt: (position) => rectAt(position).top,
-      atBottom,
-      headerBottom,
-      previous: state.currentIndex,
-    });
+    if (state.overrideIndex !== null && state.overrideIndex >= count) state.overrideIndex = null;
+    const index =
+      state.overrideIndex ??
+      resolveCurrentTurn({
+        count,
+        topAt: (position) => rectAt(position).top,
+        atBottom,
+        headerBottom,
+        previous: state.currentIndex,
+      });
     const key = index === null ? null : (state.keys[index] ?? null);
     const turn = index === null ? null : (state.turns[index] ?? null);
     const keyChanged = key !== state.currentKey;
@@ -391,6 +403,13 @@ export function installRendererTurnHeader(options: {
   };
 
   const mount = (composer: Element, threadId: string): HeaderState => {
+    const scrollToTurn = (turn: Element): void => {
+      const headerBottom = state.view.root.getBoundingClientRect().bottom;
+      const delta = scrollDeltaToTurn({ turnTop: turn.getBoundingClientRect().top, headerBottom });
+      state.ownScrollUntil = Date.now() + OWN_SCROLL_MS;
+      if (state.scroller) state.scroller.scrollBy({ top: delta, behavior: "smooth" });
+      else turn.scrollIntoView({ block: "start" });
+    };
     const headerView = createTurnHeaderView(documentNode, {
       threadId,
       rootAttribute: TURN_HEADER_ATTRIBUTE,
@@ -399,13 +418,16 @@ export function installRendererTurnHeader(options: {
       onPromptClick: () => {
         const turn = currentTurn(state);
         if (!turn || state.blocked === "nativeEdit") return;
-        const headerBottom = state.view.root.getBoundingClientRect().bottom;
-        const delta = scrollDeltaToTurn({
-          turnTop: turn.getBoundingClientRect().top,
-          headerBottom,
-        });
-        if (state.scroller) state.scroller.scrollBy({ top: delta, behavior: "smooth" });
-        else turn.scrollIntoView({ block: "start" });
+        scrollToTurn(turn);
+      },
+      onStep: (delta) => {
+        if (state.currentIndex === null) return;
+        const target = state.currentIndex + delta;
+        const turn = state.turns[target];
+        if (!turn) return;
+        state.overrideIndex = target;
+        scrollToTurn(turn);
+        scheduleFrame();
       },
     });
     (documentNode.body ?? documentNode.documentElement).append(headerView.root);
@@ -436,6 +458,8 @@ export function installRendererTurnHeader(options: {
       keys: [],
       currentIndex: null,
       currentKey: null,
+      overrideIndex: null,
+      ownScrollUntil: 0,
       pinned: false,
       blocked: null,
       filesExpanded: false,
@@ -468,6 +492,7 @@ export function installRendererTurnHeader(options: {
     state.view.setThreadId(threadId);
     state.currentIndex = null;
     state.currentKey = null;
+    state.overrideIndex = null;
     state.pinned = false;
     state.filesExpanded = false;
     state.lastPaint = "";
@@ -526,9 +551,12 @@ export function installRendererTurnHeader(options: {
 
   const onScroll = (event: Event): void => {
     if (!insideOverlay(event.target)) {
+      const now = Date.now();
       for (const state of headers.values()) {
         state.view.collapsePanel();
         workspaceRow.collapse(state);
+        // A scroll the user made hands the current Turn back to the viewport.
+        if (now > state.ownScrollUntil) state.overrideIndex = null;
       }
       preview.hide();
     }

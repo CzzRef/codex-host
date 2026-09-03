@@ -4,6 +4,8 @@ export const TURN_HEADER_INDEX_ATTRIBUTE = "data-codexhost-turn-header-index";
 export const TURN_HEADER_PROMPT_ATTRIBUTE = "data-codexhost-turn-header-prompt";
 export const TURN_HEADER_EXPAND_ATTRIBUTE = "data-codexhost-turn-header-expand";
 export const TURN_HEADER_PANEL_ATTRIBUTE = "data-codexhost-turn-header-panel";
+/** Values: `prev` | `next`. */
+export const TURN_HEADER_STEP_ATTRIBUTE = "data-codexhost-turn-header-step";
 export const TURN_HEADER_WORKSPACE_ATTRIBUTE = "data-codexhost-turn-header-workspace";
 
 const PROMPT_LINE_MAX_CHARS = 200;
@@ -45,6 +47,8 @@ export function createTurnHeaderView(
     overlayAttribute: string;
     className: string;
     onPromptClick(): void;
+    /** Step the current Turn explicitly; `-1` previous, `+1` next. */
+    onStep(delta: -1 | 1): void;
   },
 ): TurnHeaderView {
   const root = ownerDocument.createElement("div");
@@ -54,6 +58,21 @@ export function createTurnHeaderView(
   root.setAttribute("data-state", "ready");
   const row = ownerDocument.createElement("div");
   row.className = "codexhost-turn-header-row";
+  const step = (delta: -1 | 1): HTMLButtonElement => {
+    const button = ownerDocument.createElement("button");
+    button.type = "button";
+    button.className = "codexhost-turn-header-step";
+    button.setAttribute(TURN_HEADER_STEP_ATTRIBUTE, delta < 0 ? "prev" : "next");
+    button.textContent = delta < 0 ? "‹" : "›";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      input.onStep(delta);
+    });
+    return button;
+  };
+  const previous = step(-1);
+  const next = step(1);
   const index = ownerDocument.createElement("span");
   index.className = "codexhost-turn-header-index";
   index.setAttribute(TURN_HEADER_INDEX_ATTRIBUTE, "true");
@@ -86,7 +105,7 @@ export function createTurnHeaderView(
   const workspace = ownerDocument.createElement("div");
   workspace.className = "codexhost-turn-header-row codexhost-workspace-surface";
   workspace.setAttribute(TURN_HEADER_WORKSPACE_ATTRIBUTE, "empty");
-  row.append(index, prompt, spacer, expand, cluster);
+  row.append(previous, index, next, prompt, spacer, expand, cluster);
   root.append(row, workspace, panel, notice);
   let promptExpanded = false;
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -128,6 +147,10 @@ export function createTurnHeaderView(
               : `Turn ${state.index + 1}/${state.count}`;
       }
       root.setAttribute("data-state", state.reloading ? "reloading" : "ready");
+      previous.disabled = state.index === null || state.index <= 0;
+      next.disabled = state.index === null || state.index >= state.count - 1;
+      previous.setAttribute("aria-label", zh ? "上一轮" : "Previous turn");
+      next.setAttribute("aria-label", zh ? "下一轮" : "Next turn");
       root.setAttribute("data-native-edit", state.nativeEdit ? "true" : "false");
       root.setAttribute("data-streaming", state.busy ? "true" : "false");
       if (state.nativeEdit) {

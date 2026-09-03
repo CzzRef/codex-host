@@ -504,6 +504,23 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await page.evaluate("globalThis.scrollTranscriptToBottom()");
   await expect(headerIndex).toHaveText("Turn 3/3");
   await expect(headerPrompt).toHaveText("third prompt");
+  // The arrows step the current Turn explicitly, so an earlier Turn can be
+  // targeted even when the transcript cannot scroll; a real scroll hands the
+  // choice back to the viewport.
+  const stepPrev = header.locator('[data-codexhost-turn-header-step="prev"]');
+  const stepNext = header.locator('[data-codexhost-turn-header-step="next"]');
+  await expect(stepNext).toBeDisabled();
+  await stepPrev.click();
+  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeEnabled();
+  await stepPrev.click();
+  await expect(headerIndex).toHaveText("Turn 1/3");
+  await expect(stepPrev).toBeDisabled();
+  await stepNext.click();
+  await expect(headerIndex).toHaveText("Turn 2/3");
+  await page.waitForTimeout(700);
+  await page.evaluate("globalThis.scrollTranscriptToBottom()");
+  await expect(headerIndex).toHaveText("Turn 3/3");
 
   // The workspace row lives in the header: nothing floats above the Composer any more.
   const workspace = header.locator("[data-codexhost-turn-header-workspace]");
