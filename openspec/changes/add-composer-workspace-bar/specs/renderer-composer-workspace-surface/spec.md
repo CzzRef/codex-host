@@ -93,6 +93,21 @@ The codexhost file-change disclosure SHALL occupy the right edge of the compact 
 - **WHEN** no codexhost file-change disclosure is mounted or the extension is disposed
 - **THEN** native Changes and Review/diff controls SHALL remain visible
 
+### Requirement: Turn actions are honest, reachable, and stay out of the transcript text
+
+The Renderer SHALL show one floating `⋯` chip at the top-right of the hovered `[data-turn-key]` Turn (inside the conversation viewport, clear of native Turn chrome) and SHALL NOT paint per-Turn markers over transcript text. Activating the chip SHALL select the Turn and show the Edit / Rollback / Redo cluster. The cluster SHALL reposition on scroll, resize, selected-Turn resize, and DOM mutation, coalesced into one animation frame. Rollback SHALL be disabled with a reason when the Host's `rollback` bits say the request would be refused; Edit SHALL require confirmation only when a rollback will actually run. Edit SHALL prefer Desktop's native pencil and otherwise refill the Composer with the Turn's prompt. Copy SHALL NOT promise to rewrite project files, and the Renderer SHALL NOT click Desktop's Undo implicitly.
+
+#### Scenario: Harness Turn without a native pencil
+
+- **WHEN** the user activates Edit on a selected Turn that has no native Edit control
+- **THEN** the Renderer SHALL place the Turn's prompt text in the Composer, focus it, and show a notice
+
+#### Scenario: Host reports last-turn-only rollback
+
+- **WHEN** inspect reports `rollback: { lastTurn: true, multiTurn: false }` and the selected Turn has more than one later Turn
+- **THEN** Rollback SHALL be disabled with a tooltip explaining only the last Turn can be rolled back
+- **AND** Edit SHALL run without a rollback confirmation and refill the Composer
+
 ### Requirement: Worktree preference controls the official new-chat execution mode
 
 For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL route the persisted Worktree preference through Codex Desktop's owned `setComposerMode` state. The preference SHALL default to unchecked. Checked SHALL select `worktree`; unchecked SHALL select `local`. Only an explicit checkbox change SHALL persist the preference: a Composer mode observed from Desktop's own run-location control SHALL update the checkbox for the current draft and SHALL NOT be persisted. The Renderer SHALL NOT invoke Git or provision a Worktree itself.

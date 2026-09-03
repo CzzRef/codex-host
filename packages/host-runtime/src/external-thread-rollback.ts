@@ -26,6 +26,28 @@ import type { ExternalThread, ExternalThreadRuntime } from "./external-thread-ru
 export type ExternalThreadRollbackResult =
   { ok: false; error: ExternalThreadRpcError } | { ok: true; thread: JsonObject };
 
+/**
+ * Cheap, side-effect-free view of what `executeExternalThreadRollback` would
+ * accept for this Thread, published through `codexhost/thread/inspect` so the
+ * Renderer can disable the control with a reason up front. Execution still
+ * re-validates every boundary; this only has to agree with it in the common
+ * cases.
+ */
+export function externalRollbackCapabilities(thread: ExternalThread): {
+  lastTurn: boolean;
+  multiTurn: boolean;
+} {
+  const turns = thread.record.turnMappings.length;
+  const history = thread.session.capabilities.history;
+  // An untouched Fork-derived Thread rolls back by re-forking its source at an
+  // earlier Checkpoint (the second branch of `executeExternalThreadRollback`).
+  const forkLineage = Boolean(thread.record.forkSource) && history.fork;
+  return {
+    lastTurn: turns > 0 && (history.rollbackLastTurn || forkLineage),
+    multiTurn: turns > 1 && forkLineage,
+  };
+}
+
 export function currentConfiguration(current: ExternalThread): HarnessSessionState {
   const state = current.stateObserver.state;
   return {

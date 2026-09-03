@@ -223,3 +223,11 @@ C-5 文件列表收缩
 - 验证（Verification Impact Trace）：`npm run typecheck` 通过；`vitest` shared-contracts/host-runtime/renderer-extension workspace 相关 18 例通过，renderer-extension 全量 228 例通过；Playwright `tests/e2e/renderer-composer-workspace-surface.spec.ts` 通过（新增核心 chip 先于文件、body 挂载与 Composer 对齐、预览不与列表相交且可进入、Esc 关闭、`external` chip 与 `extraPaths` 透传、0 行 root 无 chip、revert 收缩五组断言）；`eslint` 与 `node tools/check-boundaries.mjs` 通过。
 - `[待真机]` 仍未量：bar 左缘与 Composer 左缘差、预览在真实 Desktop 中的位置；Desktop 未运行。
 - 文档：OpenSpec `add-composer-workspace-bar` 两个 spec delta 与 tasks §11 已更新；preview HTML 已更新核心 chip / external / `+N` / 大预览。
+
+### 切片 2 轮次动作诚实化与定位 — 2026-09-03 done
+
+- 契约：`externalThreadInspectionSchema` 新增可选 `rollback: { lastTurn, multiTurn }`（`packages/shared-contracts/src/harness-models.ts`）；Host 由 `externalRollbackCapabilities()`（`packages/host-runtime/src/external-thread-rollback.ts`）计算：`lastTurn = turns>0 && (history.rollbackLastTurn || 未动过的 Fork 派生线程)`，`multiTurn = turns>1 && Fork 派生`。切片 4 将把 checkpoint fork 纳入 `multiTurn`。
+- Renderer（`packages/renderer-extension/src/renderer-turn-actions.ts` 重写）：`rollbackSupportFor()` 把能力位折成 `full | lastTurnOnly | none`；回滚按钮按之禁用并给原因 tooltip；编辑只在真会回滚时二次确认；编辑优先官方铅笔，找不到时 `turnPromptText()` 读本轮提示 → `clearComposerEditor` + `insertComposerText` 回填并聚焦；文案去掉「还原文件」，`runRollback` 不再暗点官方 Undo；左侧 8px 圆点删除，改为单个 hover「⋯」chip（`data-codexhost-turn-hover`）锚在悬停轮次右上、避让官方 chrome、离开 160ms 宽限；scroll/resize/mutation/ResizeObserver 统一 `requestAnimationFrame` 合并重定位。
+- 偏差：B-4 原文「点击「⋯」展开菜单」实现为「点击即选中该轮并显示既有动作簇」，少一层菜单；原因是动作簇已是横向 chip 且带确认，不需要第二层。
+- 验证：`npm run typecheck` 通过；renderer-extension + shared-contracts 322 例通过；host-runtime `app-server-host.test.ts` inspect/rollback/redo 10 例通过（inspect 断言新增 `rollback` 位）；Playwright `renderer-composer-workspace-surface` 通过（新增 hover chip 位置、点击选中、Edit 回填 Composer 与通知三组断言）。
+- 文档：新建 OpenSpec change `add-external-thread-multi-turn-rollback`（proposal / tasks §1–§2 勾选、§3 留给切片 4 / `external-thread-fork-routing` delta）；`add-composer-workspace-bar` renderer spec 新增「Turn actions」Requirement；preview HTML 更新。`openspec` CLI 未安装，未做 strict validate。

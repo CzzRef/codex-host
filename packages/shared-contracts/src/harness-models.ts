@@ -309,6 +309,19 @@ const externalThreadInspectionSchema = z
     effectivePermissionModeId: harnessPermissionModeIdSchema.optional(),
     history: harnessHistoryCapabilitiesSchema,
     historyRedoAvailable: z.boolean().optional(),
+    /**
+     * What `thread/rollback` can do for this Thread right now, so the Renderer
+     * disables the control with a reason instead of letting the Host reject
+     * the request afterwards. `lastTurn` covers `numTurns = 1`; `multiTurn`
+     * covers `numTurns > 1`.
+     */
+    rollback: z
+      .object({
+        lastTurn: z.boolean(),
+        multiTurn: z.boolean(),
+      })
+      .strict()
+      .optional(),
     usage: threadUsageSnapshotSchema.optional(),
     locked: z.literal(true),
   })
