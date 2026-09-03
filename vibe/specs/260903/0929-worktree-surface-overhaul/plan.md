@@ -2,7 +2,7 @@
 
 Tool: cursor
 Date: 2026-09-03 09:29 (+08:00)
-Status: `implemented / live-verification pending`（用户 2026-09-03 10:05 确认按四切片实施；四个切片已于 2026-09-03 完成，真机量测与各 Harness 真机确认见 [§8 Execution Journal](#8-execution-journal) 的 `[待真机]`）
+Status: `implemented / partially live-verified`（用户 2026-09-03 10:05 确认按四切片实施；四个切片已于 2026-09-03 完成；11:28 真机量测：状态栏与 hover chip 通过，选择器项目根缺陷已修待重启生效，其余见 [§8 Execution Journal](#8-execution-journal) 的 `[待真机]`）
 Documentation level: `standard requirement`（本文件即 owner，保留文件名以维持外部链接；需求原文见 [raw-requirement.md](raw-requirement.md)）
 
 ## 0. 基线
@@ -254,3 +254,11 @@ C-5 文件列表收缩
 - 文档：OpenSpec `add-external-thread-multi-turn-rollback` proposal / tasks §3 / `external-thread-fork-routing` delta 新增「Host rolls a live External Thread back at its own Checkpoint」与「History replacement notifies paginated Desktop transcripts」两条 Requirement；本文件 Status 升为 `implemented / live-verification pending`。
 - 预览页分享（2026-09-03 11:09）：`composer-overlay.preview.html` 已作为「追踪文件」登记进 czzLocalShare（端口 8789，直读原路径、改了即时同步），追踪别名与本地显示名均为「codexhost预览」；本机链接 `http://127.0.0.1:8789/p/nLzclnQ6/composer-overlay.preview.html`。
 - 预览页交互核验（2026-09-03 11:12，ego-browser 任务空间 2，1440×900）：发现并修正 6 处——模拟窗口随说明栏拉高到 1455px 使 Composer/bar 掉出首屏（`.stage` 改 sticky + `100vh`）；「工作树」菜单常开且 z-index 20 盖住 bar 右 2/3，文件披露与 diff 预览点不到（改为默认收起、点 chip 切换、Esc/点外关闭、选项可选）；回滚/编辑文案仍承诺「还原文件」（对齐 `turnActionCopy`）；缺 hover「⋯」chip 与能力位禁用演示（补 `.turn-hover`，t1 演示 `lastTurnOnly` 禁用 + 编辑回填 toast）；diff 预览左溢出模拟窗口 100px（按窗口左缘 clamp 宽度）；核心 chip 文本压到 CodeNote chip 上（核心 chip 收缩省略，其余 `flex: none`）。修正后量测：预览与列表不相交且在窗口内，chip 无重叠，菜单在 chip 上方且 Esc 关闭。`[待真机]` 项不变。
+
+### 真机量测（2026-09-03 11:28–11:45，源码 Desktop）
+- 启动：`codexhost inspect` 确认 Desktop 未运行后 `npm run build` + `codexhost launch`；Desktop PID 11131、Launcher 11129、Host runtime `packages/host-runtime/dist/main.js` PID 11283，runtime descriptor `~/Library/Application Support/codexhost/desktop-runtime-v1.json` 权限 `0600`。量测走 Electron 主进程 Inspector（`CODEXHOST_CONTROL_PORT` 旁的 56286）→ `webContents.executeJavaScript`，只读 DOM / React fiber，脚本在 `/tmp`，未进仓。
+- 状态栏（切片 1）`[真机通过]`：线程视图下 bar `position: fixed`、父节点 `BODY`，rect `x=846 w=736`，Composer root rect `x=846 w=736`——左缘差 **0px**（要求 ≤2px），bar 底 829 与 Composer 顶 837 间距 8px；核心 chip 常驻「codex-host · czz-dev」，1 行。草稿视图（无线程）不渲染 bar。旧「偏移」根因即 transformed 祖先下的 fixed 退化，改挂 body 后消失。
+- hover「⋯」chip（切片 2）`[真机通过]`：对 `[data-turn-key]`（rect `y=77 h=1334`，滚动容器 `0..1050`，Composer 顶 837）派发 `mouseover` 后 chip 同步落到 `(1548, 85)` = 轮次右上内缩 8px，`data-visible=true`；`mouseout` 160ms 后隐藏。用户真实鼠标在别处移动时会按预期把它收回，因此异步量测前两次读到隐藏属正常。多轮回滚 / `thread/reverted` 重读仍需一条外部线程配合，未在用户线程上操作，保持 `[待真机]`。
+- 「Worktree ▾」选择器（切片 3）`[真机缺陷 → 已修]`：chip 挂在 Switch-branch 旁（rect `x=1164 y=906 w=122 h=22`），点开菜单 `z-index 2147483000`、位于 chip 上方 (`y=750 h=150`)、Esc 可关；但**刚启动未发过消息时**「Existing worktrees」显示「Pick a project to list worktrees」、「New worktree…」禁用——`binding.projectRoot` 为 null 且 `draftCwd()` 为 null（后者只在首次 `thread/start` 后才有值）。深扫 run-location 按钮 fiber 链（共 215 层）：绝对路径出现在第 26 层 `executionTargetOverride.cwd / .activeWorkspaceRoot` 与第 40 层 `gitRootForStartingState / worktreeEnvironmentWorkspaceRoot / localRemoteExecutionTarget.cwd`，都在 `FIBER_DEPTH_LIMIT=60` 内，只是键名不在 `PATH_PROP_KEYS`。修复：`renderer-draft-worktree-picker.ts` 的 `PATH_PROP_KEYS` 增加 `gitRootForStartingState`、`worktreeEnvironmentWorkspaceRoot`，嵌套键增加 `executionTargetOverride`、`localRemoteExecutionTarget` 与子键 `activeWorkspaceRoot`；单测补三种真机形状。已 `npm run build`，但 desktop-controller 在启动时一次性读入 Renderer 源（`production-controller.ts` `readRenderer`），运行中的 Desktop 不会热替换——需按 [czz-dev.md](../../../../docs/czz-dev.md) 的正常退出 + `codexhost launch` 门禁重启后再点开菜单确认列出 `codex/260902-worktree-checkbox-routing` 与 `claude/cursor-multi-agent-codex-5be354` 两个 linked worktree。
+- 观察（非缺陷）：官方 run-location 控件「Work locally / Local」与 Host「Worktree · Local ▾」并排；spec 里的「代替勾选框」指旧 Host 勾选框，官方控件保留。若嫌重复可后续考虑隐藏官方控件，属产品决定。
+- 量测期间为读取草稿 props 用侧栏「Start new chat in codex-host」打开过一个空草稿（未发消息、未创建线程），用户原线程（`8e799f59-…`）仍在后台运行，需手动点回。

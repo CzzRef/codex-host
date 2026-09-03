@@ -164,6 +164,18 @@ describe("draft run-location binding", () => {
     expect(draftWorktreeModeBindingFromButton(button)?.projectRoot).toBe("/Users/me/repo");
     expect(projectRootFromProps({ project: { path: "C:\\work\\repo" } })).toBe("C:\\work\\repo");
     expect(projectRootFromProps({ cwd: "relative/path", projectRoot: 42 })).toBeNull();
+    // Desktop 26.831 shapes measured on the live composer owner chain.
+    expect(
+      projectRootFromProps({
+        executionTargetOverride: { activeWorkspaceRoot: "/Users/me/repo", cwd: "/Users/me/repo" },
+      }),
+    ).toBe("/Users/me/repo");
+    expect(projectRootFromProps({ gitRootForStartingState: "/Users/me/repo" })).toBe(
+      "/Users/me/repo",
+    );
+    expect(
+      projectRootFromProps({ localRemoteExecutionTarget: { cwd: "/Users/me/repo" } }),
+    ).toBe("/Users/me/repo");
   });
 
   it("fails closed for an existing Thread, unsupported mode, or ambiguous owner", () => {
