@@ -20,6 +20,8 @@ import {
   type ThreadUsageInspectionParams,
   type ThreadWorkspaceInspectParams,
   type ThreadWorkspaceSnapshot,
+  type WorkspaceWorktreeCreateParams,
+  type WorkspaceWorktreeListParams,
 } from "@codexhost/shared-contracts";
 
 import type { RendererAgent } from "./agent-selection-state.js";
@@ -120,6 +122,10 @@ export interface RendererDraftPrewarmPolicy {
   hostId: string;
   readonly requestTarget?: () => unknown;
   select(model: string | null): boolean;
+  /** Host-managed worktree for the current draft; `null` keeps Desktop's cwd. */
+  selectWorkspace?(selection: { cwd: string } | null): boolean;
+  /** Last cwd Desktop itself sent on a draft `thread/start`, or `null`. */
+  draftCwd?(): string | null;
   clear(): Promise<void>;
 }
 
@@ -888,6 +894,16 @@ export function installCurrentRendererAdapter(): {
       currentModelClient().rollbackThread?.(input) ?? Promise.resolve(),
     redoThread: (input: { threadId: string }) =>
       currentModelClient().redoThread?.(input) ?? Promise.resolve(),
+    listWorkspaceWorktrees: (input: WorkspaceWorktreeListParams) => {
+      const list = currentModelClient().listWorkspaceWorktrees;
+      if (!list) throw new Error("Renderer worktree list is unavailable");
+      return list(input);
+    },
+    createWorkspaceWorktree: (input: WorkspaceWorktreeCreateParams) => {
+      const create = currentModelClient().createWorkspaceWorktree;
+      if (!create) throw new Error("Renderer worktree create is unavailable");
+      return create(input);
+    },
     subscribeThreadUsage: (listener: (update: ThreadUsageInspection) => void) =>
       usageSubscription.subscribe(listener),
     subscribeThreadWorkspace: (listener: (update: ThreadWorkspaceSnapshot) => void) => {

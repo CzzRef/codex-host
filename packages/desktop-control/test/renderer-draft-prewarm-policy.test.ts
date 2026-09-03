@@ -486,6 +486,74 @@ describe("Renderer draft prewarm policy", () => {
     });
   });
 
+  it("rewrites draft Thread starts into the selected Host-managed worktree", async () => {
+    const sendRequest = vi.fn<(method: string, parameters: unknown) => Promise<void>>(
+      async () => undefined,
+    );
+    const prewarmThreadStart = vi.fn(async (parameters: unknown) => parameters);
+    const discardAllPrewarmedThreads = vi.fn();
+    const manager = requestManagerFixture();
+    const bridge = requestBridgeFixture({ sendRequest, prewarmThreadStart });
+    const dispatchEvent = vi.fn(() => true);
+    const target: DraftPrewarmPolicyTarget = { dispatchEvent };
+    installDraftPrewarmPolicyBridge(manager, bridge, "local", target, {
+      discardAllPrewarmedThreads,
+    });
+    const policy = target.__codexhostDraftPrewarmPolicyV1 as {
+      select(model: string | null): boolean;
+      selectWorkspace(selection: { cwd: string } | null): boolean;
+      draftCwd(): string | null;
+      dispose(): void;
+    };
+
+    // Desktop's own prewarm reveals the draft project root to the Renderer.
+    expect(policy.draftCwd()).toBeNull();
+    await bridge.prewarmThreadStart?.({ cwd: "/work/Repo", model: "gpt-5" });
+    expect(policy.draftCwd()).toBe("/work/Repo");
+    expect(dispatchEvent).toHaveBeenCalledTimes(2);
+    expect(prewarmThreadStart).toHaveBeenLastCalledWith({ cwd: "/work/Repo", model: "gpt-5" });
+
+    expect(policy.selectWorkspace({ cwd: "/work/Repo-worktrees/codex/260903-x" })).toBe(true);
+    expect(policy.selectWorkspace({ cwd: "/work/Repo-worktrees/codex/260903-x" })).toBe(false);
+    expect(discardAllPrewarmedThreads).toHaveBeenCalledTimes(1);
+    // Official Codex Threads (no carrier) still take the worktree cwd.
+    await bridge.sendRequest("thread/start", {
+      cwd: "/work/Repo",
+      runtimeWorkspaceRoots: ["/work/Repo", "/notes"],
+      model: "gpt-5",
+    });
+    expect(sendRequest).toHaveBeenLastCalledWith("thread/start", {
+      cwd: "/work/Repo-worktrees/codex/260903-x",
+      runtimeWorkspaceRoots: ["/work/Repo-worktrees/codex/260903-x", "/notes"],
+      model: "gpt-5",
+    });
+    // Ephemeral drafts are left alone; the observed project root is unchanged.
+    await bridge.prewarmThreadStart?.({ ephemeral: true, cwd: "/work/Repo", model: "gpt-5" });
+    expect(prewarmThreadStart).toHaveBeenLastCalledWith({
+      ephemeral: true,
+      cwd: "/work/Repo",
+      model: "gpt-5",
+    });
+    expect(policy.draftCwd()).toBe("/work/Repo");
+    // External carriers and the worktree cwd are rewritten at the same point.
+    policy.select("codexhost/pi-native");
+    await bridge.prewarmThreadStart?.({ cwd: "/work/Repo", model: "gpt-5" });
+    expect(prewarmThreadStart).toHaveBeenLastCalledWith({
+      cwd: "/work/Repo-worktrees/codex/260903-x",
+      model: "codexhost/pi-native",
+    });
+    expect(policy.selectWorkspace(null)).toBe(true);
+    expect(discardAllPrewarmedThreads).toHaveBeenCalledTimes(2);
+    await bridge.prewarmThreadStart?.({ cwd: "/work/Repo", model: "gpt-5" });
+    expect(prewarmThreadStart).toHaveBeenLastCalledWith({
+      cwd: "/work/Repo",
+      model: "codexhost/pi-native",
+    });
+    expect(() => policy.selectWorkspace({ cwd: "" })).toThrow(/requires a cwd/);
+    policy.dispose();
+    expect(policy.draftCwd()).toBeNull();
+  });
+
   it("tunnels private Host requests through the stock Remote Control app-server", async () => {
     const manager = requestManagerFixture();
     const originalNotification = manager.onNotification as ReturnType<typeof vi.fn>;

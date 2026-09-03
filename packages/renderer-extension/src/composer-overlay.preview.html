@@ -653,6 +653,80 @@
         background: rgb(255 255 255 / 6%);
       }
 
+      /* 新建对话草稿：Switch-branch 旁的「工作树 ▾」选择器（替代原勾选框） */
+      .wt-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 22px;
+        padding: 0 8px;
+        border: 1px solid rgb(255 255 255 / 18%);
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .wt-chip .kind {
+        opacity: 0.65;
+      }
+      .wt-chip b {
+        font-weight: 600;
+      }
+      .wt-menu {
+        position: absolute;
+        right: 16px;
+        bottom: 58px;
+        /* 打开态是瞬时浮层，压在工作区 bar 之上（真实实现 z-index 同样高于 bar） */
+        z-index: 20;
+        min-width: 260px;
+        padding: 6px;
+        border: 1px solid rgb(255 255 255 / 14%);
+        border-radius: 10px;
+        background: #1c1c1e;
+        box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+        font-size: 12px;
+        line-height: 16px;
+      }
+      .wt-menu .section {
+        padding: 6px 8px 2px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        opacity: 0.55;
+      }
+      .wt-menu .item {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        padding: 6px 8px;
+        border-radius: 6px;
+      }
+      .wt-menu .item[aria-checked="true"] {
+        background: rgb(255 255 255 / 12%);
+      }
+      .wt-menu .item .meta {
+        flex: 1;
+        opacity: 0.6;
+      }
+      .wt-menu .item .dirty {
+        color: #d97706;
+      }
+      .wt-menu form {
+        display: flex;
+        gap: 6px;
+        padding: 4px 8px 6px;
+      }
+      .wt-menu input {
+        flex: 1;
+        padding: 4px 6px;
+        border: 1px solid rgb(255 255 255 / 18%);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+      }
+      body[data-mode="current"] .wt-menu {
+        display: none;
+      }
+
       .legacy {
         display: none;
         position: absolute;
@@ -825,9 +899,12 @@
         <p class="hint">
           状态栏切片（挂 body、核心 chip 常驻、按 root 分组与 <code>external</code>
           解析、Item 级文件集、大预览）已进入
-          <code>renderer-workspace-bar.ts</code> 和自动化测试；轮次动作与 Worktree 选择器按
-          <code>vibe/specs/260903/0929-worktree-surface-overhaul/plan.md</code>
-          的后续切片推进。
+          <code>renderer-workspace-bar.ts</code>；轮次动作切片已进入
+          <code>renderer-turn-actions.ts</code>；Worktree 选择器切片已进入
+          <code>renderer-draft-worktree-picker.ts</code>（Host
+          <code>codexhost/workspace/worktree/list|create</code> + desktop-control 草稿
+          <code>cwd</code> 改写，见下方 Composer 右下的「工作树 ▾」与打开态菜单示意）。剩余切片按
+          <code>vibe/specs/260903/0929-worktree-surface-overhaul/plan.md</code> 推进。
         </p>
       </aside>
 
@@ -941,6 +1018,37 @@
                   <span>Always approve</span>
                   <span>CH 99.1%</span>
                   <span>Grok 4.6 Extra High</span>
+                  <span class="pill" title="官方 Switch branch">⎇ czz-dev</span>
+                  <span class="wt-chip" title="新建对话草稿才出现；替代原勾选框">
+                    <span class="kind">工作树 ·</span>
+                    <b>260903-worktree-surface</b>
+                    <span>▾</span>
+                  </span>
+                </div>
+                <div class="wt-menu" role="menu" aria-label="工作树选择器（示意，打开态）">
+                  <div class="item" role="menuitemradio" aria-checked="false">
+                    <b>本地</b><span class="meta">在项目主目录里开始</span>
+                  </div>
+                  <div class="item" role="menuitemradio" aria-checked="false">
+                    <b>临时工作树</b><span class="meta">Desktop 自建匿名 worktree</span>
+                  </div>
+                  <div class="section">已有工作树</div>
+                  <div class="item" role="menuitemradio" aria-checked="true">
+                    <b>260903-worktree-surface</b>
+                    <span class="meta">codex/260903-worktree-surface</span>
+                    <span class="dirty">● 有未提交改动</span>
+                  </div>
+                  <div class="item" role="menuitemradio" aria-checked="false">
+                    <b>260901-composer-workspace-bar</b>
+                    <span class="meta">codex/260901-composer-workspace-bar · 上次</span>
+                  </div>
+                  <div class="item" role="menuitem">
+                    <b>新建工作树…</b><span class="meta">yyMMdd-功能核心，分支 codex/&lt;名称&gt;</span>
+                  </div>
+                  <form onsubmit="return false">
+                    <input type="text" value="260903-" aria-label="新建工作树名称" />
+                    <button type="button" class="chip">创建</button>
+                  </form>
                 </div>
               </div>
             </div>

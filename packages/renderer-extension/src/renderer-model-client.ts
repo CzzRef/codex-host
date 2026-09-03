@@ -25,6 +25,12 @@ import {
   updateEmptyParamsSchema,
   updateStartResultSchema,
   updateStatusResultSchema,
+  WORKSPACE_WORKTREE_CREATE_METHOD,
+  WORKSPACE_WORKTREE_LIST_METHOD,
+  workspaceWorktreeCreateParamsSchema,
+  workspaceWorktreeCreateResultSchema,
+  workspaceWorktreeListParamsSchema,
+  workspaceWorktreeListResultSchema,
   type ExternalThreadForkParams,
   type ExternalThreadForkResult,
   type HarnessCommandCatalog,
@@ -49,6 +55,10 @@ import {
   type UpdateCheckResult,
   type UpdateStartResult,
   type UpdateStatusResult,
+  type WorkspaceWorktreeCreateParams,
+  type WorkspaceWorktreeCreateResult,
+  type WorkspaceWorktreeListParams,
+  type WorkspaceWorktreeListResult,
 } from "@codexhost/shared-contracts";
 import {
   conversationFilesFromNotification,
@@ -125,6 +135,10 @@ export interface RendererModelClient {
   subscribeThreadFileChanges?(listener: (update: ThreadConversationFileUpdate) => void): () => void;
   rollbackThread?(input: { threadId: string; numTurns: number }): Promise<void>;
   redoThread?(input: { threadId: string }): Promise<void>;
+  listWorkspaceWorktrees?(input: WorkspaceWorktreeListParams): Promise<WorkspaceWorktreeListResult>;
+  createWorkspaceWorktree?(
+    input: WorkspaceWorktreeCreateParams,
+  ): Promise<WorkspaceWorktreeCreateResult>;
   selectThreadModel(input: ThreadModelSelectParams): Promise<HarnessModelSelectionState>;
   selectThreadThinking(input: ThreadThinkingSelectParams): Promise<HarnessModelSelectionState>;
   selectThreadPermissionMode(
@@ -355,6 +369,24 @@ export function createRendererModelClient(
     async redoThread(input: { threadId: string }): Promise<void> {
       const threadId = hostThreadIdSchema.parse(input.threadId);
       await manager.sendRequest(THREAD_REDO_METHOD, { threadId });
+    },
+    async listWorkspaceWorktrees(
+      input: WorkspaceWorktreeListParams,
+    ): Promise<WorkspaceWorktreeListResult> {
+      const result = await manager.sendRequest(
+        WORKSPACE_WORKTREE_LIST_METHOD,
+        workspaceWorktreeListParamsSchema.parse(input),
+      );
+      return workspaceWorktreeListResultSchema.parse(result);
+    },
+    async createWorkspaceWorktree(
+      input: WorkspaceWorktreeCreateParams,
+    ): Promise<WorkspaceWorktreeCreateResult> {
+      const result = await manager.sendRequest(
+        WORKSPACE_WORKTREE_CREATE_METHOD,
+        workspaceWorktreeCreateParamsSchema.parse(input),
+      );
+      return workspaceWorktreeCreateResultSchema.parse(result);
     },
     selectThreadModel,
     selectThreadThinking,

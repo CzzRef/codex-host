@@ -8,6 +8,7 @@ Codex Desktop's Thread Composer has an empty slot above the input. Users current
 - Render a codexhost-owned list above the Thread Composer showing each repository, current branch, worktree identity, and live dirty stats.
 - Keep the list live when HEAD, the worktree, or the Thread cwd changes.
 - Later slices in this change: conversation-scoped file-change summary, an official Switch-branch worktree checkbox defaulting to a new worktree, and Tab-reusable implicit composer prompts.
+- Slice 3 of the 260903 worktree surface overhaul replaces that checkbox with a Host-managed draft worktree picker: Host lists and creates named linked worktrees (`codexhost/workspace/worktree/list|create`, additive only), the desktop-control draft policy rewrites the draft's `thread/start` cwd, and the Renderer offers Local / Desktop temporary worktree / existing / new.
 
 ## Capabilities
 
@@ -18,11 +19,12 @@ Codex Desktop's Thread Composer has an empty slot above the input. Users current
 
 ### Modified Capabilities
 
-- None. Desktop-provisioned Worktree Fork ownership stays unchanged. Host still does not own Git worktree lifecycle in this slice.
+- Desktop-provisioned Worktree Fork ownership stays unchanged. Since slice 3, Host owns the additive half of worktree lifecycle for new drafts (list and create); it still never removes or checks out worktrees.
 
 ## Impact
 
 - `packages/shared-contracts`: workspace snapshot schema and inspect params.
 - `packages/host-runtime`: Git inspect, watch, and `codexhost/thread/workspace/*` RPC.
-- `packages/renderer-extension`: Composer-adjacent list, request-manager client, tests.
+- `packages/renderer-extension`: Composer-adjacent list, request-manager client, draft worktree picker, tests.
+- `packages/desktop-control`: draft policy `selectWorkspace` / `draftCwd` and the `thread/start` cwd rewrite.
 - No Harness Adapter, Mapping Store format, or official app-server passthrough changes.

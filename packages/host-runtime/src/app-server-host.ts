@@ -47,6 +47,10 @@ import {
   updateEmptyParamsSchema,
   updateStartResultSchema,
   updateStatusResultSchema,
+  workspaceWorktreeCreateParamsSchema,
+  workspaceWorktreeCreateResultSchema,
+  workspaceWorktreeListParamsSchema,
+  workspaceWorktreeListResultSchema,
   type AccountCreditsSnapshot,
   type HarnessModelRef,
   type HarnessPermissionModeId,
@@ -122,6 +126,11 @@ import {
 } from "./official-app-server-connection.js";
 import type { HostUpdateCoordinator } from "./update-coordinator.js";
 import { createThreadWorkspaceWatch, inspectGitWorkspace } from "./thread-workspace.js";
+import {
+  WorkspaceWorktreeError,
+  createWorkspaceWorktree,
+  listWorkspaceWorktrees,
+} from "./workspace-worktree.js";
 
 const SUBAGENT_TERMINAL_REFRESH_DELAYS_MS = [0, 50, 100, 150] as const;
 const THREAD_USAGE_UPDATED_METHOD = "codexhost/thread/usage/updated";
@@ -704,6 +713,14 @@ export class AppServerHost {
       }
       if (request.method === "codexhost/thread/workspace/inspect") {
         await this.#inspectThreadWorkspace(request);
+        continue;
+      }
+      if (request.method === "codexhost/workspace/worktree/list") {
+        await this.#listWorkspaceWorktrees(request);
+        continue;
+      }
+      if (request.method === "codexhost/workspace/worktree/create") {
+        await this.#createWorkspaceWorktree(request);
         continue;
       }
       if (request.method === "codexhost/thread/ownership/list") {
@@ -2066,6 +2083,44 @@ export class AppServerHost {
       repositories: inspection.repositories,
     });
     await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
+  }
+
+  /**
+   * Worktree list/create are Host-owned Git operations on a project root the
+   * Renderer already knows; they never touch a Thread, so no locate step.
+   */
+  async #listWorkspaceWorktrees(request: JsonRpcRequest): Promise<void> {
+    const params = workspaceWorktreeListParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      await this.#writer.json(rpcError(request, -32602, "Invalid worktree list params"));
+      return;
+    }
+    try {
+      const result = workspaceWorktreeListResultSchema.parse(
+        await listWorkspaceWorktrees(params.data.projectRoot),
+      );
+      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
+    } catch (error) {
+      const code = error instanceof WorkspaceWorktreeError ? error.code : -32603;
+      await this.#writer.json(rpcError(request, code, errorMessage(error)));
+    }
+  }
+
+  async #createWorkspaceWorktree(request: JsonRpcRequest): Promise<void> {
+    const params = workspaceWorktreeCreateParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      await this.#writer.json(rpcError(request, -32602, "Invalid worktree create params"));
+      return;
+    }
+    try {
+      const result = workspaceWorktreeCreateResultSchema.parse(
+        await createWorkspaceWorktree(params.data),
+      );
+      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
+    } catch (error) {
+      const code = error instanceof WorkspaceWorktreeError ? error.code : -32603;
+      await this.#writer.json(rpcError(request, code, errorMessage(error)));
+    }
   }
 
   /**
