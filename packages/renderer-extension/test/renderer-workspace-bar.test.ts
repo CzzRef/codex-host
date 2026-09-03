@@ -300,11 +300,11 @@ describe("conversation file-change notifications", () => {
     );
     expect(
       turnActionCopy({ chinese: true, rolledBack: false, laterTurns: 0, redoAvailable: true }),
-    ).toMatchObject({ redoDisabled: false, redoTitle: "恢复刚回滚掉的最后一轮对话" });
+    ).toMatchObject({ redoDisabled: false, redoTitle: "恢复刚回滚掉的对话" });
     expect(
       turnActionCopy({ chinese: false, rolledBack: false, laterTurns: 0, redoAvailable: false })
         .redoTitle,
-    ).toContain("rolling back the last turn");
+    ).toContain("after a rollback");
     // Edit confirms only when there is something to roll back first.
     expect(turnActionCopy({ chinese: true, rolledBack: false, laterTurns: 0 })).toMatchObject({
       editNeedsConfirm: false,

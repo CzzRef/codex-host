@@ -26,6 +26,7 @@ import {
   type FindRecentDelegationInput,
   type ReplaceReadySessionAfterLastTurnInput,
   type ReplaceReadySessionAfterRedoInput,
+  type ReplaceReadySessionAfterRollbackInput,
   type ReplaceReadySessionInput,
   type StoredDelegationRecordV1,
   type StoredThreadRecordV1,
@@ -510,18 +511,42 @@ export class MappingStore {
   async replaceReadySessionAfterLastTurn(
     input: ReplaceReadySessionAfterLastTurnInput,
   ): Promise<StoredThreadRecordV1> {
+    return this.#replaceReadySessionAfterRollback(input, "lastTurn");
+  }
+
+  /**
+   * Rollback of one or more trailing Turns on the Thread's own lineage: the
+   * new Native Session carries an exact shorter Host Turn prefix and the
+   * previous Session is stashed in the single Redo slot.
+   */
+  async replaceReadySessionAfterRollback(
+    input: ReplaceReadySessionAfterRollbackInput,
+  ): Promise<StoredThreadRecordV1> {
+    return this.#replaceReadySessionAfterRollback(input, "anyTrailing");
+  }
+
+  #replaceReadySessionAfterRollback(
+    input: ReplaceReadySessionAfterRollbackInput,
+    extent: "lastTurn" | "anyTrailing",
+  ): Promise<StoredThreadRecordV1> {
     return this.#update(input.hostThreadId, (current) => {
+      const retainsExactPrefix =
+        extent === "lastTurn"
+          ? input.turnMappings.length === current.turnMappings.length - 1
+          : input.turnMappings.length < current.turnMappings.length;
       if (
         current.state !== "ready" ||
         !current.nativeSessionRef ||
-        input.turnMappings.length !== current.turnMappings.length - 1 ||
+        !retainsExactPrefix ||
         input.turnMappings.some(
           ({ hostTurnId }, index) => hostTurnId !== current.turnMappings[index]?.hostTurnId,
         )
       ) {
         throw new MappingStoreError(
           "MAPPING_CONFLICT",
-          "Last-Turn Session replacement must retain the exact shorter Host Turn prefix",
+          extent === "lastTurn"
+            ? "Last-Turn Session replacement must retain the exact shorter Host Turn prefix"
+            : "Rollback Session replacement must retain an exact shorter Host Turn prefix",
         );
       }
       const previousNativeRef = current.nativeSessionRef;

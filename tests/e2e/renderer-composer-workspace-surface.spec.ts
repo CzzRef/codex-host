@@ -450,7 +450,7 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   expect(
     clusterBox && turnBox && clusterBox.x + clusterBox.width <= turnBox.x + turnBox.width,
   ).toBe(true);
-  // Redo is disabled until the Host reports a last-Turn slot; the fixture's
+  // Redo is disabled until the Host reports a Redo slot; the fixture's
   // inspectThread is unavailable, so the button must stay disabled.
   await expect(page.locator('[data-codexhost-turn-action="redo"]')).toBeDisabled();
   await expect(page.locator('[data-codexhost-turn-action="edit"]')).toHaveAttribute(
@@ -484,9 +484,9 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(runLocation).toHaveText("Local");
   expect(await storedPick()).toBeNull();
   // The draft project root came from the React owner; the list was fetched for it.
-  await expect.poll(() => page.evaluate("globalThis.__worktreeListRoots")).toEqual([
-    "/workspace/source",
-  ]);
+  await expect
+    .poll(() => page.evaluate("globalThis.__worktreeListRoots"))
+    .toEqual(["/workspace/source"]);
   await picker.click();
   await expect(menu).toBeVisible();
   await expect(option("Local")).toHaveAttribute("aria-checked", "true");
@@ -510,10 +510,7 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await option("Temporary worktree").click();
   await expect(runLocation).toHaveText("Worktree");
   await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "desktop");
-  expect(await selections()).toEqual([
-    "/workspace/source-worktrees/codex/260901-existing",
-    null,
-  ]);
+  expect(await selections()).toEqual(["/workspace/source-worktrees/codex/260901-existing", null]);
   // Creating: bad names are rejected inline, Host errors are shown, success selects it.
   await picker.click();
   await option("create").click();

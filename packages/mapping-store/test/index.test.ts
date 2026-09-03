@@ -617,6 +617,55 @@ describe("mapping-store package", () => {
     await store.close();
   });
 
+  it("stashes a multi-Turn Checkpoint rollback in the same Redo slot and restores all of it", async () => {
+    const directory = await temporaryStoreDirectory();
+    const store = new MappingStore({ directory });
+    await store.initialize();
+    await createReady(store);
+    await store.upsertTurnMappings(threadId, [mapping(2), mapping(3)]);
+    const rolledBackRef = nativeSessionRefSchema.parse({
+      harnessId,
+      nativeSessionId: "native-session-rolled-back",
+      formatVersion: 1,
+    }) as NativeSessionRef;
+
+    // The last-Turn variant still insists on exactly one fewer Turn.
+    await expect(
+      store.replaceReadySessionAfterLastTurn({
+        hostThreadId: threadId,
+        nativeSessionRef: rolledBackRef,
+        turnMappings: [mappingForSession(rolledBackRef, 1)],
+      }),
+    ).rejects.toMatchObject({ code: "MAPPING_CONFLICT" });
+    // Rolling back two Turns keeps the first and stashes all three.
+    const rolledBack = await store.replaceReadySessionAfterRollback({
+      hostThreadId: threadId,
+      nativeSessionRef: rolledBackRef,
+      turnMappings: [mappingForSession(rolledBackRef, 1)],
+    });
+    expect(rolledBack.turnMappings).toHaveLength(1);
+    expect(rolledBack.historyRedo).toEqual({
+      nativeSessionRef: nativeRef,
+      turnMappings: [mapping(1), mapping(2), mapping(3)],
+    });
+    // A prefix that is not shorter, or that renames a Turn, is refused.
+    await expect(
+      store.replaceReadySessionAfterRollback({
+        hostThreadId: threadId,
+        nativeSessionRef: nativeRef,
+        turnMappings: [mappingForSession(nativeRef, 1)],
+      }),
+    ).rejects.toMatchObject({ code: "MAPPING_CONFLICT" });
+    const restored = await store.replaceReadySessionAfterRedo({
+      hostThreadId: threadId,
+      nativeSessionRef: nativeRef,
+      turnMappings: [mapping(1), mapping(2), mapping(3)],
+    });
+    expect(restored.historyRedo).toBeUndefined();
+    expect(restored.turnMappings).toEqual([mapping(1), mapping(2), mapping(3)]);
+    await store.close();
+  });
+
   it("rejects Redo replacement that does not match the stashed slot", async () => {
     const directory = await temporaryStoreDirectory();
     const store = new MappingStore({ directory });

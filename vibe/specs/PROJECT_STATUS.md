@@ -1,7 +1,7 @@
 # codexhost Project Status
 
-Tool: dsh
-Date: 2026-09-02
+Tool: cursor
+Date: 2026-09-03
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 
 ## Current Focus
 
-- Worktree surface overhaul (2026-09-03 09:29, cursor session): static audit found all three Worktree surfaces incomplete — new-chat Worktree is a checkbox into Desktop's anonymous worktree (no picker / naming / Host `worktree add`), earlier-turn rollback is offered by the UI but Host accepts only `numTurns=1` on live Threads, and the bottom bar hides without file changes, drops roots outside inspect (e.g. CodeNote), has no per-root stats, and floats `fixed` inside a possibly transformed ancestor. Plan only, no code; see [plan](260903/0929-worktree-surface-overhaul/plan.md) and [raw](260903/0929-worktree-surface-overhaul/raw-requirement.md).
+- Worktree surface overhaul (2026-09-03 09:29, cursor session): static audit found all three Worktree surfaces incomplete; user confirmed at 10:05 and all four slices were implemented the same day on `czz-dev` (one commit per slice): (1) bottom bar mounts on `document.body`, always shows the core cwd chip, groups files per root with `+/-` and `+N` overflow, resolves outside paths through inspect `extraPaths` → `external` roots, larger interactive preview, Item-level file sets; (2) Host inspect publishes `rollback: { lastTurn, multiTurn }`, Turn actions disable with a reason, Edit refills the Composer when there is no native pencil, hover `⋯` chip + rAF repositioning, copy no longer promises file rewinds; (3) `codexhost/workspace/worktree/list|create` + Host `git worktree add -b codex/yyMMdd-x`, desktop-control rewrites `thread/start.cwd`, the checkbox became the "Worktree ▾" picker; (4) live Threads roll back any number of trailing Turns at their own Native Checkpoint with a whole-Session Redo slot, and paginated Threads get `thread/reverted` after rollback / Redo. Live measurements (bar offset, transcript re-read, per-Harness checkpoint fork) are still owed; see [plan §8](260903/0929-worktree-surface-overhaul/plan.md#8-execution-journal) and [raw](260903/0929-worktree-surface-overhaul/raw-requirement.md).
 - Status: Host last-turn Redo is committed. Composer overlay layout is committed; the Turn-action cluster was redesigned locally on 2026-09-02: it anchors to the selected Turn but never leaves the conversation viewport, Redo enables only from Host `historyRedoAvailable`, Edit confirms only when later Turns exist, and official Desktop Redo is a fallback solely for Codex-owned Threads. Preview remains [composer-overlay.preview.html](../../packages/renderer-extension/src/composer-overlay.preview.html).
 - Latest task docs: [spec](260901/2042-external-thread-redo/spec.md), [raw](260901/2042-external-thread-redo/raw-requirement.md), [changes](260901/2042-external-thread-redo/changes.md), OpenSpec [add-external-thread-last-turn-redo](../../openspec/changes/add-external-thread-last-turn-redo/proposal.md).
 - Existing product/integration work remains under [../../docs/tasks/260831-czz-dev-integration/](../../docs/tasks/260831-czz-dev-integration/spec.md).
@@ -32,7 +32,7 @@ Compact process hub for active AI work. This file routes current tasks to projec
 
 | Task | Status | Authoritative Doc | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| Worktree surface overhaul | `plan-draft / awaiting user confirmation` | [plan](260903/0929-worktree-surface-overhaul/plan.md), [raw](260903/0929-worktree-surface-overhaul/raw-requirement.md) | static source/spec audit only; Desktop not running | 4 slices: bar (C), turn actions (B-2..4), Host-managed worktree picker (A), multi-turn rollback (B-1/B-5); 3 spikes + 2 live-measure items listed in plan §6 |
+| Worktree surface overhaul | `implemented / live-verification pending`; slices 1–3 committed, slice 4 `this-commit` | [plan](260903/0929-worktree-surface-overhaul/plan.md), [raw](260903/0929-worktree-surface-overhaul/raw-requirement.md), OpenSpec [add-composer-workspace-bar](../../openspec/changes/add-composer-workspace-bar/tasks.md) §11–§12, [add-external-thread-multi-turn-rollback](../../openspec/changes/add-external-thread-multi-turn-rollback/proposal.md) | `tsc -b` pass; vitest host-runtime + mapping-store + renderer-extension 63 files 588 pass (slice 3 full run 189 files 1640 pass); Playwright `renderer-composer-workspace-surface` pass; eslint + boundaries pass | Desktop not running: bar left-edge offset, paginated transcript re-read on `thread/reverted`, and per-Harness self-checkpoint fork still `[待真机]`; `openspec` CLI not installed, no strict validate |
 | Host last-turn Redo | `committed b939a81 3b0275d` | [spec](260901/2042-external-thread-redo/spec.md) | vitest 79 files 712 pass; typecheck pass | OpenSpec change not archived |
 | Composer overlay + Turn actions | `committed 2f3a53b`; redesign `live-verified / this-commit` | [preview](../../packages/renderer-extension/src/composer-overlay.preview.html) | renderer vitest pass; Playwright composer surface 1 pass; typecheck pass | Cluster now sticks inside the conversation viewport (`turnActionPlacement`); Redo is thread-level from Host inspect; official Redo fallback only for Codex-owned Threads |
 | Workspace-bar slice 6 | `committed 18cfa10` | [tasks](../../openspec/changes/add-composer-workspace-bar/tasks.md) | thread-workspace vitest pass | sibling worktrees + `additional` roots |

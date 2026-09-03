@@ -2972,6 +2972,18 @@ export class AppServerHost {
       return;
     }
     await this.#writer.json(rpcEnvelope(request, { result: { thread: result.thread } }));
+    await this.#notifyExternalHistoryReplaced(resolution.thread);
+  }
+
+  /**
+   * Desktop's paginated transcript only re-reads a Thread on `thread/reverted`
+   * (the official Revert path). A Renderer-initiated `thread/rollback` or Host
+   * Redo replaces history behind Desktop's back, so the same notification is
+   * emitted for paginated Threads; legacy transcripts update from the result.
+   */
+  async #notifyExternalHistoryReplaced(thread: ExternalThread): Promise<void> {
+    if (thread.record.historyMode !== "paginated") return;
+    await this.#writer.json({ method: "thread/reverted", params: { threadId: thread.id } });
   }
 
   async #rollbackExternalThread(
@@ -2992,6 +3004,7 @@ export class AppServerHost {
       return;
     }
     await this.#writer.json(rpcEnvelope(request, { result: threadRollbackResult(result.thread) }));
+    await this.#notifyExternalHistoryReplaced(derived);
   }
 
   async #persistExternalThreadName(
