@@ -69,13 +69,22 @@ export function turnActionOrigin(input: {
   avoid?: OverlayBox | null;
   railLeft?: number;
   minTop?: number;
+  /** Right bound of the conversation column; enables the gutter beside the Turn. */
+  gutterRight?: number;
 }): { left: number; top: number } {
   const width = Math.max(0, input.size.width);
   const height = Math.max(0, input.size.height);
   const preferredTop = Math.max(input.turn.top + 8, input.minTop ?? 0);
-  const candidates: Array<{ left: number; top: number }> = [
-    { left: input.turn.right - width - 8, top: preferredTop },
-  ];
+  const candidates: Array<{ left: number; top: number }> = [];
+  // Prefer the empty gutter right of the Turn so nothing covers prompt text;
+  // fall back inside the Turn's top-right when the window is too narrow.
+  if (
+    typeof input.gutterRight === "number" &&
+    input.turn.right + 8 + width + 8 <= Math.min(input.gutterRight, input.viewportWidth)
+  ) {
+    candidates.push({ left: input.turn.right + 8, top: Math.max(input.turn.top, input.minTop ?? 0) });
+  }
+  candidates.push({ left: input.turn.right - width - 8, top: preferredTop });
   if (input.avoid) {
     const avoid = boxRect(input.avoid);
     candidates.push({ left: avoid.left - width - 8, top: preferredTop });
@@ -114,7 +123,7 @@ export function turnActionPlacement(input: {
   size: { width: number; height: number };
   composerTop: number;
   viewportWidth: number;
-  scroller?: { top: number; bottom: number } | null;
+  scroller?: { top: number; bottom: number; right?: number } | null;
   avoid?: OverlayBox | null;
 }): { left: number; top: number } | null {
   const visibleTop = input.scroller?.top ?? 8;
@@ -131,6 +140,7 @@ export function turnActionPlacement(input: {
     viewportWidth: input.viewportWidth,
     avoid: input.avoid ?? null,
     minTop,
+    ...(typeof input.scroller?.right === "number" ? { gutterRight: input.scroller.right } : {}),
   });
 }
 
@@ -182,7 +192,8 @@ export function ensureOverlayChromeStyle(ownerDocument: Document): void {
       padding: 0 10px;
       border: 1px solid rgb(255 255 255 / 12%);
       border-radius: 8px;
-      background: rgb(20 20 20 / 88%);
+      /* Opaque: the cluster may sit over transcript text, which must not bleed through. */
+      background: rgb(24 24 24);
       color: inherit;
       cursor: pointer;
       font-size: 12px;
@@ -194,24 +205,26 @@ export function ensureOverlayChromeStyle(ownerDocument: Document): void {
         box-shadow 120ms ease;
     }
     .codexhost-overlay-chip:hover:not(:disabled) {
-      background: rgb(255 255 255 / 8%);
+      background: rgb(44 44 44);
       border-color: rgb(255 255 255 / 22%);
     }
     .codexhost-overlay-chip:active:not(:disabled) {
       transform: translateY(1px) scale(0.97);
-      background: rgb(255 255 255 / 14%);
+      background: rgb(58 58 58);
     }
     .codexhost-overlay-chip:focus-visible {
       outline: 2px solid #339cff;
       outline-offset: 2px;
     }
     .codexhost-overlay-chip:disabled {
-      opacity: 0.38;
+      /* Dim the label, not the surface: a translucent disabled chip showed text through it. */
+      color: rgb(255 255 255 / 38%);
+      border-color: rgb(255 255 255 / 8%);
       cursor: not-allowed;
     }
     .codexhost-overlay-chip[data-tone="danger"]:hover:not(:disabled) {
       border-color: rgb(248 81 73 / 45%);
-      background: rgb(248 81 73 / 10%);
+      background: rgb(52 30 30);
     }
     .codexhost-overlay-chip[data-busy="true"] {
       box-shadow: inset 0 0 0 1px rgb(51 156 255 / 45%);

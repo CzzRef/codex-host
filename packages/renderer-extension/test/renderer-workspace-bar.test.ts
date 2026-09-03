@@ -397,6 +397,26 @@ describe("conversation file-change notifications", () => {
         scroller: { top: 44, bottom: 640 },
       }),
     ).toEqual({ left: 332, top: 128 });
+    // Room in the conversation gutter: the cluster sits beside the Turn, off its text.
+    expect(
+      turnActionPlacement({
+        turn: { left: 40, top: 120, right: 520, bottom: 400 },
+        size: { width: 180, height: 32 },
+        composerTop: 640,
+        viewportWidth: 900,
+        scroller: { top: 44, bottom: 640, right: 900 },
+      }),
+    ).toEqual({ left: 528, top: 128 });
+    // Gutter too narrow for the cluster: back inside the Turn's top-right.
+    expect(
+      turnActionPlacement({
+        turn: { left: 40, top: 120, right: 520, bottom: 400 },
+        size: { width: 180, height: 32 },
+        composerTop: 640,
+        viewportWidth: 900,
+        scroller: { top: 44, bottom: 640, right: 700 },
+      }),
+    ).toEqual({ left: 332, top: 128 });
     // Long Turn scrolled past the viewport top: the cluster sticks to the
     // conversation's top edge instead of rising into the Desktop title bar.
     expect(

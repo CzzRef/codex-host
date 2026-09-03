@@ -262,3 +262,14 @@ C-5 文件列表收缩
 - 「Worktree ▾」选择器（切片 3）`[真机缺陷 → 已修]`：chip 挂在 Switch-branch 旁（rect `x=1164 y=906 w=122 h=22`），点开菜单 `z-index 2147483000`、位于 chip 上方 (`y=750 h=150`)、Esc 可关；但**刚启动未发过消息时**「Existing worktrees」显示「Pick a project to list worktrees」、「New worktree…」禁用——`binding.projectRoot` 为 null 且 `draftCwd()` 为 null（后者只在首次 `thread/start` 后才有值）。深扫 run-location 按钮 fiber 链（共 215 层）：绝对路径出现在第 26 层 `executionTargetOverride.cwd / .activeWorkspaceRoot` 与第 40 层 `gitRootForStartingState / worktreeEnvironmentWorkspaceRoot / localRemoteExecutionTarget.cwd`，都在 `FIBER_DEPTH_LIMIT=60` 内，只是键名不在 `PATH_PROP_KEYS`。修复：`renderer-draft-worktree-picker.ts` 的 `PATH_PROP_KEYS` 增加 `gitRootForStartingState`、`worktreeEnvironmentWorkspaceRoot`，嵌套键增加 `executionTargetOverride`、`localRemoteExecutionTarget` 与子键 `activeWorkspaceRoot`；单测补三种真机形状。已 `npm run build`，但 desktop-controller 在启动时一次性读入 Renderer 源（`production-controller.ts` `readRenderer`），运行中的 Desktop 不会热替换——需按 [czz-dev.md](../../../../docs/czz-dev.md) 的正常退出 + `codexhost launch` 门禁重启后再点开菜单确认列出 `codex/260902-worktree-checkbox-routing` 与 `claude/cursor-multi-agent-codex-5be354` 两个 linked worktree。
 - 观察（非缺陷）：官方 run-location 控件「Work locally / Local」与 Host「Worktree · Local ▾」并排；spec 里的「代替勾选框」指旧 Host 勾选框，官方控件保留。若嫌重复可后续考虑隐藏官方控件，属产品决定。
 - 量测期间为读取草稿 props 用侧栏「Start new chat in codex-host」打开过一个空草稿（未发消息、未创建线程），用户原线程（`8e799f59-…`）仍在后台运行，需手动点回。
+
+### 用户截图复核（2026-09-03 11:46，线程「260902-Rust常用crate清单」）
+- 现象 1：动作簇 Edit / Rollback / Redo 压在用户提示词正文上，chip 底色 88% 半透明、禁用态 `opacity .38`，正文从按钮里透出来（「tence description」可见）；同时 Desktop 原生「编辑消息」模式（Cancel / Send）已打开，Host 动作簇与之重复。
+- 现象 2：状态栏浮在 transcript 上方，Desktop 只为自己的 Composer 容器预留底部空间（量得 213px），bar 的 34+8px 没有预留——滚到底时最后两行被 bar 盖住；「0 files this turn +0 -0」计数是噪音。
+- 真机结构（只读量测）：`.thread-scroll-container` 为 `flex column-reverse`，首子元素是内容列（`min-h-full`），Composer 容器 `absolute bottom-0` 213px；轮次 `x=846..1582`，滚动容器 `x=276..2151`，右侧空白槽 569px。用户气泡 `oklab(… / 0.05)` 半透明圆角 25px、正文横跨整行，右上角必然是正文。
+- 修正（本次提交）：
+  - `renderer-overlay-layout.ts`：`turnActionOrigin` 新增 `gutterRight` 候选——轮次右侧空白槽放得下（`turn.right + 8 + width + 8 ≤ min(scroller.right, viewport)`）时动作簇与 hover「⋯」落在轮次右侧、顶对齐；放不下退回轮次右上角。`turnActionPlacement` 的 `scroller` 接受 `right`。`.codexhost-overlay-chip` 底色改不透明 `rgb(24 24 24)`，hover / active 用实色，禁用态改「压暗文字与边框」而非整体透明。
+  - `renderer-turn-actions.ts`：新增 `turnInNativeEdit()`（轮次内出现 `textarea` / `contenteditable`），原生编辑模式下动作簇与「⋯」都隐藏；hover chip 底色改实色。
+  - `renderer-workspace-bar.ts`：`placeBar` 后 `reserveTranscriptSpace()` 给滚动容器首子元素加 `padding-bottom = composer.top − bar.top`（本机 42px），bar 移除 / 空态时释放；文件计数在 `+0 / -0` 时不再渲染统计。
+  - OpenSpec renderer spec「hover ⋯」Requirement 改为「右侧空白槽优先，放不下退回右上；实色底面；原生编辑模式隐藏」；preview 页 chip 改实色、hover「⋯」示意到轮次右侧。
+- 验证：`typecheck` 通过；renderer-extension vitest 65 文件 463 例通过（`turnActionPlacement` 新增空白槽命中 / 太窄回退两例）；Playwright `renderer-composer-workspace-surface` 通过。**真机仍需重启后看**：desktop-controller 只在启动时读一次 Renderer 源，运行中的 Desktop 不会拿到这批改动。

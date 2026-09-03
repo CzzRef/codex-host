@@ -72,7 +72,7 @@ function ensureStyle(ownerDocument: Document): void {
       padding: 0;
       border: 1px solid rgba(127, 127, 127, 0.28);
       border-radius: 7px;
-      background: rgba(20, 20, 20, 0.62);
+      background: rgb(24, 24, 24);
       color: rgba(255, 255, 255, 0.78);
       cursor: pointer;
       font: inherit;
@@ -86,7 +86,7 @@ function ensureStyle(ownerDocument: Document): void {
       opacity: 1;
     }
     .codexhost-turn-rail button:hover {
-      background: rgba(40, 40, 40, 0.92);
+      background: rgb(44, 44, 44);
       color: #fff;
     }
     .codexhost-turn-rail button[data-selected="true"] {
@@ -306,6 +306,14 @@ function controlLabel(element: Element): string {
     .join(" ");
 }
 
+/**
+ * Desktop's own "edit message" mode swaps the prompt for a textarea with
+ * Cancel / Send; Host actions would only duplicate and cover it.
+ */
+export function turnInNativeEdit(turn: Element): boolean {
+  return turn.querySelector('textarea, [contenteditable="true"]') !== null;
+}
+
 export function nativeTurnChromeBox(turn: Element): OverlayBox | null {
   const hit = [...turn.querySelectorAll("button, [role='button']")].find((element) => {
     if (element.closest(`[${TURN_ACTIONS_ATTRIBUTE}]`)) return false;
@@ -425,7 +433,12 @@ export function installRendererTurnActions(options: {
   const placeActions = (): void => {
     const turn = selectedTurnElement();
     const composer = composerForPlacement();
-    if (!turn || !composer || row.getAttribute("data-empty") === "true") {
+    if (
+      !turn ||
+      !composer ||
+      row.getAttribute("data-empty") === "true" ||
+      turnInNativeEdit(turn)
+    ) {
       row.style.top = "-999px";
       return;
     }
@@ -476,7 +489,7 @@ export function installRendererTurnActions(options: {
       return;
     }
     const rect = turn.getBoundingClientRect();
-    if (rect.height <= 0 || rect.width <= 0) {
+    if (rect.height <= 0 || rect.width <= 0 || turnInNativeEdit(turn)) {
       hideHoverChip();
       return;
     }

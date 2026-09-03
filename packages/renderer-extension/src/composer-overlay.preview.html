@@ -265,11 +265,11 @@
         margin-left: auto;
       }
 
-      /* 悬停任一未选中轮次：右上角出现半透明「⋯」，点击即选中并展开动作簇 */
+      /* 悬停任一未选中轮次：轮次右侧空白槽出现「⋯」（窗口太窄时退回轮次右上角），点击即选中并展开动作簇 */
       .turn-hover {
         position: absolute;
         top: 8px;
-        right: 10px;
+        right: -34px;
         display: none;
         align-items: center;
         justify-content: center;
@@ -277,7 +277,7 @@
         height: 22px;
         border: 1px solid rgb(255 255 255 / 12%);
         border-radius: 7px;
-        background: rgb(20 20 20 / 70%);
+        background: rgb(24 24 24);
         color: var(--muted);
         font-size: 13px;
         line-height: 1;
@@ -311,7 +311,7 @@
         padding: 0 10px;
         border: 1px solid rgb(255 255 255 / 12%);
         border-radius: 8px;
-        background: rgb(20 20 20 / 88%);
+        background: rgb(24 24 24); /* 不透明：动作簇可能压在正文上，正文不得透出 */
         color: var(--text);
         cursor: pointer;
         transition:
@@ -322,7 +322,7 @@
       }
 
       .chip:hover:not(:disabled) {
-        background: rgb(255 255 255 / 8%);
+        background: rgb(44 44 44);
         border-color: rgb(255 255 255 / 22%);
       }
 
@@ -337,7 +337,8 @@
       }
 
       .chip:disabled {
-        opacity: 0.38;
+        color: rgb(255 255 255 / 38%); /* 只压暗文字，不让底面透明 */
+        border-color: rgb(255 255 255 / 8%);
         cursor: not-allowed;
       }
 
