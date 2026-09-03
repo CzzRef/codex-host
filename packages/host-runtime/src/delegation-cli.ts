@@ -79,6 +79,8 @@ export const DELEGATION_HELP = `usage:
   codexhost thread rename [<thread>] --name <title>
   codexhost thread archive [<thread>]
   codexhost thread unarchive [<thread>]
+  codexhost thread pin [<thread>]
+  codexhost thread unpin [<thread>]
 
 Thread identifiers accept a bare ID or codex://threads/<id>. Output is JSON by default.
 harness inspect returns the target Model catalog, default Model, Thinking options, Permission Modes, and configuration capabilities without creating a Thread. Use opaque IDs exactly as returned.
@@ -92,6 +94,7 @@ thread wait defaults to 30000 ms and waits only until the Thread reaches a termi
 thread list defaults to the caller cwd, limit 25, created-desc; limit is capped at 100. --all true lists every extra process regardless of cwd. --archived true lists archived Threads instead of live ones; external rows always carry archived. --parent uses Delegation lineage, not Codex Subagent relationships.
 thread rename persists the Host Thread title and emits the same thread/name/updated notification Desktop uses, so Codex sidebar updates without a restart. Omit <thread> to use CODEXHOST_THREAD_ID. A Desktop hand-set title is not overwritten.
 thread archive persists the Host archive state for an extra process and emits the same thread/archived notification a Desktop archive does, so the row leaves the sidebar and the live thread list at once; thread unarchive reverses it with thread/unarchived. Neither stops a running Turn. Omit <thread> to use CODEXHOST_THREAD_ID. Native Codex Threads are not accepted; archive them in Desktop.
+thread pin moves an extra process into the Desktop Pinned section exactly like a sidebar pin (the Host persists pinned and the section); thread unpin moves it back out. thread list reports the state as pinned on external rows. Codex publishes no section notification, so the Desktop sidebar reflects a CLI pin on its next thread/list, not the same frame. Omit <thread> to use CODEXHOST_THREAD_ID. Native Codex Threads are not accepted; pin them in Desktop or through the app-server.
 read and wait are non-consuming: they do not start a Turn, send input, wake an Agent, mark messages read, or inject a result into the parent Session.
 Native Codex as caller requires a session sandbox that permits local Runtime connections; otherwise RUNTIME_UNREACHABLE is returned. Native Codex as a target uses brokered official requests and is unaffected.
 
@@ -417,6 +420,34 @@ export async function runDelegationCli(input: {
           environment,
           path: "/v1/thread/archive",
           body: { threadId: normalizeThreadId(threadId), archived: command === "archive" },
+          ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+        }),
+      );
+      return 0;
+    }
+    if (group === "thread" && (command === "pin" || command === "unpin")) {
+      const parsed = options(rest);
+      rejectUnknown(parsed, []);
+      const positional = parsed.positionals[0];
+      const threadId = positional || environment[DELEGATION_THREAD_ID_ENV];
+      if (!threadId) {
+        throw new DelegationControlError(
+          "INVALID_ARGUMENT",
+          `thread ${command} requires a Thread identifier or CODEXHOST_THREAD_ID`,
+        );
+      }
+      if (parsed.positionals.length > 1) {
+        throw new DelegationControlError(
+          "INVALID_ARGUMENT",
+          `thread ${command} accepts at most one Thread identifier`,
+        );
+      }
+      writeJson(
+        output,
+        await requestRuntime({
+          environment,
+          path: "/v1/thread/pin",
+          body: { threadId: normalizeThreadId(threadId), pinned: command === "pin" },
           ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
         }),
       );

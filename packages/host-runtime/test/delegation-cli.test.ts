@@ -376,6 +376,41 @@ describe("delegation CLI", () => {
     });
   });
 
+  it("pins and unpins an extra process through the Runtime", async () => {
+    const cases = [
+      { arguments: ["thread", "pin"], threadId: "thread-1", pinned: true },
+      { arguments: ["thread", "unpin"], threadId: "thread-1", pinned: false },
+      { arguments: ["thread", "pin", "codex://threads/thread-2"], threadId: "thread-2", pinned: true },
+    ];
+    for (const testCase of cases) {
+      const fetchImpl = successfulFetch({ threadId: testCase.threadId, pinned: testCase.pinned });
+      const output = new PassThrough();
+      await expect(
+        runDelegationCli({
+          arguments: testCase.arguments,
+          environment: {
+            [DELEGATION_RUNTIME_ENDPOINT_ENV]: "http://127.0.0.1:4321",
+            [DELEGATION_RUNTIME_TOKEN_ENV]: "token",
+            [DELEGATION_THREAD_ID_ENV]: "thread-1",
+          },
+          output,
+          fetchImpl,
+        }),
+      ).resolves.toBe(0);
+      const firstCall = vi.mocked(fetchImpl).mock.calls[0];
+      if (!firstCall) throw new Error("Runtime fetch was not called");
+      expect(String(firstCall[0])).toContain("/v1/thread/pin");
+      expect(JSON.parse(String(firstCall[1]?.body))).toEqual({
+        threadId: testCase.threadId,
+        pinned: testCase.pinned,
+      });
+      expect(JSON.parse(outputText(output))).toEqual({
+        threadId: testCase.threadId,
+        pinned: testCase.pinned,
+      });
+    }
+  });
+
   it("archives and unarchives an extra process through the Runtime", async () => {
     const cases = [
       { arguments: ["thread", "archive"], threadId: "thread-1", archived: true },
