@@ -166,7 +166,7 @@ xattr -dr com.apple.quarantine /Applications/codexhost.app
 
 CodexHost 会为目标 Harness 创建独立的 Native Session。委派会话将出现在 Codex Desktop 的会话列表中，你可以随时打开、查看进度或继续对话。
 
-`czz-dev` 额外支持 `@cursor`，但仅在当前 Host 运行期间继续对话，Host 退出后不支持恢复。委派不再强制提升权限，可能等待用户审批。
+`czz-dev` 额外支持 `@cursor`：`cursor-agent acp` 实时会话加 `~/.cursor/acp-sessions` 原生历史，可在 Host 重启后恢复；Fork / Rollback / Side chat 仍不支持，首条消息前模型目录为空时按 Cursor 原生默认模型发送。委派不再强制提升权限，可能等待用户审批。
 
 <details>
 <summary><h3 id="远程连接-harness">远程连接 Harness</h3></summary>

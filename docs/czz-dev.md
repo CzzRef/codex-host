@@ -134,7 +134,7 @@ codexhost launch
 - 当前 Host 运行期间可连续对话、流式显示文本/推理/工具、处理审批与问题、读取当前任务投影。
 - Host 退出后，可按同一 Native Session ID 恢复；快照来自 ACP session store，NativeTurnRef 使用 assistant message id 或 blob hash。
 - Cursor 仍不支持 Fork、Rollback、独立 Thinking 选项或 Usage 计量。Side chat 继续因 `fork: false` 不可用。
-- Cursor 第一个真实 Session 创建后，才从原生 configOptions 得到当前账号的模型/模式目录；初次选择时先使用 Cursor 原生默认模型。原生模型里的 reasoning/effort 参数作为完整模型 ID 保留。
+- Cursor 第一个真实 Session 创建后，才从原生 configOptions 得到当前账号的模型/模式目录；冷 `inspect` 只跑 `cursor-agent status` + ACP `initialize`，而 Cursor 的 `initialize` 不带模型（`_meta` 为空，Grok 则在 `_meta.modelState` 里给目录），所以 `codexhost doctor` 会显示 `cursor: ready, models: 0`。2026-09-03 起 Composer 把空目录当成「Harness 原生默认模型」：模型标签显示 `Default model`，发送可用，draft 仍写 `codexhost/cursor-native`（带权限模式时为 `codexhost/cursor-native@@<mode>`）路由到 Cursor；此前空目录会禁用发送并让 draft 落回原生 Codex。原生模型里的 reasoning/effort 参数作为完整模型 ID 保留。不为拿目录在 inspect 时建 Session：ACP `session/new` 会立刻落 `~/.cursor/acp-sessions/<id>/meta.json` 并进入 `session/list`，且没有 `session/delete`；`cursor-agent --list-models` 的 id 也不是 ACP 目录 id。任务卡：[1025](../vibe/specs/260903/1025-cursor-native-default-draft/task-card.md)。
 - 使用专用 `cursor-agent`，绝不把通用 `agent` 当作 Cursor：本机该名称实际属于 Grok。
 - 不自动调用 authenticate 或打开登录浏览器；登录缺失时提示用户通过 Cursor CLI 登录。
 - 不加 `--force`、`--trust` 或关闭 sandbox 的参数；原生权限请求、问答、计划审批通过 Host 显式处理。
@@ -154,6 +154,8 @@ codexhost thread list --all true
 codexhost thread rename --name "260901-示例标题"
 codexhost thread archive codex://threads/<thread-id>
 ```
+
+Cursor 的 `delegate start --permission-mode` 取 `harness inspect cursor` 的 `permissionModes`（`agent` / `plan` / `ask`）；`--model` 在第一条 Cursor Turn 之前拿不到目录，省略即用 Cursor 原生默认模型。
 
 这些委派命令需要当前 codexhost Host 注入的 Runtime endpoint/token/thread 环境；`delegate start` 使用调用方当前工作目录。安装命令本身不意味着普通 Shell 已经连接到当前 Codex。不要把 token 写进仓库或复制到文档。
 

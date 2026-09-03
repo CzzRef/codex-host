@@ -34,6 +34,8 @@ import {
   eventElement,
   isComposerInputIntent,
   isComposerSubmissionKey,
+  externalAgentUsesNativeDefaultModel,
+  isExternalModelSelectionReady,
   mountComposerAgentControl,
   reconcileComposerNativeControls,
   renderComposerAgentControl,
@@ -199,23 +201,25 @@ export function shouldReloadExternalCatalogAfterAvailabilityRefresh(
 }
 
 function isExternalConfigurationReadyView(
+  agent: RendererAgent,
   modelView: ExternalModelControlView,
   permissionModeView: ExternalPermissionModeControlView,
 ): boolean {
   return (
     modelView.status !== "selecting" &&
-    modelView.catalog?.models.some((model) => model.ref.id === modelView.selected?.id) === true &&
+    isExternalModelSelectionReady(modelView, agent) &&
     isPermissionModeControlReady(permissionModeView)
   );
 }
 
 function isExternalConfigurationStable(
+  agent: RendererAgent,
   modelView: ExternalModelControlView,
   permissionModeView: ExternalPermissionModeControlView,
 ): boolean {
   return (
     (modelView.status === "empty" && isPermissionModeControlReady(permissionModeView)) ||
-    isExternalConfigurationReadyView(modelView, permissionModeView)
+    isExternalConfigurationReadyView(agent, modelView, permissionModeView)
   );
 }
 
@@ -561,8 +565,15 @@ export function isComposerModelWriteAllowed(target: readonly unknown[] | null): 
 export function shouldApplyDraftAgentCarrier(
   agent: RendererAgent,
   model: HarnessModelRef | undefined,
+  modelView?: ExternalModelControlView,
 ): boolean {
-  return agent === "codex" || model !== undefined;
+  // For a Harness that runs on its native default Model, an `empty` catalog
+  // still makes the carrier concrete without a Model Ref.
+  return (
+    agent === "codex" ||
+    model !== undefined ||
+    (modelView?.status === "empty" && externalAgentUsesNativeDefaultModel(agent))
+  );
 }
 
 export function applyComposerModelWrite(
@@ -912,7 +923,11 @@ export function installRendererBindingProbe(
   const isExternalConfigurationReady = (mounted: MountedComposer): boolean => {
     const current = controller.get(mounted.composer);
     if (current.agent === "codex") return true;
-    return isExternalConfigurationReadyView(mounted.modelView, mounted.permissionModeView);
+    return isExternalConfigurationReadyView(
+      current.agent,
+      mounted.modelView,
+      mounted.permissionModeView,
+    );
   };
 
   const clearDraftPrewarm = async (): Promise<void> => {
@@ -1264,6 +1279,23 @@ export function installRendererBindingProbe(
             selected: selectedPermissionModeId,
             ...permissionModeLock,
           };
+        }
+        // No Model to pick: write the base carrier now so the draft routes to
+        // this Harness (with its Permission Mode) instead of native Codex.
+        // Only for a Harness whose empty catalog means "native default Model";
+        // elsewhere an empty catalog is the Host failing to find one.
+        if (current.phase === "draft" && externalAgentUsesNativeDefaultModel(agent)) {
+          applyComposerModelWrite(
+            mounted.modelTarget,
+            () =>
+              applyAdapterAgent?.(
+                agent,
+                undefined,
+                undefined,
+                selectedPermissionModeId,
+                mounted.composer,
+              ) ?? false,
+          );
         }
         return;
       }
@@ -1979,7 +2011,11 @@ export function installRendererBindingProbe(
               shouldReloadExternalCatalogAfterAvailabilityRefresh(
                 previousStatus,
                 status,
-                isExternalConfigurationStable(mounted.modelView, mounted.permissionModeView),
+                isExternalConfigurationStable(
+                  controller.get(mounted.composer).agent,
+                  mounted.modelView,
+                  mounted.permissionModeView,
+                ),
               )
             ) {
               void loadExternalCatalog(mounted);
@@ -2163,7 +2199,7 @@ export function installRendererBindingProbe(
     mountedByComposer.set(composer, mounted);
     if (isComposerModelWriteAllowed(modelTarget)) {
       const model = controller.modelForAgent(composer, state.agent);
-      if (shouldApplyDraftAgentCarrier(state.agent, model)) {
+      if (shouldApplyDraftAgentCarrier(state.agent, model, mounted.modelView)) {
         applyAdapterAgent?.(
           state.agent,
           model,
@@ -2189,7 +2225,7 @@ export function installRendererBindingProbe(
       scheduleThreadUsageRefresh(mounted);
     } else if (
       state.agent !== "codex" &&
-      !isExternalConfigurationStable(mounted.modelView, mounted.permissionModeView)
+      !isExternalConfigurationStable(state.agent, mounted.modelView, mounted.permissionModeView)
     ) {
       void loadExternalCatalog(mounted);
     }
@@ -2324,7 +2360,7 @@ export function installRendererBindingProbe(
     }
     if (!mounted || !isComposerModelWriteAllowed(mounted.modelTarget)) return false;
     const model = controller.modelForAgent(composer, state.agent);
-    if (!shouldApplyDraftAgentCarrier(state.agent, model)) return false;
+    if (!shouldApplyDraftAgentCarrier(state.agent, model, mounted.modelView)) return false;
     return applyComposerModelWrite(
       mounted.modelTarget,
       () =>
@@ -2436,7 +2472,7 @@ export function installRendererBindingProbe(
       if (
         state.agent !== "codex" &&
         !threadIdFromComposerModelTarget(mounted.modelTarget) &&
-        !isExternalConfigurationStable(mounted.modelView, mounted.permissionModeView)
+        !isExternalConfigurationStable(state.agent, mounted.modelView, mounted.permissionModeView)
       ) {
         void loadExternalCatalog(mounted);
       }

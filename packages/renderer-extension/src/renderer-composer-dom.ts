@@ -710,6 +710,32 @@ export function mountComposerAgentControl(
   return control;
 }
 
+/**
+ * Harnesses that run on their own default Model when they publish no catalog.
+ * Cursor only learns its catalog from the first native Session, so an `empty`
+ * catalog there is a working state. For every other Harness an empty catalog
+ * means the Host found no Model and the draft must not be submitted.
+ */
+export function externalAgentUsesNativeDefaultModel(agent: RendererAgent): boolean {
+  return agent === "cursor";
+}
+
+/**
+ * An external draft is ready to submit when its selected Model is in the loaded
+ * catalog, or when the Harness published no Model catalog at all (`empty`) and
+ * runs on its own native default Model.
+ */
+export function isExternalModelSelectionReady(
+  view: ExternalModelControlView,
+  agent: RendererAgent,
+): boolean {
+  if (view.status === "empty") return externalAgentUsesNativeDefaultModel(agent);
+  return (
+    view.selected !== undefined &&
+    view.catalog?.models.some((model) => model.ref.id === view.selected?.id) === true
+  );
+}
+
 export function renderComposerAgentControl(
   control: ComposerAgentControl,
   state: { agent: RendererAgent; phase: ComposerAgentPhase },
@@ -727,9 +753,6 @@ export function renderComposerAgentControl(
   }
 
   const selectedModel = modelView.selected;
-  const selectedCatalogModel = modelView.catalog?.models.find(
-    (model) => model.ref.id === selectedModel?.id,
-  );
   const availableThinkingOptions =
     modelView.thinkingSelectionSupported === false
       ? []
@@ -737,7 +760,7 @@ export function renderComposerAgentControl(
   const thinkingReady =
     availableThinkingOptions.length === 0 ||
     availableThinkingOptions.some(({ id }) => id === modelView.selectedThinkingOptionId);
-  const modelReady = selectedModel !== undefined && selectedCatalogModel !== undefined;
+  const modelReady = isExternalModelSelectionReady(modelView, state.agent);
   const modelBlocked =
     state.agent !== "codex" && (modelView.status === "selecting" || !modelReady || !thinkingReady);
   const permissionModeBlocked =

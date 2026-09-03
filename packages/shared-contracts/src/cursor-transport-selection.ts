@@ -16,12 +16,16 @@ export function encodeCursorTransportModel(
   model?: HarnessModelRef,
   permissionModeId?: HarnessPermissionModeId,
 ): string {
+  const mode = permissionModeId ? harnessPermissionModeIdSchema.parse(permissionModeId) : undefined;
   if (!model) {
-    if (permissionModeId) throw new Error("Cursor transport Permission Mode requires a Model Ref");
-    return CURSOR_NATIVE_TRANSPORT_MODEL_ID;
+    // Cursor publishes its Model catalog only from a live native Session, so a
+    // new-Thread draft may carry a Permission Mode while leaving the Model to
+    // Cursor's own default.
+    return mode
+      ? `${CURSOR_NATIVE_TRANSPORT_MODEL_PREFIX}@${mode}`
+      : CURSOR_NATIVE_TRANSPORT_MODEL_ID;
   }
   const parsedModel = harnessModelRefSchema.parse(model);
-  const mode = permissionModeId ? harnessPermissionModeIdSchema.parse(permissionModeId) : undefined;
   return `${CURSOR_NATIVE_TRANSPORT_MODEL_PREFIX}${parsedModel.id}${mode ? `@${mode}` : ""}`;
 }
 
@@ -32,7 +36,8 @@ export function decodeCursorTransportSelection(value: unknown): CursorTransportS
   const parts = value.slice(CURSOR_NATIVE_TRANSPORT_MODEL_PREFIX.length).split("@");
   if (parts.length > 2 || parts.length < 1 || (parts.length === 2 && !parts[1]))
     throw new Error("Invalid Cursor transport configuration");
-  const model = harnessModelRefSchema.parse({ id: parts[0] });
   const permissionModeId = parts[1] ? harnessPermissionModeIdSchema.parse(parts[1]) : undefined;
+  if (parts[0] === "" && permissionModeId) return { permissionModeId };
+  const model = harnessModelRefSchema.parse({ id: parts[0] });
   return { model, ...(permissionModeId ? { permissionModeId } : {}) };
 }

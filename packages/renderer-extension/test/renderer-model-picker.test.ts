@@ -308,3 +308,15 @@ describe("Renderer combined Model and Thinking picker presentation", () => {
     });
   });
 });
+
+describe("empty catalog presentation", () => {
+  it("labels an empty catalog as the Harness default Model and keeps the picker closed", () => {
+    const view = {
+      status: "empty" as const,
+      catalog: { models: [], thinkingOptions: [] },
+      thinkingSelectionSupported: false as const,
+    };
+    expect(isRendererModelPickerDisabled(view)).toBe(true);
+    expect(rendererModelPickerPresentation(view).modelLabel).toBe("Default model");
+  });
+});

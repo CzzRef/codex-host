@@ -1232,6 +1232,17 @@ describe("Renderer Composer DOM behavior", () => {
     ).toBe(true);
   });
 
+  it("emits the base carrier when the Harness published no Model catalog", () => {
+    const emptyView = {
+      status: "empty" as const,
+      catalog: { models: [], thinkingOptions: [] },
+      thinkingSelectionSupported: false as const,
+    };
+    expect(shouldApplyDraftAgentCarrier("cursor", undefined, emptyView)).toBe(true);
+    expect(shouldApplyDraftAgentCarrier("cursor", undefined, { status: "loading" })).toBe(false);
+    expect(shouldApplyDraftAgentCarrier("cursor", undefined)).toBe(false);
+  });
+
   it("never writes the native Model while repeatedly switching existing conversations", () => {
     const write = vi.fn(() => true);
 
