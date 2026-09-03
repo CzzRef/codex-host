@@ -30,9 +30,27 @@ describe("Cursor routing and history contract", () => {
     ).toMatchObject({ harnessId: "cursor", model, permissionModeId });
   });
 
+  it("carries a Permission Mode on Cursor's native default Model before a catalog exists", () => {
+    const permissionModeId = harnessPermissionModeIdSchema.parse("plan");
+    const encoded = encodeExternalTransportSelection("cursor", { permissionModeId });
+    expect(encoded).toBe("codexhost/cursor-native@@plan");
+    expect(decodeExternalTransportSelection("cursor", encoded)).toEqual({ permissionModeId });
+    expect(encodeExternalTransportSelection("cursor", {})).toBe("codexhost/cursor-native");
+    expect(decodeExternalTransportSelection("cursor", "codexhost/cursor-native")).toEqual({});
+    expect(
+      decodeCreateRoute({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "thread/start",
+        params: { model: encoded },
+      }),
+    ).toMatchObject({ harnessId: "cursor", permissionModeId });
+  });
+
   it("never sends malformed Cursor selections to native Codex", () => {
     for (const model of [
       "codexhost/cursor-native@",
+      "codexhost/cursor-native@@",
       "codexhost/cursor-native@ref@",
       "codexhost/cursor-native@ref@ask@extra",
     ]) {

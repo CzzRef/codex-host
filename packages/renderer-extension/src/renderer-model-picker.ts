@@ -164,7 +164,7 @@ export function rendererModelPickerPresentation(
   else if (view.status === "waitingForAdapter" || view.status === "loading") {
     modelLabel = "Loading models...";
   } else if (view.status === "selecting") modelLabel = "Selecting...";
-  else if (view.status === "empty") modelLabel = "No models";
+  else if (view.status === "empty") modelLabel = "Default model";
   else if (view.status === "error") modelLabel = "Models unavailable";
   return {
     modelLabel,
