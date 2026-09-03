@@ -5117,7 +5117,14 @@ describe("AppServerHost HarnessAdapter projection", () => {
     });
     await expect(
       fixture.collector.waitFor((message) => requestId(message, 9)),
-    ).resolves.toMatchObject({ result: { rollback: { lastTurn: true, multiTurn: true } } });
+    ).resolves.toMatchObject({
+      result: {
+        rollback: { lastTurn: true, multiTurn: true },
+        // Ordered Host Turn ids: the Renderer counts a rollback from these,
+        // not from a virtualised transcript window.
+        turnIds: [firstTurnId, expect.any(String), expect.any(String)],
+      },
+    });
 
     // The first Turn must stay: rolling back everything is refused up front.
     writeRequest(fixture.desktopInput, {

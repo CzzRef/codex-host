@@ -218,6 +218,7 @@ const { outputFiles } = await build({
               history: inspection.capabilities.history,
               historyRedoAvailable: false,
               rollback: { lastTurn: true, multiTurn: false },
+              turnIds: ["turn-a", "turn-b", "turn-c"],
               locked: true,
               threadId: params.threadId,
             };

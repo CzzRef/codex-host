@@ -1981,6 +1981,7 @@ export class AppServerHost {
             history: resolution.thread.session.capabilities.history,
             ...(resolution.thread.record.historyRedo ? { historyRedoAvailable: true } : {}),
             rollback: externalRollbackCapabilities(resolution.thread),
+            turnIds: resolution.thread.record.turnMappings.map((mapping) => mapping.hostTurnId),
             ...(resolution.thread.latestUsage ? { usage: resolution.thread.latestUsage } : {}),
             locked: true,
           },

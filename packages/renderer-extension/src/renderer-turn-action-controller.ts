@@ -1,6 +1,7 @@
 import { hostThreadIdSchema } from "@codexhost/shared-contracts";
 
 import { clearComposerEditor, insertComposerText } from "./renderer-composer-prompt-reuse.js";
+import { turnKeyMatches } from "./renderer-conversation-files.js";
 import type { RendererModelClient } from "./renderer-model-client.js";
 import {
   nativeTurnButton,
@@ -36,6 +37,25 @@ export interface TurnActionController {
   dispose(): void;
 }
 
+/**
+ * How many Turns follow the current one. The Host's Turn ids win when it
+ * publishes them: Desktop virtualises long transcripts, so the DOM window can
+ * omit trailing Turns and would under-count what a rollback drops.
+ */
+export function laterTurnCount(input: {
+  currentKey: string;
+  domKeys: readonly string[];
+  hostTurnIds: readonly string[] | null;
+}): number {
+  if (input.hostTurnIds && input.hostTurnIds.length > 0) {
+    const index = input.hostTurnIds.findIndex(
+      (id) => turnKeyMatches(input.currentKey, id) || turnKeyMatches(id, input.currentKey),
+    );
+    if (index >= 0) return Math.max(0, input.hostTurnIds.length - index - 1);
+  }
+  return turnsAfterKey(input.domKeys, input.currentKey);
+}
+
 export function createTurnActionController(options: {
   getClient(): RendererModelClient | null;
   orderedTurnKeys(): readonly string[];
@@ -44,6 +64,8 @@ export function createTurnActionController(options: {
   chinese(): boolean;
   notify(text: string): void;
   onChange(): void;
+  /** The Host replaced the Thread's history (rollback or Redo succeeded). */
+  onHistoryReplaced?(): void;
 }): TurnActionController {
   let current: TurnActionTarget | null = null;
   // Turn-keyed: this session rolled the Thread back to that Turn.
@@ -52,6 +74,8 @@ export function createTurnActionController(options: {
   let redoAvailable = false;
   // Thread-scoped: Host-reported rollback ability (null = official / unknown).
   let rollbackCapability: { lastTurn: boolean; multiTurn: boolean } | null = null;
+  // Thread-scoped: the Host's ordered Turn ids, when it publishes them.
+  let hostTurnIds: readonly string[] | null = null;
   // Who owns the Thread. Official Desktop Redo is only a fallback for Codex-owned
   // Threads; an external Thread without a slot gets nothing.
   let owner: "external" | "official" | "unknown" = "unknown";
@@ -62,7 +86,13 @@ export function createTurnActionController(options: {
   let disposed = false;
 
   const laterTurns = (): number =>
-    current ? turnsAfterKey(options.orderedTurnKeys(), current.turnKey) : 0;
+    current
+      ? laterTurnCount({
+          currentKey: current.turnKey,
+          domKeys: options.orderedTurnKeys(),
+          hostTurnIds,
+        })
+      : 0;
 
   const copyFor = (chinese: boolean): TurnActionCopy =>
     turnActionCopy({
@@ -92,10 +122,12 @@ export function createTurnActionController(options: {
         if (inspection.owner === "external") {
           redoAvailable = inspection.historyRedoAvailable === true;
           rollbackCapability = inspection.rollback ?? null;
+          hostTurnIds = inspection.turnIds ?? null;
         } else {
           // Official Threads keep Desktop's own Redo stack; the local flag from a
           // rollback this session made is the only signal there is.
           rollbackCapability = null;
+          hostTurnIds = null;
         }
         options.onChange();
       })
@@ -119,6 +151,7 @@ export function createTurnActionController(options: {
       // Host stashes the dropped Session in its one Redo slot for any rollback
       // extent; the inspect that follows is the authority.
       redoAvailable = true;
+      options.onHistoryReplaced?.();
       void inspect();
     });
   };
@@ -152,6 +185,7 @@ export function createTurnActionController(options: {
       rolledBackKey = null;
       redoAvailable = false;
       options.notify(copy.redoNotice);
+      options.onHistoryReplaced?.();
       options.onChange();
       void inspect();
     };
@@ -189,6 +223,7 @@ export function createTurnActionController(options: {
         rolledBackKey = null;
         redoAvailable = false;
         rollbackCapability = null;
+        hostTurnIds = null;
         owner = "unknown";
         inspectedThreadId = null;
       }

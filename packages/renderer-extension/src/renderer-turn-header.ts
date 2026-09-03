@@ -37,6 +37,7 @@ import { createWorkspaceRowPainter } from "./renderer-turn-header-workspace.js";
 import {
   nativeTurnButton,
   renderTurnActionCluster,
+  turnActionCopy,
   turnInNativeEdit,
   turnPromptElement,
   turnPromptText,
@@ -71,6 +72,8 @@ const BOTTOM_TOLERANCE = 24;
 const RELOAD_GRACE_MS = 600;
 /** Scroll events this long after our own scrollBy are ours, not the user's. */
 const OWN_SCROLL_MS = 600;
+/** Legacy transcripts get no `thread/reverted`; after this long the user is told. */
+const STALE_TRANSCRIPT_MS = 1_500;
 
 export interface RendererTurnHeader {
   refresh(): void;
@@ -450,6 +453,19 @@ export function installRendererTurnHeader(options: {
           state.reloadUntil = Date.now() + RELOAD_GRACE_MS;
           paintCluster(state);
           scheduleFrame(true);
+        },
+        onHistoryReplaced: () => {
+          // Paginated Threads re-read on `thread/reverted`; a legacy transcript
+          // keeps its nodes, so say so instead of leaving the user guessing.
+          const keysBefore = state.keys.join("\n");
+          setTimeout(() => {
+            if (disposed || !headers.has(state.composer)) return;
+            if (state.keys.join("\n") !== keysBefore) return;
+            state.view.notify(
+              turnActionCopy({ chinese: chinese(), rolledBack: false, laterTurns: 0 })
+                .staleTranscriptNotice,
+            );
+          }, STALE_TRANSCRIPT_MS);
         },
       }),
       scroller: null,

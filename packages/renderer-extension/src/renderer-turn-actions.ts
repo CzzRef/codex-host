@@ -81,6 +81,8 @@ export interface TurnActionCopy {
   redoNotice: string;
   redoOfficialFallbackNotice: string;
   redoUnavailableNotice: string;
+  /** Desktop did not re-read the transcript after the Host replaced history. */
+  staleTranscriptNotice: string;
   blocked: Record<TurnActionBlock, string>;
 }
 
@@ -143,6 +145,7 @@ export function turnActionCopy(input: {
       redoNotice: "已恢复刚回滚掉的对话",
       redoOfficialFallbackNotice: "Host Redo 不可用，已请求官方 Redo",
       redoUnavailableNotice: "Host 没有可恢复的对话",
+      staleTranscriptNotice: "对话已在 Host 侧更新；切换线程再切回可刷新显示",
       blocked: {
         nativeEdit: "正在使用官方编辑，本轮动作已停用",
         busy: "回复进行中，结束后再编辑或回滚",
@@ -193,6 +196,8 @@ export function turnActionCopy(input: {
     redoNotice: "Restored the turns dropped by rollback",
     redoOfficialFallbackNotice: "Host Redo unavailable; requested official Redo",
     redoUnavailableNotice: "Host has no dropped turns to restore",
+    staleTranscriptNotice:
+      "The Host updated the conversation; switch threads and back to refresh the transcript",
     blocked: {
       nativeEdit: "Desktop's own edit mode is open; turn actions are paused",
       busy: "A turn is running; edit or roll back once it finishes",
