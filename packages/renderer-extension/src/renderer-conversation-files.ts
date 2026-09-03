@@ -1,4 +1,8 @@
-import { hostThreadIdSchema } from "@codexhost/shared-contracts";
+import {
+  hostThreadIdSchema,
+  type ThreadWorkspaceRepository,
+  type ThreadWorkspaceSnapshot,
+} from "@codexhost/shared-contracts";
 
 export const THREAD_FILE_CHANGE_UPDATED_METHOD = "item/fileChange/patchUpdated";
 
@@ -162,4 +166,163 @@ export function mergeConversationFiles(
     });
   }
   return [...merged.values()].sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function pathBaseName(path: string): string {
+  const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
+function normalizeWorkspacePath(path: string): string {
+  const raw = path.replaceAll("\\", "/");
+  const drive = /^[a-z]:\//i.exec(raw)?.[0]?.toLowerCase() ?? null;
+  const prefix = raw.startsWith("/") ? "/" : (drive ?? "");
+  const source = prefix.length > 0 ? raw.slice(prefix.length) : raw;
+  const parts: string[] = [];
+  for (const part of source.split("/")) {
+    if (part.length === 0 || part === ".") continue;
+    if (part === "..") {
+      if (parts.length > 0 && parts.at(-1) !== "..") parts.pop();
+      else if (prefix.length === 0) parts.push(part);
+      continue;
+    }
+    parts.push(part);
+  }
+  const normalized = `${prefix}${parts.join("/")}`;
+  if (normalized === "/" || /^[a-z]:\/$/i.test(normalized)) return normalized;
+  return normalized.replace(/\/$/u, "") || prefix;
+}
+
+function absoluteWorkspacePath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/");
+  return normalized.startsWith("/") || /^[a-z]:\//i.test(normalized);
+}
+
+function workspacePathContains(root: string, candidate: string): boolean {
+  const normalizedRoot = normalizeWorkspacePath(root);
+  const normalizedCandidate = normalizeWorkspacePath(candidate);
+  const windows = /^[a-z]:/i.test(normalizedRoot);
+  const comparableRoot = windows ? normalizedRoot.toLowerCase() : normalizedRoot;
+  const comparableCandidate = windows ? normalizedCandidate.toLowerCase() : normalizedCandidate;
+  return (
+    comparableCandidate === comparableRoot ||
+    comparableCandidate.startsWith(
+      comparableRoot.endsWith("/") ? comparableRoot : `${comparableRoot}/`,
+    )
+  );
+}
+
+export function workspaceLocationLabel(repository: ThreadWorkspaceRepository): string {
+  if (repository.isWorktree && repository.worktreeName) return repository.worktreeName;
+  return pathBaseName(repository.root) || repository.name;
+}
+
+/**
+ * One repository row of the compact workspace line. `core` marks the Thread
+ * cwd's own root, which is always listed; every other root appears only while
+ * conversation files with non-zero line changes live under it.
+ */
+export interface ConversationFileGroup {
+  repository: ThreadWorkspaceRepository;
+  files: ThreadConversationFile[];
+  addedLines: number;
+  deletedLines: number;
+  core: boolean;
+}
+
+export function groupConversationFilesByRepository(
+  snapshot: ThreadWorkspaceSnapshot | null,
+  files: readonly ThreadConversationFile[],
+): { groups: ConversationFileGroup[]; unresolved: string[] } {
+  const primary = snapshot?.repositories.find((repository) => repository.kind === "primary");
+  if (!snapshot || !primary) return { groups: [], unresolved: [] };
+  const filesByRoot = new Map<string, ThreadConversationFile[]>();
+  const unresolved: string[] = [];
+  for (const file of files) {
+    const absolute = absoluteWorkspacePath(file.path);
+    const filePath = absolute
+      ? normalizeWorkspacePath(file.path)
+      : normalizeWorkspacePath(`${primary.root}/${file.path}`);
+    const owner = snapshot.repositories
+      .filter((repository) => workspacePathContains(repository.root, filePath))
+      .sort((left, right) => right.root.length - left.root.length)[0];
+    if (!owner) {
+      if (absolute) unresolved.push(filePath);
+      continue;
+    }
+    const bucket = filesByRoot.get(owner.root) ?? [];
+    bucket.push(file);
+    filesByRoot.set(owner.root, bucket);
+  }
+  const groups: ConversationFileGroup[] = [];
+  for (const repository of snapshot.repositories) {
+    const owned = filesByRoot.get(repository.root) ?? [];
+    const stats = aggregateConversationFileStats(owned);
+    const core = repository.root === primary.root;
+    if (!core && stats.addedLines + stats.deletedLines === 0) continue;
+    groups.push({ repository, files: owned, ...stats, core });
+  }
+  groups.sort((left, right) => Number(right.core) - Number(left.core));
+  return { groups, unresolved: [...new Set(unresolved)] };
+}
+
+export function repositoriesForConversationFiles(
+  snapshot: ThreadWorkspaceSnapshot | null,
+  files: readonly ThreadConversationFile[],
+): ThreadWorkspaceRepository[] {
+  if (files.length === 0) return [];
+  return groupConversationFilesByRepository(snapshot, files)
+    .groups.filter((group) => group.files.length > 0)
+    .map((group) => group.repository);
+}
+
+export function aggregateConversationFileStats(files: readonly ThreadConversationFile[]): {
+  addedLines: number;
+  deletedLines: number;
+} {
+  return files.reduce(
+    (total, file) => ({
+      addedLines: total.addedLines + file.addedLines,
+      deletedLines: total.deletedLines + file.deletedLines,
+    }),
+    { addedLines: 0, deletedLines: 0 },
+  );
+}
+
+export function repositoryDisplayName(repository: ThreadWorkspaceRepository): string {
+  if (
+    (repository.kind === "worktree" || repository.isWorktree) &&
+    repository.primaryRoot &&
+    repository.primaryRoot !== repository.root
+  ) {
+    return pathBaseName(repository.primaryRoot);
+  }
+  return repository.name;
+}
+
+export function worktreeLabel(repository: ThreadWorkspaceRepository, chinese: boolean): string {
+  if (!repository.isWorktree || !repository.worktreeName) return "";
+  const display = repositoryDisplayName(repository);
+  if (
+    repository.worktreeName === display ||
+    repository.worktreeName === (repository.branch ?? "")
+  ) {
+    return "";
+  }
+  return chinese ? `工作树 ${repository.worktreeName}` : `wt ${repository.worktreeName}`;
+}
+
+/** Repaint guard: the inputs that decide what a workspace surface shows. */
+export function snapshotSignature(
+  snapshot: ThreadWorkspaceSnapshot | null,
+  files: readonly ThreadConversationFile[],
+  selectedTurn: string | null,
+): string {
+  return JSON.stringify({
+    threadId: snapshot?.threadId ?? null,
+    cwd: snapshot?.cwd ?? null,
+    repositories: snapshot?.repositories ?? [],
+    files,
+    selectedTurn,
+  });
 }

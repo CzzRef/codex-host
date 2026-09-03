@@ -1,30 +1,35 @@
-import {
-  hostThreadIdSchema,
-  type ThreadWorkspaceRepository,
-  type ThreadWorkspaceSnapshot,
-} from "@codexhost/shared-contracts";
+import { hostThreadIdSchema, type ThreadWorkspaceSnapshot } from "@codexhost/shared-contracts";
 
 import {
+  aggregateConversationFileStats,
   conversationFilesFromItems,
   filesForTurnSelection,
+  groupConversationFilesByRepository,
   mergeConversationFiles,
-  reviewPathMatches,
+  repositoryDisplayName,
+  snapshotSignature,
   turnKeyMatches,
+  workspaceLocationLabel,
+  type ConversationFileGroup,
   type ThreadConversationFile,
 } from "./renderer-conversation-files.js";
 import { CODEX_COMPOSER_SELECTOR } from "./renderer-composer-dom.js";
 import {
+  ensureNativeDiffControlStyle,
+  openConversationFile,
+  setNativeWorkspaceDiffControlsHidden,
+} from "./renderer-native-diff-controls.js";
+import {
   CONVERSATION_GUTTER_ATTRIBUTE,
+  OVERLAY_ROOT_ATTRIBUTE,
+  chineseLocale,
   clampFixedBox,
   ensureOverlayChromeStyle,
   overflowScroller,
   overlayTopAboveComposer,
 } from "./renderer-overlay-layout.js";
 import type { RendererModelClient } from "./renderer-model-client.js";
-import {
-  findComposerModelTarget,
-  threadIdFromComposerModelTarget,
-} from "./versioned-renderer-adapter.js";
+import { composerVisible, threadIdForComposer } from "./renderer-thread-composer.js";
 
 export const WORKSPACE_BAR_ATTRIBUTE = "data-codexhost-workspace-bar";
 export const WORKSPACE_BAR_SELECTOR = `[${WORKSPACE_BAR_ATTRIBUTE}]`;
@@ -35,7 +40,6 @@ export const WORKSPACE_FILES_ATTRIBUTE = "data-codexhost-workspace-files";
 export const WORKSPACE_FILE_ATTRIBUTE = "data-codexhost-workspace-file";
 export const WORKSPACE_PREVIEW_ATTRIBUTE = "data-codexhost-workspace-preview";
 export const TURN_FILES_ATTRIBUTE = "data-codexhost-turn-files";
-export const NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE = "data-codexhost-native-workspace-diff-hidden";
 
 const STYLE_ATTRIBUTE = "data-codexhost-workspace-bar-style";
 const BAR_CLASS = "codexhost-workspace-bar";
@@ -55,6 +59,7 @@ export interface RendererWorkspaceBarOptions {
 
 function ensureStyle(ownerDocument: Document): void {
   ensureOverlayChromeStyle(ownerDocument);
+  ensureNativeDiffControlStyle(ownerDocument);
   ownerDocument.querySelector(`style[${STYLE_ATTRIBUTE}]`)?.remove();
   const style = ownerDocument.createElement("style");
   style.setAttribute(STYLE_ATTRIBUTE, "true");
@@ -387,278 +392,8 @@ function ensureStyle(ownerDocument: Document): void {
       outline-offset: 4px;
       border-radius: 12px;
     }
-    [${NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE}] {
-      display: none !important;
-    }
   `;
   (ownerDocument.head ?? ownerDocument.documentElement).append(style);
-}
-
-function composerVisible(composer: Element): boolean {
-  const typed = composer as HTMLElement;
-  if (typed.hidden || typed.getAttribute("aria-hidden") === "true") return false;
-  const bounds = typed.getBoundingClientRect?.();
-  return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
-}
-
-export function threadIdForComposer(composer: Element): string | null {
-  const portal = [...composer.children].find((child) =>
-    child.hasAttribute("data-above-composer-portal"),
-  );
-  const fromPortal = portal?.getAttribute("data-above-composer-conversation-id");
-  const parsedPortal = fromPortal ? hostThreadIdSchema.safeParse(fromPortal) : null;
-  if (parsedPortal?.success) return parsedPortal.data;
-  try {
-    return threadIdFromComposerModelTarget(findComposerModelTarget(composer)) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function chineseLocale(ownerDocument: Document): boolean {
-  return (ownerDocument.documentElement.lang || "").toLowerCase().startsWith("zh");
-}
-
-function pathBaseName(path: string): string {
-  const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
-  return parts.at(-1) ?? path;
-}
-
-function normalizeWorkspacePath(path: string): string {
-  const raw = path.replaceAll("\\", "/");
-  const drive = /^[a-z]:\//i.exec(raw)?.[0]?.toLowerCase() ?? null;
-  const prefix = raw.startsWith("/") ? "/" : (drive ?? "");
-  const source = prefix.length > 0 ? raw.slice(prefix.length) : raw;
-  const parts: string[] = [];
-  for (const part of source.split("/")) {
-    if (part.length === 0 || part === ".") continue;
-    if (part === "..") {
-      if (parts.length > 0 && parts.at(-1) !== "..") parts.pop();
-      else if (prefix.length === 0) parts.push(part);
-      continue;
-    }
-    parts.push(part);
-  }
-  const normalized = `${prefix}${parts.join("/")}`;
-  if (normalized === "/" || /^[a-z]:\/$/i.test(normalized)) return normalized;
-  return normalized.replace(/\/$/u, "") || prefix;
-}
-
-function absoluteWorkspacePath(path: string): boolean {
-  const normalized = path.replaceAll("\\", "/");
-  return normalized.startsWith("/") || /^[a-z]:\//i.test(normalized);
-}
-
-function workspacePathContains(root: string, candidate: string): boolean {
-  const normalizedRoot = normalizeWorkspacePath(root);
-  const normalizedCandidate = normalizeWorkspacePath(candidate);
-  const windows = /^[a-z]:/i.test(normalizedRoot);
-  const comparableRoot = windows ? normalizedRoot.toLowerCase() : normalizedRoot;
-  const comparableCandidate = windows ? normalizedCandidate.toLowerCase() : normalizedCandidate;
-  return (
-    comparableCandidate === comparableRoot ||
-    comparableCandidate.startsWith(
-      comparableRoot.endsWith("/") ? comparableRoot : `${comparableRoot}/`,
-    )
-  );
-}
-
-export function workspaceLocationLabel(repository: ThreadWorkspaceRepository): string {
-  if (repository.isWorktree && repository.worktreeName) return repository.worktreeName;
-  return pathBaseName(repository.root) || repository.name;
-}
-
-/**
- * One repository row of the compact workspace line. `core` marks the Thread
- * cwd's own root, which is always listed; every other root appears only while
- * conversation files with non-zero line changes live under it.
- */
-export interface ConversationFileGroup {
-  repository: ThreadWorkspaceRepository;
-  files: ThreadConversationFile[];
-  addedLines: number;
-  deletedLines: number;
-  core: boolean;
-}
-
-export function groupConversationFilesByRepository(
-  snapshot: ThreadWorkspaceSnapshot | null,
-  files: readonly ThreadConversationFile[],
-): { groups: ConversationFileGroup[]; unresolved: string[] } {
-  const primary = snapshot?.repositories.find((repository) => repository.kind === "primary");
-  if (!snapshot || !primary) return { groups: [], unresolved: [] };
-  const filesByRoot = new Map<string, ThreadConversationFile[]>();
-  const unresolved: string[] = [];
-  for (const file of files) {
-    const absolute = absoluteWorkspacePath(file.path);
-    const filePath = absolute
-      ? normalizeWorkspacePath(file.path)
-      : normalizeWorkspacePath(`${primary.root}/${file.path}`);
-    const owner = snapshot.repositories
-      .filter((repository) => workspacePathContains(repository.root, filePath))
-      .sort((left, right) => right.root.length - left.root.length)[0];
-    if (!owner) {
-      if (absolute) unresolved.push(filePath);
-      continue;
-    }
-    const bucket = filesByRoot.get(owner.root) ?? [];
-    bucket.push(file);
-    filesByRoot.set(owner.root, bucket);
-  }
-  const groups: ConversationFileGroup[] = [];
-  for (const repository of snapshot.repositories) {
-    const owned = filesByRoot.get(repository.root) ?? [];
-    const stats = aggregateConversationFileStats(owned);
-    const core = repository.root === primary.root;
-    if (!core && stats.addedLines + stats.deletedLines === 0) continue;
-    groups.push({ repository, files: owned, ...stats, core });
-  }
-  groups.sort((left, right) => Number(right.core) - Number(left.core));
-  return { groups, unresolved: [...new Set(unresolved)] };
-}
-
-export function repositoriesForConversationFiles(
-  snapshot: ThreadWorkspaceSnapshot | null,
-  files: readonly ThreadConversationFile[],
-): ThreadWorkspaceRepository[] {
-  if (files.length === 0) return [];
-  return groupConversationFilesByRepository(snapshot, files)
-    .groups.filter((group) => group.files.length > 0)
-    .map((group) => group.repository);
-}
-
-export function aggregateConversationFileStats(files: readonly ThreadConversationFile[]): {
-  addedLines: number;
-  deletedLines: number;
-} {
-  return files.reduce(
-    (total, file) => ({
-      addedLines: total.addedLines + file.addedLines,
-      deletedLines: total.deletedLines + file.deletedLines,
-    }),
-    { addedLines: 0, deletedLines: 0 },
-  );
-}
-
-export function repositoryDisplayName(repository: ThreadWorkspaceRepository): string {
-  if (
-    (repository.kind === "worktree" || repository.isWorktree) &&
-    repository.primaryRoot &&
-    repository.primaryRoot !== repository.root
-  ) {
-    return pathBaseName(repository.primaryRoot);
-  }
-  return repository.name;
-}
-
-export function worktreeLabel(repository: ThreadWorkspaceRepository, chinese: boolean): string {
-  if (!repository.isWorktree || !repository.worktreeName) return "";
-  const display = repositoryDisplayName(repository);
-  if (
-    repository.worktreeName === display ||
-    repository.worktreeName === (repository.branch ?? "")
-  ) {
-    return "";
-  }
-  return chinese ? `工作树 ${repository.worktreeName}` : `wt ${repository.worktreeName}`;
-}
-
-function controlLabel(element: Element): string {
-  return [element.getAttribute("aria-label"), element.getAttribute("title"), element.textContent]
-    .filter((value): value is string => typeof value === "string")
-    .join(" ");
-}
-
-function controlVisible(element: Element): boolean {
-  const typed = element as HTMLElement;
-  if (typed.hidden || typed.getAttribute("aria-hidden") === "true") return false;
-  const bounds = typed.getBoundingClientRect?.();
-  return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
-}
-
-export function isNativeWorkspaceDiffControl(element: Element): boolean {
-  const label = controlLabel(element);
-  if (
-    element.getAttribute("data-slot") === "thread-summary-panel-item-button" &&
-    /changes|files changed|变更|文件变更/i.test(label)
-  ) {
-    return true;
-  }
-  if (element.getAttribute("data-tab-id") === "diff") return true;
-  return /open review tab|打开审查|打开变更/i.test(label);
-}
-
-function nativeWorkspaceDiffRank(element: Element): number {
-  if (element.getAttribute("data-slot") === "thread-summary-panel-item-button") return 0;
-  if (/open review tab|打开审查|打开变更/i.test(controlLabel(element))) return 1;
-  if (element.getAttribute("data-tab-id") === "diff") return 2;
-  return 3;
-}
-
-function nativeWorkspaceDiffCandidates(root: ParentNode): Element[] {
-  return [...root.querySelectorAll("button, [role='button'], [data-tab-id='diff']")].filter(
-    (element) => !element.closest(WORKSPACE_BAR_SELECTOR) && isNativeWorkspaceDiffControl(element),
-  );
-}
-
-export function setNativeWorkspaceDiffControlsHidden(root: ParentNode, hidden: boolean): void {
-  const ownerDocument =
-    root instanceof Document ? root : ((root as Element).ownerDocument ?? document);
-  if (!hidden) {
-    for (const element of ownerDocument.querySelectorAll(
-      `[${NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE}]`,
-    )) {
-      element.removeAttribute(NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE);
-    }
-    return;
-  }
-  for (const element of nativeWorkspaceDiffCandidates(root)) {
-    element.setAttribute(NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE, "true");
-  }
-}
-
-export function nativeWorkspaceDiffControl(root: ParentNode): HTMLElement | null {
-  const candidates = nativeWorkspaceDiffCandidates(root).filter(
-    (element) =>
-      controlVisible(element) || element.hasAttribute(NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE),
-  );
-  candidates.sort((left, right) => nativeWorkspaceDiffRank(left) - nativeWorkspaceDiffRank(right));
-  const match = candidates[0];
-  if (!match) return null;
-  if (match instanceof HTMLElement && match.tagName === "BUTTON") return match;
-  const inner = match.querySelector("button");
-  return inner instanceof HTMLElement ? inner : match instanceof HTMLElement ? match : null;
-}
-
-export function openNativeWorkspaceDiff(root: ParentNode = document): boolean {
-  const control = nativeWorkspaceDiffControl(root);
-  if (!control) return false;
-  control.click();
-  return true;
-}
-
-export function nativeReviewFileControl(root: ParentNode, filePath: string): HTMLElement | null {
-  for (const element of root.querySelectorAll("[data-review-path]")) {
-    const reviewPath = element.getAttribute("data-review-path") ?? "";
-    if (!reviewPathMatches(reviewPath, filePath)) continue;
-    const header = element.querySelector<HTMLElement>('[class*="diff-header"]');
-    return header ?? (element instanceof HTMLElement ? element : null);
-  }
-  return null;
-}
-
-function snapshotSignature(
-  snapshot: ThreadWorkspaceSnapshot | null,
-  files: readonly ThreadConversationFile[],
-  selectedTurn: string | null,
-): string {
-  return JSON.stringify({
-    threadId: snapshot?.threadId ?? null,
-    cwd: snapshot?.cwd ?? null,
-    repositories: snapshot?.repositories ?? [],
-    files,
-    selectedTurn,
-  });
 }
 
 function formatStats(
@@ -945,6 +680,7 @@ export function installRendererWorkspaceBar(
   const requestedExtraPaths = new Map<string, string>();
   const preview = documentNode.createElement("div");
   preview.setAttribute(WORKSPACE_PREVIEW_ATTRIBUTE, "true");
+  preview.setAttribute(OVERLAY_ROOT_ATTRIBUTE, "true");
   preview.hidden = true;
   const previewHead = documentNode.createElement("div");
   previewHead.className = "codexhost-workspace-preview-head";
@@ -1075,16 +811,6 @@ export function installRendererWorkspaceBar(
     }
   };
 
-  const openConversationFile = (file: ThreadConversationFile): void => {
-    openNativeWorkspaceDiff(documentNode);
-    const reveal = (): void => {
-      const control = nativeReviewFileControl(documentNode, file.path);
-      control?.scrollIntoView({ block: "center", inline: "nearest" });
-      control?.click();
-    };
-    documentNode.defaultView?.setTimeout(reveal, 50);
-  };
-
   const paint = (composer: Element, snapshot: ThreadWorkspaceSnapshot | null): void => {
     lastSnapshot.set(composer, snapshot);
     const threadId = snapshot?.threadId ?? threadIdForComposer(composer);
@@ -1105,6 +831,7 @@ export function installRendererWorkspaceBar(
       bar = documentNode.createElement("div");
       bar.className = BAR_CLASS;
       bar.setAttribute(WORKSPACE_BAR_ATTRIBUTE, "empty");
+      bar.setAttribute(OVERLAY_ROOT_ATTRIBUTE, "true");
       bars.set(composer, bar);
     }
     bar.replaceChildren();
@@ -1264,7 +991,7 @@ export function installRendererWorkspaceBar(
           event.preventDefault();
           event.stopPropagation();
           hidePreview();
-          openConversationFile(file);
+          openConversationFile(documentNode, file);
         });
         rows.append(row);
       }
@@ -1532,3 +1259,21 @@ export function installRendererWorkspaceBar(
     },
   };
 }
+
+export { threadIdForComposer } from "./renderer-thread-composer.js";
+export {
+  NATIVE_WORKSPACE_DIFF_HIDDEN_ATTRIBUTE,
+  isNativeWorkspaceDiffControl,
+  nativeWorkspaceDiffControl,
+  openNativeWorkspaceDiff,
+  setNativeWorkspaceDiffControlsHidden,
+} from "./renderer-native-diff-controls.js";
+export {
+  aggregateConversationFileStats,
+  groupConversationFilesByRepository,
+  repositoriesForConversationFiles,
+  repositoryDisplayName,
+  workspaceLocationLabel,
+  worktreeLabel,
+  type ConversationFileGroup,
+} from "./renderer-conversation-files.js";
