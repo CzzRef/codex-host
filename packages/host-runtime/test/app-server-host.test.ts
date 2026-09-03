@@ -5097,42 +5097,115 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("rejects rollback when an external Thread is not an untouched derived prefix", async () => {
+  it("rolls a live external Thread back at its own Checkpoint, publishes the ability, and offers Redo", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
     fixture.official.stdin.on("data", officialWrite);
-    const sourceThreadId = await startPiThread(fixture);
-    await completePiTurn(fixture, sourceThreadId, 2);
-    await completePiTurn(fixture, sourceThreadId, 3);
+    const threadId = await startExternalThread(fixture, "codexhost/pi-native", 1, {
+      historyMode: "paginated",
+    });
+    const firstTurnId = await completePiTurn(fixture, threadId, 2);
+    await completePiTurn(fixture, threadId, 3);
+    await completePiTurn(fixture, threadId, 4);
 
+    // Pi cannot rollbackLastTurn, but it can Fork its own Session at a
+    // Checkpoint, so both bits light up once earlier Checkpoints exist.
+    writeRequest(fixture.desktopInput, {
+      id: 9,
+      method: "codexhost/thread/inspect",
+      params: { threadId },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 9)),
+    ).resolves.toMatchObject({ result: { rollback: { lastTurn: true, multiTurn: true } } });
+
+    // The first Turn must stay: rolling back everything is refused up front.
     writeRequest(fixture.desktopInput, {
       id: 10,
       method: "thread/rollback",
-      params: { threadId: sourceThreadId, numTurns: 1 },
+      params: { threadId, numTurns: 3 },
     });
     await expect(
       fixture.collector.waitFor((message) => requestId(message, 10)),
     ).resolves.toMatchObject({ error: { code: -32076 } });
+    expect(fixture.adapter.sessions).toHaveLength(1);
 
     writeRequest(fixture.desktopInput, {
       id: 11,
-      method: "thread/fork",
-      params: { threadId: sourceThreadId },
+      method: "thread/rollback",
+      params: { threadId, numTurns: 2 },
     });
-    const forkResponse = await fixture.collector.waitFor((message) => requestId(message, 11));
+    const rollbackResponse = await fixture.collector.waitFor((message) => requestId(message, 11));
+    expect((rollbackResponse.result as JsonObject).thread).toMatchObject({
+      id: threadId,
+      turns: [{ id: firstTurnId, status: "completed" }],
+    });
+    // Paginated Desktop transcripts re-read on thread/reverted.
+    await expect(
+      fixture.collector.waitFor((message) => method(message, "thread/reverted")),
+    ).resolves.toEqual({ method: "thread/reverted", params: { threadId } });
+    const record = await fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId));
+    expect(record).toMatchObject({
+      nativeSessionRef: { nativeSessionId: "fake-session-2" },
+      turnMappings: [
+        { hostTurnId: firstTurnId, nativeTurnRef: { nativeSessionId: "fake-session-2" } },
+      ],
+      historyRedo: { nativeSessionRef: { nativeSessionId: "fake-session-1" } },
+    });
+    expect(record?.forkSource).toBeUndefined();
+    expect(record?.historyRedo?.turnMappings).toHaveLength(3);
+    expect(fixture.adapter.sessions).toHaveLength(2);
+    await expect(fixture.adapter.sessions[0]?.readSnapshot()).resolves.toMatchObject({
+      ok: false,
+      error: { code: "invalidState" },
+    });
+
+    // A Fork-derived Thread that has grown past its Fork boundary also rolls
+    // back on its own lineage instead of failing.
+    writeRequest(fixture.desktopInput, {
+      id: 12,
+      method: "thread/fork",
+      params: { threadId },
+    });
+    const forkResponse = await fixture.collector.waitFor((message) => requestId(message, 12));
     const derivedId = ((forkResponse.result as JsonObject).thread as JsonObject).id;
     if (typeof derivedId !== "string") throw new Error("Tail Fork response has no Thread ID");
-    await completePiTurn(fixture, derivedId, 12, 1);
-
+    await completePiTurn(fixture, derivedId, 13, 2);
     writeRequest(fixture.desktopInput, {
-      id: 13,
+      id: 14,
       method: "thread/rollback",
       params: { threadId: derivedId, numTurns: 1 },
     });
+    const derivedRollback = await fixture.collector.waitFor((message) => requestId(message, 14));
+    expect((derivedRollback.result as JsonObject).thread).toMatchObject({
+      id: derivedId,
+      turns: [{ status: "completed" }],
+    });
     await expect(
-      fixture.collector.waitFor((message) => requestId(message, 13)),
-    ).resolves.toMatchObject({ error: { code: -32076 } });
-    expect(fixture.adapter.sessions).toHaveLength(2);
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(derivedId)),
+    ).resolves.toMatchObject({
+      forkSource: { hostThreadId: threadId, hostTurnId: firstTurnId },
+      turnMappings: [{ nativeTurnRef: { nativeSessionId: "fake-session-4" } }],
+    });
+
+    // Redo restores the whole stashed three-Turn Session of the original Thread.
+    writeRequest(fixture.desktopInput, {
+      id: 15,
+      method: "codexhost/thread/redo",
+      params: { threadId },
+    });
+    const redoResponse = await fixture.collector.waitFor((message) => requestId(message, 15));
+    expect(((redoResponse.result as JsonObject).thread as JsonObject).turns).toHaveLength(3);
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ nativeSessionRef: { nativeSessionId: "fake-session-1" } });
+    await vi.waitFor(() =>
+      expect(
+        fixture.collector.messages
+          .filter((message) => method(message, "thread/reverted"))
+          .map((message) => (message.params as JsonObject).threadId),
+      ).toEqual([threadId, derivedId, threadId]),
+    );
     expect(officialWrite).not.toHaveBeenCalled();
     await stopFixture(fixture);
   });

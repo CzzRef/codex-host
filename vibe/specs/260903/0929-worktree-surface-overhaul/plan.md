@@ -2,7 +2,7 @@
 
 Tool: cursor
 Date: 2026-09-03 09:29 (+08:00)
-Status: `confirmed / implementing`（用户 2026-09-03 10:05 确认按四切片实施；进度见 [§8 Execution Journal](#8-execution-journal)）
+Status: `implemented / live-verification pending`（用户 2026-09-03 10:05 确认按四切片实施；四个切片已于 2026-09-03 完成，真机量测与各 Harness 真机确认见 [§8 Execution Journal](#8-execution-journal) 的 `[待真机]`）
 Documentation level: `standard requirement`（本文件即 owner，保留文件名以维持外部链接；需求原文见 [raw-requirement.md](raw-requirement.md)）
 
 ## 0. 基线
@@ -242,3 +242,13 @@ C-5 文件列表收缩
 - A-5：状态栏在新线程 `thread/started` 后走既有 inspect 管线显示所选 worktree（切片 1 的核心 chip），未另加代码。
 - 验证：`tsc -b` 与 `tests/tsconfig.json` 通过；vitest 全量 189 文件 / 1640 例通过（新增 `workspace-worktree.test.ts` 4 例：主检出列表与建议名、创建路径/分支/lane 与从子 worktree 反解主根、非法名/重复路径/重复分支/未知 baseRef 拒绝且不删、非 Git 拒绝；desktop-control 新增 cwd 改写 1 例；picker 助手 7 例；`renderer-model-client` 方法清单更新；`app-server-host` 新增两条路由的 `-32602` 断言）；Playwright `renderer-composer-workspace-surface` 通过（新增列表拉取、选已有、临时工作树、新建三态、草稿结束释放与下个草稿「上次」标记）；`eslint` 与 `node tools/check-boundaries.mjs` 通过。
 - 文档：OpenSpec `add-composer-workspace-bar` renderer spec 的勾选框 Requirement 改写为「Draft worktree picker」，`thread-workspace-inspection` 新增「Host lists and creates project worktrees」Requirement，proposal 与 tasks §12 更新（未另建 `add-host-managed-worktree-selection`，因为改动都落在同一 change 的两个 capability 内）；preview HTML 更新。
+
+### 切片 4 Host 多轮回滚与刷新 — 2026-09-03 done（真机项待验）
+
+- spike（B-1）结论：Pi / OMP / Grok / DeepSeek Harness / Claude Code 五个 Adapter 均 `history.fork: true`、每轮产出 `nativeCheckpointRef`，且 `open({ kind: "fork", sourceRef, checkpoint })` 可对自己的 Session 使用（Grok 走 ACP fork/rewind 传输）；Pi / OMP / Grok / Claude 另有 `rollbackLastTurn`，`numTurns=1` 仍优先走原生回滚；DeepSeek Harness 无 `rollbackLastTurn`，所有回滚都走 checkpoint fork；Cursor `fork: false`，能力位保持 `none`。各 Harness 真机确认见 OpenSpec tasks §3.6。
+- Host（`packages/host-runtime/src/external-thread-rollback.ts`）：`executeExternalThreadRollback` 改为三段——`numTurns=1 && rollbackLastTurn` → 原生 last-turn；未动过的 Fork 派生前缀 → 原 fork-source 路径（抽为 `executeForkSourceRollback`，不适用时返回 `null` 而非报错）；其余 → 新增 `executeCheckpointRollback`：对线程自己的 Native Session 在「保留的最后一轮」checkpoint 处 fork，要求得到不同的 Session、轮数恰等于保留数、transport 配置不变，然后 `repository.commitCheckpointRollback` 持久化并 `runtime.replace`。始终保留第一轮：`numTurns >= turns` 先以 `-32076` 拒绝，不开 Session；边界无 checkpoint `-32080`。`externalRollbackCapabilities` 把「自身 checkpoint 可 fork」并入 `lastTurn` / `multiTurn`。
+- mapping-store：`replaceReadySessionAfterRollback`（任意尾部长度）与原 `replaceReadySessionAfterLastTurn`（恰少一轮）共用 `#replaceReadySessionAfterRollback`，都把旧 Session + 完整轮次列表存进唯一 Redo 槽；`historyRedo` 校验从「恰多一轮」放宽为「严格多于当前前缀」。`ExternalThreadRepository.commitCheckpointRollback` 校验 Session 不同、`1 <= 保留 < 全部`、Snapshot 身份后写入。
+- B-5 transcript 刷新：Desktop 分页 transcript 只在 `thread/reverted` 后重读（官方 Revert 路径），Renderer 发起的 `thread/rollback` 与 Host Redo 是在 Desktop 背后换历史，因此 Host 对 `historyMode: "paginated"` 的外部线程在回滚 / Redo 成功后补发 `thread/reverted { threadId }`；legacy 模式沿用响应结果更新，不发通知。Renderer `runRollback` 后 `redoAvailable = true`（任何回滚长度都有 Redo 槽，后续 inspect 为准），Redo 文案去掉「最后一轮」。
+- 验证：`tsc -b` 通过；vitest host-runtime + mapping-store + renderer-extension 63 文件 / 588 例通过（新增 mapping-store「多轮 checkpoint 回滚入同一 Redo 槽并整体恢复」1 例；`app-server-host` 原「非未动过派生前缀则拒绝」用例改写为「现存线程在自身 checkpoint 回滚、公布能力位、提供 Redo」：inspect `{lastTurn:true,multiTurn:true}`、`numTurns=3` 拒绝且不开 Session、`numTurns=2` 保留首轮并 stash 三轮、越过 Fork 边界的派生线程按自身 lineage 回滚、Redo 恢复三轮、`thread/reverted` 按线程各发一次）；Playwright `renderer-composer-workspace-surface` 通过；`eslint` 通过。
+- `[待真机]`：Desktop 分页 transcript 是否真的在 `thread/reverted` 后重读；legacy 模式线程下一次 `thread/read` 后是否显示缩短的对话；每个 Harness 对自身 Session 的 checkpoint fork 是否与 fake adapter 行为一致。
+- 文档：OpenSpec `add-external-thread-multi-turn-rollback` proposal / tasks §3 / `external-thread-fork-routing` delta 新增「Host rolls a live External Thread back at its own Checkpoint」与「History replacement notifies paginated Desktop transcripts」两条 Requirement；本文件 Status 升为 `implemented / live-verification pending`。

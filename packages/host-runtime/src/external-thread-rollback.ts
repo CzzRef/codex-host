@@ -37,14 +37,22 @@ export function externalRollbackCapabilities(thread: ExternalThread): {
   lastTurn: boolean;
   multiTurn: boolean;
 } {
-  const turns = thread.record.turnMappings.length;
+  const mappings = thread.record.turnMappings;
+  const turns = mappings.length;
   const history = thread.session.capabilities.history;
   // An untouched Fork-derived Thread rolls back by re-forking its source at an
   // earlier Checkpoint (the second branch of `executeExternalThreadRollback`).
   const forkLineage = Boolean(thread.record.forkSource) && history.fork;
+  // Any Thread whose Harness can Fork re-opens its own Native Session at the
+  // retained boundary's Checkpoint (the third branch); the first Turn must stay.
+  const checkpointAt = (retained: number): boolean =>
+    history.fork && retained >= 1 && Boolean(mappings[retained - 1]?.nativeCheckpointRef);
+  const anyEarlierCheckpoint = mappings
+    .slice(0, Math.max(0, turns - 2))
+    .some((mapping) => Boolean(mapping.nativeCheckpointRef));
   return {
-    lastTurn: turns > 0 && (history.rollbackLastTurn || forkLineage),
-    multiTurn: turns > 1 && forkLineage,
+    lastTurn: turns > 0 && (history.rollbackLastTurn || forkLineage || checkpointAt(turns - 1)),
+    multiTurn: turns > 1 && (forkLineage || (history.fork && anyEarlierCheckpoint)),
   };
 }
 
@@ -262,16 +270,35 @@ export async function executeExternalThreadRollback(input: {
     });
   }
 
+  const viaForkSource = await executeForkSourceRollback(input);
+  if (viaForkSource) return viaForkSource;
+  return executeCheckpointRollback({
+    current: derived,
+    numTurns: rollback.numTurns,
+    adapters,
+    repository,
+    runtime,
+    ...(input.environment ? { environment: input.environment } : {}),
+  });
+}
+
+/**
+ * Untouched Fork-derived Thread: re-fork the source at an earlier Checkpoint.
+ * Returns `null` when the Thread is not such a Thread (no Fork source, or it
+ * has grown past the Fork boundary), so the caller can try the Thread's own
+ * Checkpoints instead.
+ */
+async function executeForkSourceRollback(input: {
+  derived: ExternalThread;
+  rollback: DecodedThreadRollbackRequest;
+  adapters: Map<ExternalHarnessId, HarnessAdapter>;
+  repository: ExternalThreadRepository;
+  runtime: ExternalThreadRuntime;
+  environment?: NodeJS.ProcessEnv;
+}): Promise<ExternalThreadRollbackResult | null> {
+  const { derived, rollback, adapters, repository, runtime } = input;
   const forkSource = derived.record.forkSource;
-  if (!forkSource) {
-    return {
-      ok: false,
-      error: {
-        code: -32076,
-        message: "External rollback requires an untouched Fork-derived Thread",
-      },
-    };
-  }
+  if (!forkSource) return null;
   const sourceResolution = await runtime.resolve(forkSource.hostThreadId);
   if (sourceResolution.kind === "error") {
     return { ok: false, error: sourceResolution.error };
@@ -303,13 +330,7 @@ export async function executeExternalThreadRollback(input: {
     ({ hostTurnId }) => hostTurnId === forkSource.hostTurnId,
   );
   if (sourceBoundaryIndex < 0 || derived.record.turnMappings.length !== sourceBoundaryIndex + 1) {
-    return {
-      ok: false,
-      error: {
-        code: -32076,
-        message: "External rollback requires an untouched Fork-derived Thread",
-      },
-    };
+    return null;
   }
   const excludedActiveTurnCount =
     source.running || source.record.turnMappings.length > derived.record.turnMappings.length
@@ -407,6 +428,140 @@ export async function executeExternalThreadRollback(input: {
     sessionId: derived.sessionId,
     thread,
     turns: aligned.turns,
+  });
+  return { ok: true, thread };
+}
+
+/**
+ * Live Thread, any Harness that can Fork: re-open the Thread's own Native
+ * Session at the retained boundary's Checkpoint, swap the runtime Session,
+ * persist the shorter Turn list, and stash the previous Session for Redo.
+ * The first Turn always stays; no files are touched.
+ */
+async function executeCheckpointRollback(input: {
+  current: ExternalThread;
+  numTurns: number;
+  adapters: Map<ExternalHarnessId, HarnessAdapter>;
+  repository: ExternalThreadRepository;
+  runtime: ExternalThreadRuntime;
+  environment?: NodeJS.ProcessEnv;
+}): Promise<ExternalThreadRollbackResult> {
+  const { current, numTurns, adapters, repository, runtime } = input;
+  const mappings = current.record.turnMappings;
+  if (!current.session.capabilities.history.fork) {
+    return {
+      ok: false,
+      error: { code: -32076, message: "External Harness cannot roll back earlier Turns" },
+    };
+  }
+  const retainedCount = mappings.length - numTurns;
+  if (retainedCount < 1) {
+    return {
+      ok: false,
+      error: { code: -32076, message: "External rollback must keep the first Turn" },
+    };
+  }
+  const boundary = mappings[retainedCount - 1];
+  if (!boundary?.nativeCheckpointRef) {
+    return {
+      ok: false,
+      error: { code: -32080, message: "External rollback Checkpoint is unavailable" },
+    };
+  }
+  const currentNativeRef = current.record.nativeSessionRef;
+  const adapter = adapters.get(current.harnessId);
+  if (!currentNativeRef || !adapter) {
+    return {
+      ok: false,
+      error: { code: -32079, message: "External Native Session is unavailable" },
+    };
+  }
+
+  let opened: Awaited<ReturnType<HarnessAdapter["open"]>>;
+  try {
+    opened = await adapter.open({
+      kind: "fork",
+      cwd: current.cwd,
+      environment: {
+        ...(input.environment ?? process.env),
+        [DELEGATION_THREAD_ID_ENV]: current.id,
+      },
+      sourceRef: currentNativeRef as NativeSessionRef,
+      checkpoint: boundary.nativeCheckpointRef as NativeCheckpointRef,
+    });
+  } catch {
+    return { ok: false, error: { code: -32076, message: "External Thread rollback failed" } };
+  }
+  if (!opened.ok) {
+    return { ok: false, error: mapExternalThreadHarnessError(opened.error, "fork") };
+  }
+
+  const session = opened.value;
+  const finalNativeRef = session.initialState.nativeRef;
+  if (
+    !finalNativeRef ||
+    finalNativeRef.harnessId !== current.harnessId ||
+    finalNativeRef.nativeSessionId === currentNativeRef.nativeSessionId
+  ) {
+    await session.close().catch(() => undefined);
+    return {
+      ok: false,
+      error: { code: -32076, message: "External rollback did not create a distinct Session" },
+    };
+  }
+  const configuration = currentConfiguration(current);
+  const configurationError = await restoreCurrentConfiguration(session, configuration);
+  if (configurationError) {
+    await session.close().catch(() => undefined);
+    return { ok: false, error: configurationError };
+  }
+  const snapshot = await session.readSnapshot();
+  if (!snapshot.ok) {
+    await session.close().catch(() => undefined);
+    return { ok: false, error: mapExternalThreadHarnessError(snapshot.error, "read") };
+  }
+  if (snapshot.value.turns.length !== retainedCount) {
+    await session.close().catch(() => undefined);
+    return {
+      ok: false,
+      error: { code: -32080, message: "External rollback result does not match the boundary" },
+    };
+  }
+  const replacementState = snapshot.value.state ?? session.initialState;
+  if (!sameCurrentConfiguration(configuration, replacementState)) {
+    await session.close().catch(() => undefined);
+    return {
+      ok: false,
+      error: { code: -32080, message: "External rollback changed configuration" },
+    };
+  }
+
+  let aligned;
+  try {
+    aligned = await repository.commitCheckpointRollback(
+      current.record,
+      finalNativeRef as NativeSessionRef,
+      snapshot.value,
+    );
+  } catch {
+    await session.close().catch(() => undefined);
+    return {
+      ok: false,
+      error: { code: -32081, message: "External rollback could not be persisted" },
+    };
+  }
+  const thread = externalThreadValue({
+    record: aligned.record,
+    turns: aligned.turns,
+    sessionId: current.sessionId,
+  });
+  await runtime.replace(current, {
+    record: aligned.record,
+    session,
+    sessionId: current.sessionId,
+    thread,
+    turns: aligned.turns,
+    restoredState: replacementState,
   });
   return { ok: true, thread };
 }

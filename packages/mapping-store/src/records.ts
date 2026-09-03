@@ -168,11 +168,13 @@ export const storedThreadRecordV1Schema = z
         message: "Redo Native Session must differ from the current Native Session",
       });
     }
-    if (historyRedo.turnMappings.length !== record.turnMappings.length + 1) {
+    // One rollback of N >= 1 Turns stashes the whole previous Session; Redo
+    // restores all of it at once, so the slot is a strict superset prefix.
+    if (historyRedo.turnMappings.length <= record.turnMappings.length) {
       context.addIssue({
         code: "custom",
         path: ["historyRedo", "turnMappings"],
-        message: "Redo mappings must be the current Host Turn prefix plus one Turn",
+        message: "Redo mappings must be the current Host Turn prefix plus at least one Turn",
       });
     }
     for (const [index, mapping] of historyRedo.turnMappings.entries()) {
@@ -297,6 +299,9 @@ export interface ReplaceReadySessionAfterLastTurnInput {
   nativeSessionRef: NativeSessionRef;
   turnMappings: StoredTurnMappingV1[];
 }
+
+/** Same shape; the retained prefix may be any number of Turns shorter. */
+export type ReplaceReadySessionAfterRollbackInput = ReplaceReadySessionAfterLastTurnInput;
 
 export interface ReplaceReadySessionAfterRedoInput {
   hostThreadId: HostThreadId;

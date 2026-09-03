@@ -14,7 +14,9 @@
 
 ## 3. Multi-turn Checkpoint rollback (slice 4)
 
-- [ ] 3.1 Spike: which Adapters return `nativeCheckpointRef` per Turn and accept `open({ kind: "fork", checkpoint })` on their own live Session
-- [ ] 3.2 Host serves `numTurns > 1` on a live Thread by forking at the retained boundary Checkpoint and replacing the runtime Session
-- [ ] 3.3 `multiTurn` reflects Checkpoint availability
-- [ ] 3.4 Spike: transcript refresh after replace; Renderer notice fallback
+- [x] 3.1 Spike: Pi, OMP, Grok, DeepSeek Harness and Claude Code Adapters report `history.fork: true`, emit a `nativeCheckpointRef` per Turn and accept `open({ kind: "fork", sourceRef, checkpoint })` against their own Session (Grok through its ACP fork/rewind transport); Pi / OMP / Grok / Claude keep `rollbackLastTurn` for `numTurns = 1`, DeepSeek Harness (`rollbackLastTurn: false`) goes through the Checkpoint path for every extent; Cursor reports `fork: false` and stays `none`. Live confirmation per Harness is still owed (3.6)
+- [x] 3.2 Host serves `numTurns >= 1` on a live Thread by forking its own Session at the retained boundary Checkpoint (`executeCheckpointRollback`), keeps the first Turn, verifies Turn count and configuration, and replaces the runtime Session; `MappingStore.replaceReadySessionAfterRollback` + `ExternalThreadRepository.commitCheckpointRollback` persist the shorter prefix and stash the whole previous Session in the one Redo slot (`historyRedo` may now be longer than the current prefix by more than one Turn)
+- [x] 3.3 `lastTurn` / `multiTurn` reflect Checkpoint availability on the Thread's own mappings
+- [x] 3.4 Transcript refresh: Host emits `thread/reverted { threadId }` after External `thread/rollback` and `codexhost/thread/redo` on paginated Threads; legacy Threads update from the response; Renderer marks Redo available after any rollback extent and its copy no longer says "last turn"
+- [x] 3.5 Tests: mapping-store multi-Turn slot + Redo restore; host `rolls a live external Thread back at its own Checkpoint, publishes the ability, and offers Redo` (inspect bits, `numTurns >= turns` refused, two-Turn rollback, grown Fork-derived Thread, Redo, `thread/reverted` per Thread); renderer copy unit test updated
+- [ ] 3.6 `[live]` Confirm Desktop's paginated transcript re-reads on `thread/reverted` after a Renderer-initiated rollback, and that a legacy-mode Thread shows the shortened transcript after the next `thread/read`

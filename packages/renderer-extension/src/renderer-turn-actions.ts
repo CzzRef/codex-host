@@ -142,7 +142,7 @@ export function turnActionCopy(input: {
   /** This session already rolled the Thread back to the selected Turn. */
   rolledBack: boolean;
   laterTurns: number;
-  /** Host holds a last-Turn Redo slot for the Thread (thread-level, not per Turn). */
+  /** Host holds a Redo slot for the Thread (thread-level, not per Turn). */
   redoAvailable?: boolean;
   /** Host-reported rollback ability; defaults to `full` for official Threads. */
   rollbackSupport?: RollbackSupport;
@@ -205,8 +205,8 @@ export function turnActionCopy(input: {
       rollbackDisabled: !rollbackPossible,
       rollbackUnsupported,
       redoLabel: "Redo",
-      redoTitle: redoAvailable ? "恢复刚回滚掉的最后一轮对话" : "只有回滚最后一轮之后才能 Redo",
-      redoConfirm: "恢复刚回滚掉的最后一轮对话。文件不会自动再改回去。",
+      redoTitle: redoAvailable ? "恢复刚回滚掉的对话" : "只有回滚之后才能 Redo",
+      redoConfirm: "恢复刚回滚掉的对话。文件不会自动再改回去。",
       redoConfirmAction: "确认 Redo",
       redoDisabled: !redoAvailable,
       editNeedsConfirm,
@@ -245,9 +245,9 @@ export function turnActionCopy(input: {
     rollbackUnsupported,
     redoLabel: "Redo",
     redoTitle: redoAvailable
-      ? "Restore the last turn dropped by rollback"
-      : "Redo becomes available after rolling back the last turn",
-    redoConfirm: "Restore the last turn dropped by rollback. Project files are not rewritten.",
+      ? "Restore the turns dropped by rollback"
+      : "Redo becomes available after a rollback",
+    redoConfirm: "Restore the turns dropped by rollback. Project files are not rewritten.",
     redoConfirmAction: "Confirm redo",
     redoDisabled: !redoAvailable,
     editNeedsConfirm,
@@ -594,9 +594,9 @@ export function installRendererTurnActions(options: {
           }) ?? Promise.resolve()
         ).then(() => {
           rolledBack = true;
-          // Host stashes a Redo slot only for a single last-Turn rollback;
-          // the inspect that follows is the authority and may revoke this.
-          redoAvailable = later === 1;
+          // Host stashes the dropped Session in its one Redo slot for any
+          // rollback extent; the inspect that follows is the authority.
+          redoAvailable = true;
           void inspectSelected();
         });
       }
