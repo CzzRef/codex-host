@@ -464,7 +464,8 @@ function projectItem(
         id: item.itemId,
         type: "userMessage",
         clientId: null,
-        content: [{ type: "text", text: item.text }],
+        // Desktop 26.901 reads `text_elements.length` on every text part.
+        content: [{ type: "text", text: item.text, text_elements: [] }],
       };
     case "reasoning":
       return {

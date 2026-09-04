@@ -186,7 +186,7 @@ describe("Codex UI projector", () => {
       id: "steer-1",
       type: "userMessage",
       clientId: null,
-      content: [{ type: "text", text: "second" }],
+      content: [{ type: "text", text: "second", text_elements: [] }],
     });
   });
 
