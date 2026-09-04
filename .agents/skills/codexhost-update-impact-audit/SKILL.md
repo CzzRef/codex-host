@@ -69,7 +69,7 @@ Inventory contracts by surface:
 | Sidebar | `data-app-action-sidebar-thread-row`, `data-thread-title-trigger`, `data-thread-title` |
 | Settings | `data-testid="app-shell-header-context-menu-surface"` and structural insertion slot |
 | Fork | `data-response-annotation-conversation`, `data-content-search-turn-key`, owning callback/Fiber state |
-| Transcript / Turn header | `[data-turn-key]` order and rects (`[data-content-search-turn-key]` fallback), the user prompt bubble `[data-user-message-bubble="true"]` (measured on 26.831; `data-message-role="user"`-style markers are fallbacks, and the Turn's first block spans the whole Turn so it is not one), the transcript scroller's `flex-direction: column-reverse` with the content column as its first child (`.thread-scroll-container` is evidence only), `header[data-pip-obstacle="app-shell-header"]` title chrome, native pencil label `edit message` / `编辑消息`, native edit mode `textarea` / `contenteditable` inside the Turn, Composer Stop label, `data-slot="thread-summary-panel-item-button"`, `[data-review-path]` |
+| Transcript / Turn header | `[data-turn-key]` order and rects (`[data-content-search-turn-key]` fallback), the user prompt bubble `[data-user-message-bubble="true"]` (measured on 26.831; `data-message-role="user"`-style markers are fallbacks, and the Turn's first block spans the whole Turn so it is not one), the transcript scroller's `flex-direction: column-reverse` with the content column as its first child (`.thread-scroll-container` is evidence only), `header[data-pip-obstacle="app-shell-header"]` title chrome (transparent on 26.901, so the transcript stays readable in the band above the Turn header — the prompt-pinning boundary is the scroller's top edge, not the header's bottom), native pencil label `edit message` / `编辑消息`, native edit mode `textarea` / `contenteditable` inside the Turn, Composer Stop label, `data-slot="thread-summary-panel-item-button"`, `[data-review-path]` |
 
 Marker counts are triage signals, not conclusions. If a marker moves to another chunk with the same use and live relationship, classify it as relocation. If counts remain equal, still inspect changed relationships and API shape.
 
@@ -113,7 +113,7 @@ Inspect only sanitized summaries:
 - Renderer Adapter, title policy, and draft-prewarm policy readiness;
 - Harness availability;
 - sidebar rows/icons, settings trigger, and Fork candidates;
-- Turn header placement below the title chrome, the transcript column's reserved `padding-top`, the first Turn clearing the header at scroll-top, and no codexhost node over a visible prompt bubble.
+- Turn header placement below the title chrome, the transcript column's reserved `padding-top`, the first Turn clearing the header at scroll-top, and no codexhost node repeating a prompt whose bubble is still inside the transcript viewport (including the band under transparent title chrome).
 
 Interpret visibility in state. A Credits, Permission, Usage, or Model control hidden because the current Agent, phase, or data availability does not require it is not an impact. For visible controls, alignment and ownership matter more than a fixed pixel height. Equal heights alone do not prove correct placement.
 

@@ -851,9 +851,11 @@
           </li>
           <li>
             当前轮：<code>resolveCurrentTurn</code> 按 rect 二分——最后一个顶边 ≤
-            头部底边的轮次，末尾在视口内取最后一轮，6px 迟滞防抖；<code>promptPinned</code>
-            只在用户气泡底边滚过头部底边时把提示搬进头部。滚动、resize、ResizeObserver 与 DOM
-            变更合并到一帧。
+            <em>探针线</em>（头部底边下方 <code>CURRENT_TURN_PROBE = 24px</code>）的轮次，末尾在视口内取最后一轮，6px
+            迟滞防抖。探针线必须大于 <code>scrollDeltaToTurn</code> 的 8px 间隙，否则点提示词或按 ›
+            跳到的那一轮会被判回上一轮，索引看着像不动。<code>promptPinned</code>
+            的边界是<em>滚动区顶边</em>而不是头部底边：Desktop 标题栏透明，卡在两者之间的气泡仍然看得清，用头部底边判定会让同一句提示词同时出现两次。滚动、resize、ResizeObserver
+            与 DOM 变更合并到一帧。
           </li>
           <li>
             第一行由 <code>renderer-turn-header-row.ts</code> 绘制，动作簇仍是
@@ -863,7 +865,11 @@
             是线程级槽；tooltip 在头部里向下展开。
           </li>
           <li>
-            第二行由 <code>renderer-turn-header-workspace.ts</code> 从
+            行数按需：没有变更文件时核心 worktree chip 走第一行（<code>data-codexhost-turn-header-core</code>），第二行整行隐藏，头部只有
+            41px；一旦有变更文件，第二行才出现。第一行被钉住的提示词占用时核心 chip
+            让位（<code>data-pinned="true"</code>），所以提示词永远拿到最宽的一段。轮次读数优先用
+            Host 的 <code>turnIds</code>：Desktop 会把长对话窗口化，只数 DOM 会把 22 轮线程写成「第
+            1/3 轮」。<br />第二行由 <code>renderer-turn-header-workspace.ts</code> 从
             <code>renderer-workspace-files-state.ts</code> 绘制：<code>fitWorkspaceChips</code>
             保证单行、尾部 chip 收进 +N、核心 chip 永不隐藏；<code>renderFileDisclosure</code> 按
             root 分组、本轮文件带标签排前；<code>previewOrigin</code> 把 diff
@@ -879,7 +885,8 @@
           上方状态栏与轮次右侧动作簇（含 hover「⋯」）已删除；「工作树
           ▾」选择器（<code>renderer-draft-worktree-picker.ts</code>）与多轮回滚 / Redo（Host
           <code>external-thread-rollback.ts</code>）不变。真机量测项见
-          <code>vibe/specs/260903/1631-transcript-turn-header/</code>。
+          <code>vibe/specs/260903/1631-transcript-turn-header/</code>。下方 mock
+          渲染的是「有变更文件」的两行形态；单行形态、‹ › 箭头与 Host 轮次读数见上面的说明。
         </p>
       </aside>
 
@@ -1161,6 +1168,7 @@
 
       // 与 renderer-overlay-layout.ts 的 resolveCurrentTurn 一致：按 rect 二分找最后一个顶边
       // 已滑到头部底边之下的轮次；末尾在视口内取最后一轮；6px 迟滞让边界停在头部上时不抖。
+      const CURRENT_TURN_PROBE = 24;
       function resolveCurrentTurn({ count, topAt, atBottom, headerBottom, previous }) {
         if (count <= 0) return null;
         const last = count - 1;
@@ -1169,13 +1177,14 @@
         let high = last;
         while (low < high) {
           const middle = Math.ceil((low + high) / 2);
-          if (topAt(middle) <= headerBottom) low = middle;
+          if (topAt(middle) <= headerBottom + CURRENT_TURN_PROBE) low = middle;
           else high = middle - 1;
         }
-        const base = topAt(low) <= headerBottom ? low : 0;
+        const base = topAt(low) <= headerBottom + CURRENT_TURN_PROBE ? low : 0;
         if (previous !== null && previous >= 0 && previous <= last) {
-          if (base === previous + 1 && topAt(base) > headerBottom - 6) return previous;
-          if (base === previous - 1 && topAt(previous) < headerBottom + 6) return previous;
+          const line = headerBottom + CURRENT_TURN_PROBE;
+          if (base === previous + 1 && topAt(base) > line - 6) return previous;
+          if (base === previous - 1 && topAt(previous) < line + 6) return previous;
         }
         return base;
       }
@@ -1617,9 +1626,10 @@ dsh|docs/harness-notes.md|1|0|t7|@@ -12,0 +13,1 @@⏎+- codexhost 轮次头部�
         const keyChanged = key !== state.key;
         let pinned = false;
         if (turn) {
-          // 真实实现 promptPinned：用户气泡底边滚过头部底边才把提示搬进头部；钉住后多 8px 迟滞
+          // 真实实现 promptPinned：边界是滚动区顶边而不是头部底边——Desktop 标题栏透明，
+          // 卡在两者之间的气泡仍然看得清，这时再钉一份就成了重复显示；钉住后多 8px 迟滞
           const bubble = turn.querySelector('[data-message-role="user"]').getBoundingClientRect();
-          pinned = bubble.bottom <= headerBottom + (state.pinned && !keyChanged ? 8 : 2);
+          pinned = bubble.bottom <= scrollerRect.top + (state.pinned && !keyChanged ? 8 : 2);
         }
         if (keyChanged) {
           state.confirming = null;

@@ -2,7 +2,7 @@
 
 Tool: claude-code
 Date: 2026-09-03 16:31 (+08:00)
-Status: `implemented / focused-verified / partially live-verified / relaunch-blocked`（2026-09-03 20:33 源码重启后真机量测通过；真机发现的四处缺陷已修，其中三处的复核因 2026-09-04 Desktop 自动升级到 26.901 关闭 inspect fuse 而阻塞，见 E10）
+Status: `implemented / live-verified`（2026-09-04 11:0x–11:4x 在 26.901.22334 上按原始需求逐条回测置顶栏，发现并修复五处贴合度 / 正确性缺陷，修完在真机复验通过，见 E14）
 Documentation level: `standard requirement`
 
 Raw source: [raw-requirement.md](raw-requirement.md)
@@ -78,6 +78,7 @@ Plan of record（会话外）: `~/.claude/plans/codex-host-codex-iterative-flask
 - Add: 每个已验证的线程 Composer 一条置顶轮次头（body 子节点、fixed、实色、钉在滚动容器顶缘且在 `header[data-pip-obstacle="app-shell-header"]` 之下、对齐 Composer 列）；视口推导的当前轮（rect 二分 + 6px 迟滞 + 末尾 24px 容差）；气泡滚出后才显示的提示词（点击回到轮次起点、chevron 展开全文）；内容列 `padding-top` 预留（保留 Desktop 自带 padding 与间隔，卸载还原）；生成中禁用动作；当前轮涉及文件「本轮」标记；`data-codexhost-overlay` 面层根标记。
 - Modify: 编辑 / 回滚 / Redo 从「点击选中的轮次」改为「当前轮」；工作区状态从 Composer 上方的底部栏改为置顶栏第二行，`+N` 列表与文件披露向下弹出，预览夹在置顶栏与 Composer 之间；原生编辑模式隐藏动作而不是隐藏整条。
 - Remove: 底部状态栏与其 `padding-bottom` 预留；hover「⋯」chip、rail 与轮次旁浮动簇；点轮次选中、绿框与「本轮过滤」；`turnActionOrigin` / `turnActionPlacement` / `railDotVisible` / `overlayTopAboveComposer` / `nativeTurnChromeBox`。
+- Modify（2026-09-04 回测）：当前轮判定线下移 `CURRENT_TURN_PROBE = 24`；提示词的钉住边界由头部底边改为滚动区顶边；第二行只在有变更文件时存在，其余时候核心 chip 走第一行并在提示词钉住时让位；`Turn N/M` 优先取 Host `turnIds`；chevron 只在单行真截断时出现；全文面板贴合头部。
 - Clarify: 官方 Codex 线程同样显示置顶栏（编辑走官方铅笔、回滚透传 `thread/rollback`、Redo 只在本会话回滚后启用并退回官方 Redo）；文件仍不回退；`M` 只数 DOM 里的轮次。
 
 ## Requirement Change Review
@@ -169,8 +170,10 @@ Verification Decision: focused（renderer 单测 + Composer E2E + 静态门）+ 
 | E11 | 09-04 10:0x–11:0x | 用户要求「分批提交 → 拉远端合并到主分支 → 适配新客户端 → 复核修正」。分支已是分批提交（`891e4fe` `18b4a46` `00510e0` + 三次 docs）；`git merge --no-ff upstream/main`（v0.4.4，116 提交：CDP 注入迁移 `18ffdb2`、OpenCode、Antigravity、Aqua broker）31 处冲突分四组并集解决，合并后修正六处（Antigravity / OpenCode / harness-broker 补 `turn.steer`、Cursor 补 `permissionModeScope`、三处测试）→ `4b45876`；gate：build:typescript / typecheck / lint / build 通过，vitest 206 文件 1833 通过，test:rust 全绿，Playwright composer spec 通过；主检出 `czz-dev` 快进到 `4b45876`，`npm install` + `npm run build` 完成，`target/debug/codexhost` 含 `--remote-debugging-port`。真机复核仍阻塞：用户在合并期间直接启动了普通 Desktop 26.901（PID 30825，父进程 launchd，无 CDP 端口，stock app-server），只有用户能退出；CDP 探针 `cdp-page.mjs` / `state.js` 已备好 |
 | E12 | 09-04 10:4x–11:3x | 用户退出普通 Desktop → `codexhost launch` 在 26.901.20858 上 5.2s 就绪（CDP 注入生效，overlay 根 1）；打开外部线程触发 Desktop 错误边界，用户点「Update ChatGPT」后 Desktop 升到 **26.901.22334 (7746)**、asar `sha256:30a90346…`、fuse 仍 `0 1 0 0 1 1 0 0 1`；再次 `codexhost launch` 5.2s 就绪。CDP 控制台捕获定位根因：`app-initial` 的 `xnn(e)` 无条件读 `e.text_elements.length`，上游 `50f42dd` 只给轮级提示词补了空数组，fork 的轮内 steer `userMessage` 仍是裸 text → `2d8a381` 在 `codex-ui-projector.ts` 补 `text_elements: []`。官方线程实测（22334）：置顶栏 `y=47` 贴 46px 顶栏、`x=437 w=736` = Composer、`Turn 4/4`、‹ 可用 › 禁用、编辑可用、预留 `true`；history-gap 0（短线程）。新工具 `6bf88c8` `npm run live-check:codex-desktop`（识别版本 / asar / fuse → 拉起或附着 → CDP 探测 → 归因）在旧 Host 上复现该异常并指向 projector。待办：用户退出后重启使 `2d8a381` 生效，再 `--open external` 复核，以及 22 轮线程上的 gap / 箭头 / `turnIds` 回滚 |
 | E13 | 09-04 11:3x–12:1x | 用户退出后 `live-check --open external`：拉起 5 s 就绪，外部线程打开无异常，置顶栏 `Turn 1/1` + 提示词段 + 编辑可用，verdict `ok`（`2d8a381` 生效）。临时 Pi 线程 `8c87dcd5…`（22 轮，parent 必须是 Host 自有的外部线程，官方线程返回 `PARENT_THREAD_AMBIGUOUS matchingRuntimeCount=0`）：底部 DOM 10 节点 `Turn 10/10`、‹ 可用 › 禁用；滚到顶 DOM 7 含 1 个 history-gap → `Turn 1/6`（gap 已排除）、‹ 禁用；› 一次 → `Turn 2/7`；置顶栏全程 `y=46`。回滚按钮在最后一轮禁用属设计（回滚 = 取消之后轮次）；`turnIds` 回滚数量的确认框读数未完成：用户同时在 Desktop 里点击（trusted click），探针改线程被打断，且线程中途被归档、`thread unarchive` 后侧栏未回显行（deep link 可打开）。工具已实测两次（旧 Host `impact` → 新 Host `ok`） |
+| E14 | 09-04 11:0x–11:4x | 用户要求「用 computer use 真回测，保证代码与 plan 贴合原始需求，发现问题记录并修复」。Desktop 由 10:58 的 `codexhost launch` 拉起（CDP 62118），先只读量测再 `Page.captureScreenshot` 逐帧看形态。**发现五处**：① 提示词重复——`app-shell-header` 透明，气泡卡在 0–46px 带里仍然可读，而 `promptPinned` 以头部底边 119 为界，约 90px 滚动区间里同一句话出现两次（截图证据）；② 点提示词 / 按 › 之后读数倒退一轮——`scrollDeltaToTurn` 把轮次顶端放到 `headerBottom + 8`，而 `resolveCurrentTurn` 的判定线正是 `headerBottom`，600ms 覆盖过期后落回上一轮，`›` 看着像坏了；③ 无变更文件时第二行仍占满一行（`empty` 态甚至完全空白），单轮线程整条 73px 几乎全空，违背用户「尽量收缩为一行」的核心交互理念；④ 长对话被 Desktop 窗口化时 `Turn N/M` 只数 DOM，5 轮线程在顶部写成「Turn 1/3」，`turnIds` 已在 `00510e0` 落到回滚数量却没用于读数；⑤ chevron 在提示词没截断时也出现、全文面板与头部之间 6px 缝里透出正文。**修完复验**（重建 Renderer 后经 `installRendererBinding` 自带的 dispose 热装回运行中的 Desktop）：头部 41px（原 73px），八个滚动位置 rect 恒为 `x=846 y=46 w=736 h=41`；`bubbleBottom` 11 / 29 / 48 时不钉、−552 / −653 / −1204 时钉；底部 4 个 DOM 轮显示 `Turn 5/5`、顶部 3 个显示 `Turn 1/5`；点提示词停在本轮且间隙 8px，‹ › 连续步进且覆盖过期后不回弹；滚到顶首轮 95 ≥ 头部底 87；单轮线程隐藏箭头。三处静态门 + renderer 单测 772 例 + 项目 vitest 1835 例 + Composer E2E 全绿 |
 
 ## Closeout
 
+- 2026-09-04 回测判断（用户可推翻）：第二行只为「有变更文件」保留，静止线程一行 41px；提示词钉住时核心 worktree chip 让位，因为提示词是这条栏存在的理由——代价是读长回复时看不到 worktree chip（此时本就没有文件改动）。若要 worktree 常驻，把 `data-pinned="true"` 的让位规则去掉即可，提示词宽度会从约 380px 降到约 215px。
 - 代码规模：`renderer-turn-header.ts` 613 行（高于 500 的评审信号、低于 800 的拆分信号；第一行视图与第二行绘制已各自成模块）。
 - 行为变化需告知：Side Chat 两个 Composer 共用一个滚动容器时不挂置顶栏；`dist/index.js` 外部消费者未知（仓库内无引用）。
