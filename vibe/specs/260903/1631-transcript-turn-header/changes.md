@@ -15,7 +15,7 @@
 | 真机修正 2 | `18b4a46` | 4 | 「‹ ›」步进当前轮（显式覆盖） |
 | 真机修正 3 | `00510e0` | 8 | inspect `turnIds`，回滚数量来自 Host；legacy 线程回滚后的刷新提示 |
 | 真机登记 | `afc8bcb` 等 | — | OpenSpec / 任务文档 / 枢纽 |
-| 真机回测修正 | 本提交 | 9 | 26.901.22334 上按原始需求回测置顶栏，修五处：提示词重复、当前轮探针线、无变更文件时收成一行、`Turn N/M` 改用 Host `turnIds`、chevron 只在真截断时出现 |
+| 真机回测修正 | `389b768` / `a73b315` | 9 | 26.901.22334 上按原始需求回测置顶栏，修五处：提示词重复、当前轮探针线、无变更文件时收成一行、`Turn N/M` 改用 Host `turnIds`、chevron 只在真截断时出现 |
 
 ## 2. 交付物清单
 
@@ -67,3 +67,15 @@
 | `tests/e2e/renderer-composer-workspace-surface.spec.ts` | 改动 | 提示词在「头部之上、视口之内」仍不显示；点提示词后仍停在本轮且间隙 8px；箭头在覆盖过期后不回弹；第二行只在有变更文件时出现，核心 chip 在未钉住时可见、钉住时让位，高度不变 |
 | `packages/renderer-extension/src/composer-overlay.preview.html` | 改动 | mock 的 `resolveCurrentTurn` / `promptPinned` 跟随修正；说明补探针线、视口顶边边界、单行形态与 Host 读数 |
 | `openspec/changes/add-composer-workspace-bar/**` | 改动 | 两段 Requirement 改写 + 三个新 scenario；tasks 13.8 |
+
+## 4. 第二轮回测修正（2026-09-04，编辑重发 + 跳转截断）
+
+| 对象 | 类型 | 核心说明 |
+| --- | --- | --- |
+| `packages/renderer-extension/src/renderer-turn-actions.ts` | 改动 | 新增 `EditMode`（`native` / `replace` / `append`）与 `editAppendReason`；`editNeedsConfirm` 在 `replace` 下恒为真；中英各补一套「回滚到本轮之前」文案 |
+| `packages/renderer-extension/src/renderer-turn-action-controller.ts` | 改动 | `runRollback({ inclusive })` 让 `numTurns = laterTurns + 1`；`editModeNow()` 按原生铅笔 / 首轮 / 回滚能力位选模式；Edit 先读提示词再回滚（含本轮回滚可能带走轮次节点）；`clickEdit(copy, prompt?)` |
+| `packages/renderer-extension/src/renderer-turn-header.ts` | 改动 | `scrollToTurn` 改为 `scrollIntoView({block:"start"})` + 有界逐帧校正 + 400ms 复检；新增 `SCROLL_SETTLED_PX / SCROLL_ATTEMPTS / SCROLL_RECHECK_PX / SCROLL_RECHECK_MS` 与 `scrollRecheck` 计时器（卸载时清理） |
+| `packages/renderer-extension/src/renderer-turn-header-row.ts` | 改动 | 箭头边界回到 transcript 窗口（`state.index`），只有读数用 Host 位置 |
+| `packages/renderer-extension/test/renderer-turn-action-controller.test.ts` | 改动 | 新增「编辑=回滚到本轮之前」四段用例（中间轮 `numTurns=2`、最后一轮 `numTurns=1`、首轮不回滚、`lastTurnOnly` 退回追加） |
+| `tests/e2e/renderer-composer-workspace-surface.spec.ts` | 改动 | Edit 走确认框后再回填；inspect 计数基线在 Edit 之后重取 |
+| `openspec/changes/add-composer-workspace-bar/**` | 改动 | Turn actions Requirement 改写编辑语义 + 两个 scenario；跳转与箭头边界各补一条；tasks 13.9 |
