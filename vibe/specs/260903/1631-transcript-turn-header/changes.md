@@ -47,3 +47,4 @@
 | `.agents/skills/codexhost-update-impact-audit/SKILL.md` | 改动 | 清单新增 Transcript / Turn header 行、归属与探针项 |
 | `docs/领域术语表.md` | 改动 | 「轮次头」「当前轮」；核心工作区 / 涉及仓库改指第二行 |
 | `vibe/specs/260903/1631-transcript-turn-header/*`、`vibe/specs/PROJECT_STATUS.md` | 新增 / 改动 | 本任务 owner 与枢纽 |
+| 合并 `upstream/main` v0.4.4 → `4b45876`（31 处冲突并集；合并后修正：`packages/adapters/antigravity|opencode` + `packages/harness-broker` 补 `turn.steer`，`packages/adapters/cursor/src/cursor-models.ts` 补 `permissionModeScope: "live"`，`renderer-binding-probe-host-catalog` / `opencode command` / `omp-adapter` 三处测试） | 改动 | 适配 Desktop 26.901：Renderer 注入改走 Chromium CDP（launcher `--remote-debugging-port`、controller `--renderer-cdp-endpoint`）；真机复核待用户退出普通 Desktop 后重启 |

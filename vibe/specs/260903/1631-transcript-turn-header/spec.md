@@ -166,6 +166,7 @@ Verification Decision: focused（renderer 单测 + Composer E2E + 静态门）+ 
 | E8 | 20:4x–21:0x | 真机只读量测；修正 `891e4fe`（history-gap、气泡标记、无气泡不钉） |
 | E9 | 21:1x–21:3x | 临时 Pi 线程回滚 / Redo；发现短线程不可触达早先轮 → `18b4a46` 箭头；发现窗口化导致回滚数量错误 → `00510e0` `turnIds`；线程归档 |
 | E10 | 09-04 09:0x–10:0x | 用户正常退出后三次 `codexhost launch`：一次 30s 内未等到 Host 链、一次 Host 链就绪但 inspector 未监听、一次带 `CODEXHOST_STARTUP_TRACE=1`——controller 等 90s「Electron main-process Inspector did not become ready」，Desktop 在启动后 30s「Stopping app-server transport」并退出，launcher 收回。根因：用户 09-04 上午直接启动过普通 Desktop，Sparkle 把它从 26.831.21537 (7579) 升到 **26.901.20858 (7658)**，Electron 152.0.7977.64，fuse 块 `0 1 0 0 1 1 0 0 1` 第 4 位 `EnableNodeCliInspectArguments = 0`，`--inspect` 被忽略；shim 仍被 `CODEX_CLI_PATH` 接受，app-server 报 0.153.0-alpha.5。与本任务代码无关，三处真机修正的复核被阻塞，转交 update-impact 审计任务 |
+| E11 | 09-04 10:0x–11:0x | 用户要求「分批提交 → 拉远端合并到主分支 → 适配新客户端 → 复核修正」。分支已是分批提交（`891e4fe` `18b4a46` `00510e0` + 三次 docs）；`git merge --no-ff upstream/main`（v0.4.4，116 提交：CDP 注入迁移 `18ffdb2`、OpenCode、Antigravity、Aqua broker）31 处冲突分四组并集解决，合并后修正六处（Antigravity / OpenCode / harness-broker 补 `turn.steer`、Cursor 补 `permissionModeScope`、三处测试）→ `4b45876`；gate：build:typescript / typecheck / lint / build 通过，vitest 206 文件 1833 通过，test:rust 全绿，Playwright composer spec 通过；主检出 `czz-dev` 快进到 `4b45876`，`npm install` + `npm run build` 完成，`target/debug/codexhost` 含 `--remote-debugging-port`。真机复核仍阻塞：用户在合并期间直接启动了普通 Desktop 26.901（PID 30825，父进程 launchd，无 CDP 端口，stock app-server），只有用户能退出；CDP 探针 `cdp-page.mjs` / `state.js` 已备好 |
 
 ## Closeout
 
