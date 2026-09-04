@@ -83,6 +83,7 @@ export function cursorCapabilities(configuration: ReturnType<typeof cursorConfig
       selectModel: configuration.catalog.models.length > 0,
       selectThinkingOption: false,
       selectPermissionMode: Boolean(configuration.permissionModes),
+      permissionModeScope: "live" as const,
     },
     history: cursorHistory,
     // Cursor has no mid-prompt injection; steer is interrupt-then-re-prompt in

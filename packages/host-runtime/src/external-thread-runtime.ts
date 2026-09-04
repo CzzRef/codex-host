@@ -11,21 +11,24 @@ import type {
 import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
 import {
   decodeExternalTransportSelection,
+  encodeExternalTransportSelection,
   mapExternalThreadHarnessError,
   type CodexTurnProjector,
+  type ExternalConfigurationSelection,
   type ExternalHarnessId,
   type ExternalThreadRpcError,
   type JsonObject,
   type JsonRpcRequest,
 } from "@codexhost/protocol-core";
 import { HarnessOutputChannel } from "@codexhost/harness-adapter";
-import type {
-  HarnessId,
-  HarnessPermissionModeId,
-  HarnessThinkingOptionId,
-  HostInteractionId,
-  HostTurnId,
-  NativeSessionRef,
+import {
+  permissionModeFixedAtCreate,
+  type HarnessId,
+  type HarnessPermissionModeId,
+  type HarnessThinkingOptionId,
+  type HostInteractionId,
+  type HostTurnId,
+  type NativeSessionRef,
 } from "@codexhost/shared-contracts";
 
 import {
@@ -136,6 +139,7 @@ class ReadonlySnapshotSession implements HarnessSession {
       selectModel: false,
       selectThinkingOption: false,
       selectPermissionMode: false,
+      permissionModeScope: "live" as const,
     },
     history: { fork: false, forkAcrossCwd: false, rollbackLastTurn: false },
     subagents: { observe: false, readTranscript: false },
@@ -235,6 +239,7 @@ export class ExternalThreadRuntime {
     requestedModel?: HarnessModelRef;
     requestedThinkingOptionId?: HarnessThinkingOptionId;
     requestedPermissionModeId?: HarnessPermissionModeId;
+    transportModelId?: string;
     restoredState?: HarnessSessionState;
   }): ExternalThread {
     const harnessId = input.record.harnessId as ExternalHarnessId;
@@ -270,7 +275,7 @@ export class ExternalThreadRuntime {
       sessionId: input.sessionId,
       stateObserver: new SessionStateObserver(observerState),
       thread: input.thread,
-      transportModelId: input.record.transportModelId,
+      transportModelId: input.transportModelId ?? input.record.transportModelId,
       turns: input.turns,
       historyHydrated: true,
       running: false,
@@ -477,23 +482,27 @@ export class ExternalThreadRuntime {
         ...(snapshot.value.state ? { restoredState: snapshot.value.state } : {}),
       });
     }
+    const restoredSelection = decodeExternalTransportSelection(harnessId, record.transportModelId);
     const opened = await adapter.open({
       kind: "resume",
       cwd: record.cwd,
       environment: { ...this.#environment, [DELEGATION_THREAD_ID_ENV]: record.hostThreadId },
       nativeRef: record.nativeSessionRef as NativeSessionRef,
       knownTurnRefs: record.turnMappings.map(({ nativeTurnRef }) => nativeTurnRef),
+      ...(harnessId === "grok" && restoredSelection?.permissionModeId
+        ? { permissionModeId: restoredSelection.permissionModeId }
+        : {}),
     });
     if (!opened.ok) {
       throw new ExternalThreadOpenError(mapExternalThreadHarnessError(opened.error, "resume"));
     }
     const session = opened.value;
     try {
-      const restoredSelection = decodeExternalTransportSelection(
-        harnessId,
-        record.transportModelId,
-      );
-      if (restoredSelection?.permissionModeId) {
+      if (
+        restoredSelection?.permissionModeId &&
+        harnessId !== "opencode" &&
+        !permissionModeFixedAtCreate(session.capabilities.configuration)
+      ) {
         if (!session.capabilities.configuration.selectPermissionMode) {
           throw new ExternalThreadOpenError({
             code: -32076,
@@ -514,7 +523,44 @@ export class ExternalThreadRuntime {
       if (!snapshot.ok) {
         throw new ExternalThreadOpenError(mapExternalThreadHarnessError(snapshot.error, "read"));
       }
-      const aligned = await this.#repository.alignSnapshot(record, snapshot.value);
+      let aligned = await this.#repository.alignSnapshot(record, snapshot.value);
+      const restoredState = snapshot.value.state;
+      const effectiveModel = restoredState
+        ? restoredState.effectiveModel
+        : restoredSelection?.model;
+      const effectiveThinkingOptionId = restoredState
+        ? restoredState.effectiveThinkingOptionId
+        : restoredSelection?.thinkingOptionId;
+      const effectivePermissionModeId = restoredState
+        ? restoredState.effectivePermissionModeId
+        : restoredSelection?.permissionModeId;
+      let transportModelId = aligned.record.transportModelId;
+      // OMP can silently replace an unavailable Model during resume, while OpenCode's
+      // additive Permission API cannot reliably restore a stale mode. Persist live state so the
+      // next restore does not reapply an obsolete transport token.
+      if ((harnessId === "omp" || harnessId === "opencode") && effectiveModel) {
+        const liveSelection: ExternalConfigurationSelection = {
+          model: effectiveModel,
+          ...(effectiveThinkingOptionId ? { thinkingOptionId: effectiveThinkingOptionId } : {}),
+          ...((harnessId === "omp" || harnessId === "opencode") && effectivePermissionModeId
+            ? { permissionModeId: effectivePermissionModeId }
+            : {}),
+        };
+        transportModelId = encodeExternalTransportSelection(harnessId, liveSelection);
+        if (transportModelId !== aligned.record.transportModelId) {
+          try {
+            aligned = {
+              ...aligned,
+              record: await this.#repository.setTransportModelId(
+                aligned.record.hostThreadId,
+                transportModelId,
+              ),
+            };
+          } catch (error) {
+            this.#diagnose(error);
+          }
+        }
+      }
       const sessionId = await this.#repository.sessionTreeId(aligned.record);
       return this.register({
         record: aligned.record,
@@ -526,14 +572,15 @@ export class ExternalThreadRuntime {
           sessionId,
         }),
         turns: aligned.turns,
-        ...(restoredSelection?.model ? { requestedModel: restoredSelection.model } : {}),
-        ...(restoredSelection?.thinkingOptionId
-          ? { requestedThinkingOptionId: restoredSelection.thinkingOptionId }
+        ...(effectiveModel ? { requestedModel: effectiveModel } : {}),
+        ...(effectiveThinkingOptionId
+          ? { requestedThinkingOptionId: effectiveThinkingOptionId }
           : {}),
-        ...(restoredSelection?.permissionModeId
-          ? { requestedPermissionModeId: restoredSelection.permissionModeId }
+        ...(effectivePermissionModeId
+          ? { requestedPermissionModeId: effectivePermissionModeId }
           : {}),
-        ...(snapshot.value.state ? { restoredState: snapshot.value.state } : {}),
+        ...(restoredState ? { restoredState } : {}),
+        transportModelId,
       });
     } catch (error) {
       await session.close().catch(() => undefined);

@@ -18,6 +18,7 @@ import {
   CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
   CODEX_PINNED_THREAD_SECTION_ID,
   encodeClaudeTransportModel,
+  encodeGrokTransportModel,
   encodePiTransportModel,
   type ExternalHarnessId,
   type JsonObject,
@@ -218,6 +219,7 @@ function createFixture(
     mappingStore?: MappingStore;
     mappingStoreDirectory?: string;
     closeMappingStoreOnExit?: boolean;
+    desktopOutput?: PassThrough;
     createOfficialConnection?: () =>
       OfficialAppServerConnection | Promise<OfficialAppServerConnection>;
     updateCoordinator?: HostUpdateCoordinator;
@@ -232,7 +234,7 @@ function createFixture(
   const mappingStore =
     options.mappingStore ?? new MappingStore({ directory: mappingStoreDirectory });
   const desktopInput = new PassThrough();
-  const desktopOutput = new PassThrough();
+  const desktopOutput = options.desktopOutput ?? new PassThrough();
   const diagnosticOutput = new PassThrough();
   const official = new FakeOfficialProcess();
   const collector = new JsonLineCollector(desktopOutput);
@@ -732,6 +734,301 @@ describe("AppServerHost HarnessAdapter projection", () => {
       expect(fixture.official.kill).toHaveBeenCalledWith("SIGTERM");
     } finally {
       fixture.desktopInput.end();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("lets an active official Turn reach its terminal event after Desktop disconnects", async () => {
+    const fixture = createFixture();
+    const threadId = "019cbe86-76cf-7721-b5e4-978934e18757";
+    const turnId = "019cbe86-8eef-79d0-8658-cf2c64aa38cf";
+
+    try {
+      writeRequest(fixture.desktopInput, {
+        id: 1,
+        method: "turn/start",
+        params: { threadId, input: [{ type: "text", text: "keep running" }] },
+      });
+      await readJsonLine(fixture.official.stdin);
+      fixture.official.stdout.write(
+        `${JSON.stringify({ method: "turn/started", params: { threadId, turn: { id: turnId } } })}\n`,
+      );
+      await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
+
+      fixture.host.disconnect();
+      const beforeTerminal = await Promise.race([
+        fixture.running.then(() => "settled" as const),
+        new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 25)),
+      ]);
+
+      expect(beforeTerminal).toBe("pending");
+      expect(fixture.official.kill).not.toHaveBeenCalled();
+
+      fixture.official.stdout.write(
+        `${JSON.stringify({
+          method: "turn/completed",
+          params: { threadId, turn: { id: turnId, status: "completed" } },
+        })}\n`,
+      );
+      await expect(
+        fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId)),
+      ).resolves.toBeTruthy();
+      await expect(fixture.running).resolves.toBe(0);
+      expect(fixture.official.kill).not.toHaveBeenCalled();
+    } finally {
+      fixture.host.close();
+      fixture.desktopInput.end();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a forwarded official turn/start alive across the pre-response disconnect race", async () => {
+    const fixture = createFixture();
+    const threadId = "019cbe87-ae18-7543-97f1-c60deeb61b17";
+    const turnId = "019cbe87-b77a-78a2-a16a-c6ad1fc2a026";
+
+    try {
+      writeRequest(fixture.desktopInput, {
+        id: 1,
+        method: "turn/start",
+        params: { threadId, input: [{ type: "text", text: "start then disconnect" }] },
+      });
+      await readJsonLine(fixture.official.stdin);
+      fixture.host.disconnect();
+
+      const beforeResponse = await Promise.race([
+        fixture.running.then(() => "settled" as const),
+        new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 25)),
+      ]);
+      expect(beforeResponse).toBe("pending");
+
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: 1, result: { turn: { id: turnId } } })}\n`,
+      );
+      await expect(
+        fixture.collector.waitFor((message) => requestId(message, 1)),
+      ).resolves.toBeTruthy();
+      expect(fixture.official.stdin.writableEnded).toBe(false);
+
+      fixture.official.stdout.write(
+        `${JSON.stringify({
+          method: "turn/completed",
+          params: { threadId, turn: { id: turnId, status: "completed" } },
+        })}\n`,
+      );
+      await expect(fixture.running).resolves.toBe(0);
+      expect(fixture.official.kill).not.toHaveBeenCalled();
+    } finally {
+      fixture.host.close();
+      fixture.desktopInput.end();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("releases a disconnected Host session when pending official turn/start fails", async () => {
+    const fixture = createFixture();
+    const threadId = "019cbe88-9a77-78ae-919f-79cfe1468e11";
+
+    try {
+      writeRequest(fixture.desktopInput, {
+        id: 1,
+        method: "turn/start",
+        params: { threadId, input: [{ type: "text", text: "rejected start" }] },
+      });
+      await readJsonLine(fixture.official.stdin);
+      fixture.host.disconnect();
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: 1, error: { code: -32000, message: "synthetic rejection" } })}\n`,
+      );
+
+      await expect(
+        fixture.collector.waitFor((message) => requestId(message, 1)),
+      ).resolves.toBeTruthy();
+      await expect(fixture.running).resolves.toBe(0);
+      expect(fixture.official.kill).not.toHaveBeenCalled();
+    } finally {
+      fixture.host.close();
+      fixture.desktopInput.end();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("releases a disconnected Host when official completion precedes the start response", async () => {
+    const fixture = createFixture();
+    const threadId = "019cbe89-91f5-71c8-b24d-0410e73a2ef4";
+    const turnId = "019cbe89-9e78-7e49-ac62-3958b8db3881";
+
+    try {
+      writeRequest(fixture.desktopInput, {
+        id: 1,
+        method: "turn/start",
+        params: { threadId, input: [{ type: "text", text: "finish immediately" }] },
+      });
+      await readJsonLine(fixture.official.stdin);
+      fixture.host.disconnect();
+      fixture.official.stdout.write(
+        `${JSON.stringify({
+          method: "turn/completed",
+          params: { threadId, turn: { id: turnId, status: "completed" } },
+        })}\n`,
+      );
+      fixture.official.stdout.write(
+        `${JSON.stringify({ id: 1, result: { turn: { id: turnId } } })}\n`,
+      );
+
+      await expect(fixture.running).resolves.toBe(0);
+      expect(fixture.official.kill).not.toHaveBeenCalled();
+    } finally {
+      fixture.host.close();
+      fixture.desktopInput.end();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("lets an active external Harness Turn finish after Desktop disconnects", async () => {
+    const fixture = createFixture();
+    let session: FakeHarnessSession | undefined;
+
+    try {
+      const threadId = await startPiThread(fixture);
+      const turnId = await startPiTurn(fixture, threadId);
+      session = fixture.adapter.sessions[0];
+      if (!session) throw new Error("Fake Pi Session was not opened");
+      const close = vi.spyOn(session, "close");
+      await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
+
+      fixture.host.disconnect();
+      const beforeTerminal = await Promise.race([
+        fixture.running.then(() => "settled" as const),
+        new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 25)),
+      ]);
+
+      expect(beforeTerminal).toBe("pending");
+      expect(close).not.toHaveBeenCalled();
+
+      session.appendText("completed after transport disconnect");
+      session.succeedTurn();
+      await expect(
+        fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId)),
+      ).resolves.toBeTruthy();
+      await expect(fixture.running).resolves.toBe(0);
+      expect(close).toHaveBeenCalled();
+    } finally {
+      try {
+        session?.succeedTurn();
+      } catch {
+        // A failing implementation may already have interrupted the synthetic Turn.
+      }
+      fixture.host.close();
+      fixture.desktopInput.end();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails when official app-server output closes before Desktop input", async () => {
+    const fixture = createFixture();
+
+    try {
+      await vi.waitFor(() => expect(fixture.spawnOfficial).toHaveBeenCalledOnce());
+      fixture.official.stdout.end();
+
+      const outcome = await Promise.race([
+        fixture.running,
+        new Promise<"timed-out">((resolve) => {
+          setTimeout(() => resolve("timed-out"), 100);
+        }),
+      ]);
+
+      expect(outcome).toBe(1);
+      expect(fixture.desktopInput.destroyed).toBe(true);
+      expect(fixture.official.kill).toHaveBeenCalledWith("SIGTERM");
+    } finally {
+      fixture.host.close();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails when official output closes while Desktop output is backpressured", async () => {
+    const fixture = createFixture({ desktopOutput: new PassThrough({ highWaterMark: 1 }) });
+
+    try {
+      await vi.waitFor(() => expect(fixture.spawnOfficial).toHaveBeenCalledOnce());
+      fixture.desktopOutput.pause();
+      fixture.official.stdout.write(
+        `${JSON.stringify({ method: "synthetic/event", params: { payload: "x".repeat(32_768) } })}\n`,
+      );
+      await vi.waitFor(() =>
+        expect(fixture.desktopOutput.listenerCount("drain")).toBeGreaterThan(0),
+      );
+      fixture.official.stdout.end();
+
+      const outcome = await Promise.race([
+        fixture.running,
+        new Promise<"timed-out">((resolve) => {
+          setTimeout(() => resolve("timed-out"), 1_000);
+        }),
+      ]);
+
+      expect(outcome).toBe(1);
+      expect(fixture.desktopInput.destroyed).toBe(true);
+      expect(fixture.official.kill).toHaveBeenCalledWith("SIGTERM");
+    } finally {
+      fixture.host.close();
+      fixture.desktopOutput.resume();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails when the official app-server exits while its output stays open", async () => {
+    const fixture = createFixture();
+
+    try {
+      await vi.waitFor(() => expect(fixture.spawnOfficial).toHaveBeenCalledOnce());
+      expect(
+        fixture.official.stdin.write(Buffer.alloc(fixture.official.stdin.writableHighWaterMark)),
+      ).toBe(false);
+      writeRequest(fixture.desktopInput, { id: 90, method: "model/list", params: {} });
+      await vi.waitFor(() =>
+        expect(fixture.official.stdin.listenerCount("drain")).toBeGreaterThan(0),
+      );
+      fixture.official.emit("exit", 0, null);
+
+      const outcome = await Promise.race([
+        fixture.running,
+        new Promise<"timed-out">((resolve) => {
+          setTimeout(() => resolve("timed-out"), 1_000);
+        }),
+      ]);
+
+      expect(outcome).toBe(1);
+      expect(fixture.desktopInput.destroyed).toBe(true);
+      expect(fixture.official.stdout.destroyed).toBe(true);
+      expect(fixture.official.kill).toHaveBeenCalledWith("SIGTERM");
+    } finally {
+      fixture.host.close();
+      await fixture.running;
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Desktop-first official app-server shutdown successful", async () => {
+    const fixture = createFixture();
+
+    try {
+      await vi.waitFor(() => expect(fixture.spawnOfficial).toHaveBeenCalledOnce());
+      fixture.desktopInput.end();
+
+      await expect(fixture.running).resolves.toBe(0);
+    } finally {
+      fixture.host.close();
       await fixture.running;
       rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
     }
@@ -1547,6 +1844,12 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("inspects native Codex Models and starts with explicit Model and Thinking", async () => {
+    const xaiModel = harnessModelRefSchema.parse({
+      id: "codex-model-v1.eGFpL2dyb2stNC42",
+    });
+    const kimiModel = harnessModelRefSchema.parse({
+      id: "codex-model-v1.a2ltaS9rM1sxbV0",
+    });
     let delegationApi: DelegationControlApi | undefined;
     const fixture = createFixture({
       onDelegationApi: (api) => {
@@ -1567,9 +1870,14 @@ describe("AppServerHost HarnessAdapter projection", () => {
         result: {
           data: [
             {
-              model: "gpt-5.6-luna",
-              displayName: "GPT Luna",
+              model: "xai/grok-4.6",
+              displayName: "Grok 4.6",
               isDefault: true,
+              supportedReasoningEfforts: [{ reasoningEffort: "high", description: "High" }],
+            },
+            {
+              model: "kimi/k3[1m]",
+              displayName: "Kimi K3",
               supportedReasoningEfforts: [{ reasoningEffort: "high", description: "High" }],
             },
           ],
@@ -1581,7 +1889,11 @@ describe("AppServerHost HarnessAdapter projection", () => {
       inspection: {
         status: "ready",
         catalog: {
-          defaultModel: { id: "gpt-5.6-luna" },
+          models: [
+            { ref: xaiModel, label: "Grok 4.6" },
+            { ref: kimiModel, label: "Kimi K3" },
+          ],
+          defaultModel: xaiModel,
           thinkingOptions: [{ id: "high", label: "High" }],
         },
       },
@@ -1592,7 +1904,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       task: "review auth",
       cwd: "/synthetic",
       parentThreadId: "parent-thread",
-      model: harnessModelRefSchema.parse({ id: "gpt-5.6-luna" }),
+      model: kimiModel,
       thinkingOptionId: harnessThinkingOptionIdSchema.parse("high"),
     });
     const validationList = await readJsonLine(fixture.official.stdin);
@@ -1603,7 +1915,11 @@ describe("AppServerHost HarnessAdapter projection", () => {
         result: {
           data: [
             {
-              model: "gpt-5.6-luna",
+              model: "xai/grok-4.6",
+              supportedReasoningEfforts: [{ reasoningEffort: "high", description: "High" }],
+            },
+            {
+              model: "kimi/k3[1m]",
               isDefault: true,
               supportedReasoningEfforts: [{ reasoningEffort: "high", description: "High" }],
             },
@@ -1614,7 +1930,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const threadStart = await readJsonLine(fixture.official.stdin);
     expect(threadStart).toMatchObject({
       method: "thread/start",
-      params: { model: "gpt-5.6-luna" },
+      params: { model: "kimi/k3[1m]" },
     });
     expect(threadStart.params).not.toHaveProperty("reasoningEffort");
     fixture.official.stdout.write(
@@ -1622,6 +1938,70 @@ describe("AppServerHost HarnessAdapter projection", () => {
         id: threadStart.id,
         result: {
           thread: { id: "native-configured" },
+          model: "kimi/k3[1m]",
+        },
+      })}\n`,
+    );
+    const turnStart = await readJsonLine(fixture.official.stdin);
+    expect(turnStart).toMatchObject({
+      method: "turn/start",
+      params: { model: "kimi/k3[1m]", effort: "high" },
+    });
+    fixture.official.stdout.write(
+      `${JSON.stringify({ id: turnStart.id, result: { turn: { id: "native-turn" } } })}\n`,
+    );
+    await expect(pending).resolves.toMatchObject({
+      configuration: {
+        requested: { model: kimiModel, thinkingOptionId: "high" },
+        effective: {
+          effectiveModel: kimiModel,
+        },
+      },
+    });
+    await stopFixture(fixture);
+  });
+
+  it("canonicalizes legacy transport-safe Codex Model refs before delegation", async () => {
+    const legacyModel = harnessModelRefSchema.parse({ id: "gpt-5.6-luna" });
+    const canonicalModel = harnessModelRefSchema.parse({
+      id: "codex-model-v1.Z3B0LTUuNi1sdW5h",
+    });
+    let delegationApi: DelegationControlApi | undefined;
+    const fixture = createFixture({
+      onDelegationApi: (api) => {
+        delegationApi = api;
+        return undefined;
+      },
+    });
+    await vi.waitFor(() => expect(delegationApi).toBeDefined());
+    await vi.waitFor(async () => expect(await fixture.mappingStore.listThreads()).toEqual([]));
+    if (!delegationApi) throw new Error("Delegation API was not registered");
+
+    const pending = delegationApi.start({
+      harnessId: "codex",
+      task: "review auth",
+      cwd: "/synthetic",
+      parentThreadId: "parent-thread",
+      model: legacyModel,
+    });
+    const modelList = await readJsonLine(fixture.official.stdin);
+    expect(modelList).toMatchObject({ method: "model/list", params: {} });
+    fixture.official.stdout.write(
+      `${JSON.stringify({
+        id: modelList.id,
+        result: { data: [{ model: "gpt-5.6-luna", isDefault: true }] },
+      })}\n`,
+    );
+    const threadStart = await readJsonLine(fixture.official.stdin);
+    expect(threadStart).toMatchObject({
+      method: "thread/start",
+      params: { model: "gpt-5.6-luna" },
+    });
+    fixture.official.stdout.write(
+      `${JSON.stringify({
+        id: threadStart.id,
+        result: {
+          thread: { id: "native-legacy-configured" },
           model: "gpt-5.6-luna",
         },
       })}\n`,
@@ -1629,17 +2009,15 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const turnStart = await readJsonLine(fixture.official.stdin);
     expect(turnStart).toMatchObject({
       method: "turn/start",
-      params: { model: "gpt-5.6-luna", effort: "high" },
+      params: { model: "gpt-5.6-luna" },
     });
     fixture.official.stdout.write(
-      `${JSON.stringify({ id: turnStart.id, result: { turn: { id: "native-turn" } } })}\n`,
+      `${JSON.stringify({ id: turnStart.id, result: { turn: { id: "native-legacy-turn" } } })}\n`,
     );
     await expect(pending).resolves.toMatchObject({
       configuration: {
-        requested: { model: { id: "gpt-5.6-luna" }, thinkingOptionId: "high" },
-        effective: {
-          effectiveModel: { id: "gpt-5.6-luna" },
-        },
+        requested: { model: canonicalModel },
+        effective: { effectiveModel: canonicalModel },
       },
     });
     await stopFixture(fixture);
@@ -3654,6 +4032,56 @@ describe("AppServerHost HarnessAdapter projection", () => {
       error: { code: -32078, message: "Policy rejected bypass" },
     });
     expect(claude.sessions[0]?.state.effectivePermissionModeId).toBe(auto);
+    await stopFixture(fixture);
+  });
+
+  it("rejects live Grok Permission Mode changes without rewriting mapping", async () => {
+    const permissionModes = harnessPermissionModeCatalogSchema.parse({
+      modes: [
+        { id: "default", label: "Default" },
+        { id: "always-approve", label: "Always approve", dangerous: true },
+      ],
+      defaultModeId: "default",
+    });
+    const grok = new FakeHarnessAdapter(
+      harnessIdSchema.parse("grok"),
+      undefined,
+      true,
+      true,
+      null,
+      permissionModes,
+      false,
+      "atCreate",
+    );
+    const fixture = createFixture({
+      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([["grok", grok]]),
+    });
+    const model = grok.catalog.defaultModel;
+    if (!model) throw new Error("Fake Grok catalog has no default Model");
+    const defaultMode = harnessPermissionModeIdSchema.parse("default");
+    const alwaysApprove = harnessPermissionModeIdSchema.parse("always-approve");
+    const transportModelId = encodeGrokTransportModel(model, defaultMode);
+    const threadId = await startExternalThread(fixture, transportModelId, 50);
+    const session = grok.sessions[0];
+    if (!session) throw new Error("Fake Grok Session was not opened");
+    const execute = vi.spyOn(session, "execute");
+
+    writeRequest(fixture.desktopInput, {
+      id: 51,
+      method: "codexhost/thread/permission-mode/select",
+      params: { threadId, permissionModeId: alwaysApprove },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 51)),
+    ).resolves.toMatchObject({
+      error: { code: -32078, message: "Permission Mode is fixed at Session creation" },
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(session.state.effectivePermissionModeId).toBe(defaultMode);
+    await expect(
+      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
+    ).resolves.toMatchObject({ transportModelId });
+
     await stopFixture(fixture);
   });
 
@@ -6104,7 +6532,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       params: {
         turn: {
           status: "completed",
-          items: [{ type: "agentMessage" }],
+          items: [{ type: "fileChange" }, { type: "agentMessage" }],
         },
       },
     });
