@@ -48,3 +48,5 @@
 | `docs/领域术语表.md` | 改动 | 「轮次头」「当前轮」；核心工作区 / 涉及仓库改指第二行 |
 | `vibe/specs/260903/1631-transcript-turn-header/*`、`vibe/specs/PROJECT_STATUS.md` | 新增 / 改动 | 本任务 owner 与枢纽 |
 | 合并 `upstream/main` v0.4.4 → `4b45876`（31 处冲突并集；合并后修正：`packages/adapters/antigravity|opencode` + `packages/harness-broker` 补 `turn.steer`，`packages/adapters/cursor/src/cursor-models.ts` 补 `permissionModeScope: "live"`，`renderer-binding-probe-host-catalog` / `opencode command` / `omp-adapter` 三处测试） | 改动 | 适配 Desktop 26.901：Renderer 注入改走 Chromium CDP（launcher `--remote-debugging-port`、controller `--renderer-cdp-endpoint`）；真机复核待用户退出普通 Desktop 后重启 |
+| `packages/protocol-core/src/codex-ui-projector.ts`（`2d8a381`） | 改动 | 轮内 steer `userMessage` 补 `text_elements: []`，Desktop 26.901 打开外部线程不再进错误边界 |
+| `tools/codex-desktop-live-check/`、`package.json`（`6bf88c8`） | 新增 | `live-check:codex-desktop`：识别版本 / asar / fuse → 拉起或附着 → CDP 探测 → 归因 verdict |
