@@ -115,6 +115,8 @@ npm run install:source
 codexhost launch
 ```
 
+本机登录后的自动拉起不登记 `launch` 这个子命令，而走 czzLocalOps 里的 **CodexHost** 服务（`ops.py start|boot on codexhost`）。总览开机自启后按 boot 计划启动 CodexHost 本身；启动脚本从 `~/.local/bin/codexhost` 匹配源码 checkout 再 exec 原生启动器。官方自己打开的 ChatGPT 仍不会被接管。
+
 `npm start` 也走这个安全入口。先验证本机入口确实指向当前源码，再检查 Desktop；检测到 Codex 仍在运行或无法可靠检查进程时直接拒绝。源码入口设置 `CODEXHOST_REFUSE_RUNNING_DESKTOP=1`，Rust 在取得启动锁前和启动状态处理前再次检查；锁被占用或存在 runtime descriptor（包括过期记录）也会拒绝，不进入 attach、强制退出或旧实例清理。过期记录需要后续人工核对，不自动删除。没有后台重启或定时重试。
 
 2026-09-01 用户授权的两次正常激活均已完成。最新回执位于 `/Users/gdkmjd/.local/state/codexhost/restarts/01a055a0-cc69-7d41-8896-ae5fd7522fed-omp-v2/receipt.json`，状态为 `source_launch_verified_after_live_recheck`；当前源码 Launcher PID 29444、Desktop PID 29446，Host runtime/controller/Renderer 与源码命令匹配，runtime descriptor 为 schema-valid 普通文件且权限 `0600`。自动脚本早期的 OMP 目录瞬态失败保留在回执中，随后现场 refresh 与 doctor 复核通过；未使用 force terminate、kill、旧 descriptor 清理或自动重试。后续更新仍要重新遵守正常退出和单实例门禁。
