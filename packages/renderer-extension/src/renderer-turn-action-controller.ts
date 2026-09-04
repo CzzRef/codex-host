@@ -28,6 +28,11 @@ export interface TurnActionTarget {
  */
 export interface TurnActionController {
   setCurrent(target: TurnActionTarget | null): void;
+  /**
+   * Where a Turn sits in the Host's own Turn list, or `null` when the Host
+   * publishes none (official Codex Threads) or does not know this key.
+   */
+  hostTurnPosition(turnKey: string): { index: number; count: number } | null;
   view(input: { chinese: boolean; blocked: TurnActionBlock | null }): TurnActionView;
   activate(id: TurnActionId): void;
   confirm(): void;
@@ -35,6 +40,23 @@ export interface TurnActionController {
   /** Re-reads the thread-level truth from the Host. */
   refresh(): Promise<void>;
   dispose(): void;
+}
+
+/**
+ * Position of a Turn inside the Host's Turn list. Desktop virtualises long
+ * transcripts, so a DOM-derived "Turn 1/3" can describe a 22-Turn Thread; the
+ * Host list is the only honest denominator.
+ */
+export function hostTurnPositionOf(input: {
+  currentKey: string;
+  hostTurnIds: readonly string[] | null;
+}): { index: number; count: number } | null {
+  const ids = input.hostTurnIds;
+  if (!ids || ids.length === 0) return null;
+  const index = ids.findIndex(
+    (id) => turnKeyMatches(input.currentKey, id) || turnKeyMatches(id, input.currentKey),
+  );
+  return index >= 0 ? { index, count: ids.length } : null;
 }
 
 /**
@@ -84,6 +106,9 @@ export function createTurnActionController(options: {
   let inflightThreadId: string | null = null;
   let inspectGeneration = 0;
   let disposed = false;
+
+  const hostPosition = (turnKey: string): { index: number; count: number } | null =>
+    hostTurnPositionOf({ currentKey: turnKey, hostTurnIds });
 
   const laterTurns = (): number =>
     current
@@ -209,6 +234,7 @@ export function createTurnActionController(options: {
   };
 
   return {
+    hostTurnPosition: hostPosition,
     setCurrent(target) {
       const previous = current;
       current = target;

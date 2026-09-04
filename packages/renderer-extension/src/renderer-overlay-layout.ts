@@ -289,12 +289,20 @@ export function turnHeaderBox(input: {
 }
 
 /**
- * Which Turn the header describes: the last Turn whose top edge has passed
- * under the header, the last Turn when the transcript end is in view, the
- * first Turn otherwise. Rect-based on purpose: the transcript scroller is
- * `flex column-reverse`, where `scrollTop` is zero at the bottom and negative
+ * How far below the header's bottom edge a Turn may start and still count as
+ * the current one. It must exceed `scrollDeltaToTurn`'s gap, or a Turn the
+ * header itself scrolled to would resolve back to its predecessor and the
+ * index would refuse to follow the prompt button and the step arrows.
+ */
+export const CURRENT_TURN_PROBE = 24;
+
+/**
+ * Which Turn the header describes: the last Turn whose top edge has passed the
+ * probe line just under the header, the last Turn when the transcript end is in
+ * view, the first Turn otherwise. Rect-based on purpose: the transcript scroller
+ * is `flex column-reverse`, where `scrollTop` is zero at the bottom and negative
  * above it, so only element edges are trusted. A few pixels of hysteresis
- * keep the index from flapping while a boundary sits on the header edge.
+ * keep the index from flapping while a boundary sits on the probe line.
  */
 export function resolveCurrentTurn(input: {
   count: number;
@@ -303,27 +311,29 @@ export function resolveCurrentTurn(input: {
   headerBottom: number;
   previous: number | null;
   hysteresis?: number;
+  probe?: number;
 }): number | null {
   if (input.count <= 0) return null;
   const last = input.count - 1;
   if (input.atBottom) return last;
   const hysteresis = input.hysteresis ?? 6;
+  const line = input.headerBottom + (input.probe ?? CURRENT_TURN_PROBE);
   let low = 0;
   let high = last;
   // Turn tops ascend in document order: binary-search the last Turn whose top
-  // already sits at or above the header's bottom edge.
+  // already sits at or above the probe line.
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
-    if (input.topAt(middle) <= input.headerBottom) low = middle;
+    if (input.topAt(middle) <= line) low = middle;
     else high = middle - 1;
   }
-  const base = input.topAt(low) <= input.headerBottom ? low : 0;
+  const base = input.topAt(low) <= line ? low : 0;
   const previous = input.previous;
   if (previous !== null && previous >= 0 && previous <= last) {
-    if (base === previous + 1 && input.topAt(base) > input.headerBottom - hysteresis) {
+    if (base === previous + 1 && input.topAt(base) > line - hysteresis) {
       return previous;
     }
-    if (base === previous - 1 && input.topAt(previous) < input.headerBottom + hysteresis) {
+    if (base === previous - 1 && input.topAt(previous) < line + hysteresis) {
       return previous;
     }
   }
@@ -331,16 +341,19 @@ export function resolveCurrentTurn(input: {
 }
 
 /**
- * Whether the current Turn's prompt bubble has scrolled fully under the
- * header, so the header repeats the prompt. Once pinned it stays pinned until
- * the bubble clearly re-enters the viewport.
+ * Whether the current Turn's prompt bubble has left the transcript viewport,
+ * so the header repeats the prompt. The boundary is the scroller's own top
+ * edge, not the header's bottom: Desktop's app-shell header is transparent, so
+ * a bubble between the viewport top and the header still reads at full
+ * contrast and a header copy would duplicate it. Once pinned it stays pinned
+ * until the bubble clearly re-enters.
  */
 export function promptPinned(input: {
   promptBottom: number;
-  headerBottom: number;
+  viewportTop: number;
   previous: boolean;
 }): boolean {
-  return input.promptBottom <= input.headerBottom + (input.previous ? 8 : 2);
+  return input.promptBottom <= input.viewportTop + (input.previous ? 8 : 2);
 }
 
 /**

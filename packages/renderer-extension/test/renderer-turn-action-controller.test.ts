@@ -235,6 +235,23 @@ describe("Turn action controller", () => {
       method: "rollback",
       params: { threadId: "thread-1", numTurns: 2 },
     });
+    // The label follows the Host list too: a windowed DOM would say 3/3 here.
+    expect(h.controller.hostTurnPosition("c")).toEqual({ index: 2, count: 5 });
+    expect(h.controller.hostTurnPosition("history-content:turn:d")).toEqual({
+      index: 3,
+      count: 5,
+    });
+    expect(h.controller.hostTurnPosition("nope")).toBeNull();
+  });
+
+  it("has no Host position for an official Thread", async () => {
+    const h = harness({
+      keys: ["a", "b"],
+      inspection: { owner: "official", historyRedoAvailable: false },
+    });
+    h.controller.setCurrent({ threadId: "thread-1", turnKey: "a", turn: fakeTurn("first") });
+    await flush();
+    expect(h.controller.hostTurnPosition("a")).toBeNull();
   });
 
   it("drops a pending confirmation when the viewport moves to another Turn", () => {

@@ -7,13 +7,21 @@ export const TURN_HEADER_PANEL_ATTRIBUTE = "data-codexhost-turn-header-panel";
 /** Values: `prev` | `next`. */
 export const TURN_HEADER_STEP_ATTRIBUTE = "data-codexhost-turn-header-step";
 export const TURN_HEADER_WORKSPACE_ATTRIBUTE = "data-codexhost-turn-header-workspace";
+/** Row-1 host for the core workspace chip while the Turn row stays single-line. */
+export const TURN_HEADER_CORE_ATTRIBUTE = "data-codexhost-turn-header-core";
 
 const PROMPT_LINE_MAX_CHARS = 200;
 const NOTICE_MS = 4_000;
 
 export interface TurnHeaderRowState {
+  /** Turns the DOM window holds; the arrows can only reach these. */
   count: number;
   index: number | null;
+  /**
+   * Position to print. The Host's Turn list when it publishes one, because a
+   * virtualised transcript would otherwise label a 22-Turn Thread "Turn 1/3".
+   */
+  position: { index: number; count: number } | null;
   pinned: boolean;
   nativeEdit: boolean;
   busy: boolean;
@@ -32,6 +40,8 @@ export interface TurnHeaderView {
   root: HTMLElement;
   cluster: HTMLElement;
   workspace: HTMLElement;
+  /** Row-1 slot the workspace row uses when it has nothing but the core chip. */
+  core: HTMLElement;
   paintRow(state: TurnHeaderRowState): void;
   notify(text: string): void;
   collapsePanel(): void;
@@ -105,7 +115,11 @@ export function createTurnHeaderView(
   const workspace = ownerDocument.createElement("div");
   workspace.className = "codexhost-turn-header-row codexhost-workspace-surface";
   workspace.setAttribute(TURN_HEADER_WORKSPACE_ATTRIBUTE, "empty");
-  row.append(previous, index, next, prompt, spacer, expand, cluster);
+  const core = ownerDocument.createElement("div");
+  core.className = "codexhost-turn-header-core codexhost-workspace-surface";
+  core.setAttribute(TURN_HEADER_CORE_ATTRIBUTE, "true");
+  core.hidden = true;
+  row.append(previous, index, next, prompt, spacer, expand, core, cluster);
   root.append(row, workspace, panel, notice);
   let promptExpanded = false;
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -134,25 +148,38 @@ export function createTurnHeaderView(
     root,
     cluster,
     workspace,
+    core,
     paintRow(state) {
       const zh = state.chinese;
+      const position =
+        state.position ??
+        (state.index === null ? null : { index: state.index, count: state.count });
       if (!state.reloading) {
         index.textContent =
-          state.index === null
+          position === null
             ? zh
               ? "还没有轮次"
               : "No turns yet"
             : zh
-              ? `第 ${state.index + 1}/${state.count} 轮`
-              : `Turn ${state.index + 1}/${state.count}`;
+              ? `第 ${position.index + 1}/${position.count} 轮`
+              : `Turn ${position.index + 1}/${position.count}`;
       }
       root.setAttribute("data-state", state.reloading ? "reloading" : "ready");
+      // One Turn has nowhere to step: the arrows would be permanent dead weight.
+      // A reloading transcript reports zero Turns for a moment; keep them then.
+      const singleTurn =
+        !state.reloading && state.count < 2 && (position?.count ?? state.count) < 2;
+      previous.hidden = singleTurn;
+      next.hidden = singleTurn;
       previous.disabled = state.index === null || state.index <= 0;
       next.disabled = state.index === null || state.index >= state.count - 1;
       previous.setAttribute("aria-label", zh ? "上一轮" : "Previous turn");
       next.setAttribute("aria-label", zh ? "下一轮" : "Next turn");
       root.setAttribute("data-native-edit", state.nativeEdit ? "true" : "false");
       root.setAttribute("data-streaming", state.busy ? "true" : "false");
+      // While the row carries the prompt it belongs to the prompt; the core
+      // workspace chip fills the row only when there is no prompt to show.
+      root.setAttribute("data-pinned", state.pinned && !state.nativeEdit ? "true" : "false");
       if (state.nativeEdit) {
         prompt.hidden = false;
         prompt.textContent = zh ? "正在编辑本轮" : "Editing this turn";
@@ -168,7 +195,12 @@ export function createTurnHeaderView(
         prompt.title = zh ? "回到本轮开始" : "Scroll to this turn";
         expand.setAttribute("aria-label", zh ? "展开完整提示词" : "Show the full prompt");
         panel.textContent = state.promptText;
-        expand.hidden = false;
+        // Only a prompt the single line actually clipped has anything to expand.
+        // Measured with the chevron gone so the answer cannot depend on itself.
+        expand.hidden = true;
+        const clipped = prompt.scrollWidth > prompt.clientWidth + 1;
+        expand.hidden = !clipped;
+        if (!clipped) collapsePanel();
         spacer.hidden = true;
         return;
       }

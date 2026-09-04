@@ -458,17 +458,35 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 8)");
   await expect(headerIndex).toHaveText("Turn 2/3");
   await expect(headerPrompt).toBeHidden();
+  // Under the header but still inside the viewport: the bubble reads for itself
+  // through Desktop's transparent chrome, so the header must not repeat it.
   await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 60)");
+  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(headerPrompt).toBeHidden();
+  await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 200)");
   await expect(headerIndex).toHaveText("Turn 2/3");
   await expect(headerPrompt).toHaveText("second prompt");
   expect(await header.boundingBox()).toEqual(headerBox);
+  // Clicking the prompt returns to this Turn's start and stays on this Turn.
+  await headerPrompt.click();
+  await page.waitForTimeout(800);
+  await expect(headerIndex).toHaveText("Turn 2/3");
+  expect(
+    await page.evaluate(() => {
+      const node = document.querySelector('[data-turn-key="history-content:turn:turn-b"]');
+      const bar = document.querySelector("[data-codexhost-turn-header]");
+      if (!node || !bar) return null;
+      return Math.round(node.getBoundingClientRect().top - bar.getBoundingClientRect().bottom);
+    }),
+  ).toBe(8);
+  await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 200)");
   // One later Turn on a last-turn-only Thread: rollback is offered behind a confirmation.
   await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeEnabled();
   await page.locator('[data-codexhost-turn-action="rollback"]').click();
   await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(1);
   await page.keyboard.press("Escape");
   await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(0);
-  await page.evaluate("globalThis.scrollTurnUnderHeader('turn-c', 60)");
+  await page.evaluate("globalThis.scrollTurnUnderHeader('turn-c', 200)");
   await expect(headerIndex).toHaveText("Turn 3/3");
   await expect(headerPrompt).toHaveText("third prompt");
   // Redo is disabled until the Host reports a Redo slot.
@@ -519,29 +537,51 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(stepPrev).toBeDisabled();
   await stepNext.click();
   await expect(headerIndex).toHaveText("Turn 2/3");
-  await page.waitForTimeout(700);
+  // The override expires after 600ms; the viewport rule must agree with it,
+  // or the arrows would silently snap back and look dead.
+  await page.waitForTimeout(800);
+  await expect(headerIndex).toHaveText("Turn 2/3");
   await page.evaluate("globalThis.scrollTranscriptToBottom()");
   await expect(headerIndex).toHaveText("Turn 3/3");
 
   // The workspace row lives in the header: nothing floats above the Composer any more.
   const workspace = header.locator("[data-codexhost-turn-header-workspace]");
+  const coreSlot = header.locator("[data-codexhost-turn-header-core]");
   await expect(page.locator("[data-codexhost-workspace-bar]")).toHaveCount(0);
   await expect(page.locator("[data-codexhost-workspace-reserve]")).toHaveCount(0);
   const nativeChanges = page.locator('[data-slot="thread-summary-panel-item-button"]');
   const nativeReview = page.locator('[data-tab-id="diff"]');
   const composer = page.locator("[data-codex-composer-root]");
-  // The core workspace chip is always present once the Host knows the cwd,
-  // even before any file changed; native diff controls stay until the row
-  // has a file disclosure to replace them with.
-  await expect(workspace).toHaveAttribute("data-codexhost-turn-header-workspace", "core");
+  // The core workspace chip is always present once the Host knows the cwd, but
+  // with nothing changed it rides in the Turn row and the header stays a single
+  // line; native diff controls stay until the row has a file disclosure to
+  // replace them with.
+  await expect(workspace).toHaveAttribute("data-codexhost-turn-header-workspace", "empty");
+  await expect(workspace).toBeHidden();
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
   await expect(page.locator('[data-codexhost-workspace-core="true"]')).toContainText("app-feature");
   await expect(page.locator("[data-codexhost-workspace-files]")).toHaveCount(0);
   await expect(nativeChanges).toBeVisible();
   await expect(nativeReview).toBeVisible();
+  // Without a pinned prompt the chip fills the row, so the header is never
+  // an empty strip; with one, the chip steps aside and the prompt takes it.
+  const headerSingleRow = await header.boundingBox();
+  await page.evaluate("globalThis.scrollTurnUnderHeader('turn-c', 8)");
+  await expect(headerPrompt).toBeHidden();
+  await expect(header).toHaveAttribute("data-pinned", "false");
+  await expect(coreSlot).toBeVisible();
+  await page.evaluate("globalThis.scrollTranscriptToBottom()");
+  await expect(headerPrompt).toHaveText("third prompt");
+  await expect(header).toHaveAttribute("data-pinned", "true");
+  await expect(coreSlot).toBeHidden();
+  expect((await header.boundingBox())?.height).toBe(headerSingleRow?.height);
 
   await page.evaluate("globalThis.emitWorkspaceFiles()");
   await expect(workspace).toHaveAttribute("data-codexhost-turn-header-workspace", "files");
+  await expect(workspace).toBeVisible();
+  await expect(coreSlot).toBeHidden();
+  // The second row costs exactly one line, and only once there is a change.
+  const headerBoxWithFiles = await header.boundingBox();
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
   await expect(workspace).toContainText("app-feature");
   await expect(workspace).toContainText("main");
@@ -560,7 +600,7 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
     ),
   ).toBe(true);
   // The row never changes the header's height: dropdowns hang below it.
-  expect((await header.boundingBox())?.height).toBe(headerBox?.height);
+  expect((await header.boundingBox())?.height).toBe(headerBoxWithFiles?.height);
   await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
   await page.locator(".codexhost-workspace-files-toggle").click();
   const fileRow = page.locator("[data-codexhost-workspace-file]");
@@ -664,11 +704,11 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   // The core chip yields width before more roots are hidden; the line never grows.
   await expect.poll(() => visibleRows.count()).toBeLessThanOrEqual(visibleAtFullWidth);
   await expect(page.locator('[data-codexhost-workspace-core="true"]')).toBeVisible();
-  expect((await header.boundingBox())?.height).toBe(headerBox?.height);
+  expect((await header.boundingBox())?.height).toBe(headerBoxWithFiles?.height);
   await more.hover();
   await expect(page.locator(".codexhost-workspace-more-list")).toBeVisible();
   await expect(page.locator("[data-codexhost-workspace-more-row]").first()).toBeVisible();
-  expect((await header.boundingBox())?.height).toBe(headerBox?.height);
+  expect((await header.boundingBox())?.height).toBe(headerBoxWithFiles?.height);
   await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
