@@ -83,6 +83,7 @@ export type ClaudeTurnEvent =
       callId: string;
       toolName: string;
       outputText?: string;
+      structuredResult?: JsonValue;
       isError: boolean;
       fileChange?: ClaudeNativeFileChange;
     }

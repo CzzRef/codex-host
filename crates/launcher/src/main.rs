@@ -4,6 +4,7 @@ mod active_update;
 mod compatibility;
 mod desktop_attachment;
 mod installation_layout;
+mod native_harness_broker;
 mod runtime_instance;
 #[cfg(target_os = "linux")]
 mod secure_storage;
@@ -51,6 +52,7 @@ use desktop_attachment::{
 };
 use installation_layout::InstalledResources;
 use installation_layout::source_checkout_host_runtime;
+use native_harness_broker::run_native_harness_broker_cli;
 use runtime_instance::{
     StartupObservation, StartupState, classify_startup, default_descriptor_path, read_descriptor,
     remove_matching_descriptor,
@@ -123,7 +125,7 @@ impl Error for UnmanagedDesktopConflict {}
 
 fn usage() {
     eprintln!(
-        "usage:\n  codexhost\n  codexhost inspect [--custom-install <absolute-directory>]\n  codexhost launch [--shim <absolute-file>] [--node <absolute-file>] [--host-runtime <absolute-file>] [--desktop-controller <absolute-file>] [--renderer <absolute-file>] [--pi <absolute-file>] [--custom-install <absolute-directory>]\n  codexhost delegate --help\n  codexhost harness inspect ...\n  codexhost delegate start ...\n  codexhost thread send|cancel|read|wait|list ..."
+        "usage:\n  codexhost\n  codexhost inspect [--custom-install <absolute-directory>]\n  codexhost launch [--shim <absolute-file>] [--node <absolute-file>] [--host-runtime <absolute-file>] [--desktop-controller <absolute-file>] [--renderer <absolute-file>] [--pi <absolute-file>] [--custom-install <absolute-directory>]\n  codexhost broker install|status|stop|uninstall\n  codexhost delegate --help\n  codexhost harness inspect ...\n  codexhost delegate start ...\n  codexhost thread send|cancel|read|wait|list ..."
     );
 }
 
@@ -142,36 +144,51 @@ fn source_checkout_node() -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
+/// Node / Host Runtime pair for the delegation CLI.
+///
+/// `InstalledResources::from_executable` already recognises a
+/// `<root>/target/{debug,release}` checkout and honours the
+/// `CODEXHOST_HOST_NODE_PATH` / `CODEXHOST_HOST_RUNTIME_PATH` overrides, but it
+/// resolves paths without checking them. A Launcher built into a source
+/// checkout whose Host Runtime bundle is absent (or whose Cargo target
+/// directory is not named `target`) used to die with a bare ENOENT — which
+/// reached callers as an empty Thread list rather than a broken CLI. `npm
+/// start` passes those paths to `launch` explicitly; the delegation CLI has no
+/// flags to carry them, so it verifies the bundle here and falls back to the
+/// development layout before reporting a clear error.
+fn delegation_cli_runtime(
+    executable: &Path,
+    resources: InstalledResources,
+) -> Result<(PathBuf, PathBuf), Box<dyn Error>> {
+    let host_runtime = if resources.host_runtime.is_file() {
+        resources.host_runtime
+    } else if let Some(host_runtime) = source_checkout_host_runtime(executable) {
+        host_runtime
+    } else {
+        return Err(format!(
+            "codexhost delegation CLI needs a built Host Runtime; \
+             neither {} nor a source checkout beside {} provides one",
+            resources.host_runtime.display(),
+            executable.display()
+        )
+        .into());
+    };
+    // A bundled runtime wins; otherwise take the explicit override or the first
+    // `node` on `PATH`, and let the spawn resolve a bare `node` as a last resort.
+    let node = if resources.node.is_file() {
+        resources.node
+    } else {
+        source_checkout_node().unwrap_or(resources.node)
+    };
+    Ok((node, host_runtime))
+}
+
 fn run_delegation_cli(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     let executable = env::current_exe()?.canonicalize()?;
     let resources = InstalledResources::from_executable(&executable)?;
-    // A Launcher built into a source checkout has no install tree beside it, so
-    // the installed node/Host Runtime pair does not exist and every delegation
-    // call died with a bare ENOENT — which reached callers as an empty Thread
-    // list rather than a broken CLI. `npm start` passes those paths to `launch`
-    // explicitly; the delegation CLI has no flags to carry them, so it falls
-    // back to the same development layout here.
-    let (node, host_runtime) = if resources.host_runtime.is_file() {
-        (resources.node, resources.host_runtime)
-    } else {
-        match (
-            source_checkout_node(),
-            source_checkout_host_runtime(&executable),
-        ) {
-            (Some(node), Some(host_runtime)) => (node, host_runtime),
-            _ => {
-                return Err(format!(
-                    "codexhost delegation CLI needs a built Host Runtime; \
-                     neither {} nor a source checkout beside {} provides one",
-                    resources.host_runtime.display(),
-                    executable.display()
-                )
-                .into());
-            }
-        }
-    };
+    let (node, host_runtime) = delegation_cli_runtime(&executable, resources)?;
     let status = Command::new(&node)
-        .arg(&host_runtime)
+        .arg(node_entrypoint_path(&host_runtime))
         .arg("--codexhost-delegation-cli")
         .args(arguments)
         .env(CODEXHOST_CLI_PATH_ENV, &executable)
@@ -461,8 +478,8 @@ fn desktop_controller_command(
     let mut command = Command::new(&options.node);
     command
         .arg(node_entrypoint_path(&options.desktop_controller))
-        .arg("--inspector-endpoint")
-        .arg(&control.inspector_endpoint)
+        .arg("--renderer-cdp-endpoint")
+        .arg(&control.renderer_cdp_endpoint)
         .arg("--renderer")
         .arg(&options.renderer_extension)
         .arg("--default-agent")
@@ -1136,7 +1153,7 @@ fn launch(
         let result = supervise_desktop(
             &installation,
             &options,
-            std::slice::from_ref(&control.inspector_argument),
+            &control.renderer_cdp_arguments,
             &environment,
             &control,
             &descriptor_path,
@@ -1237,7 +1254,7 @@ fn launch(
     supervise_desktop(
         &installation,
         &options,
-        std::slice::from_ref(&control.inspector_argument),
+        &control.renderer_cdp_arguments,
         &environment,
         &control,
         &descriptor_path,
@@ -1271,6 +1288,7 @@ fn run(arguments: &[String]) -> Result<(), Box<dyn Error>> {
             inspect(custom_install_root.as_deref())
         }
         Some("launch") => launch(parse_launch_options(&arguments[1..])?, false),
+        Some("broker") => run_native_harness_broker_cli(&arguments[1..]),
         Some("harness") | Some("delegate") | Some("thread") => run_delegation_cli(arguments),
         _ => {
             usage();
@@ -1545,15 +1563,18 @@ mod tests {
 
     fn runtime_control() -> RuntimeControl {
         RuntimeControl {
-            inspector_endpoint: "http://127.0.0.1:43123".into(),
-            inspector_argument: "--inspect=127.0.0.1:43123".into(),
+            renderer_cdp_endpoint: "http://127.0.0.1:43123".into(),
+            renderer_cdp_arguments: [
+                "--remote-debugging-address=127.0.0.1".into(),
+                "--remote-debugging-port=43123".into(),
+            ],
             attachment_port: 43124,
             nonce: "0123456789abcdef0123456789abcdef".into(),
         }
     }
 
     #[test]
-    fn production_controller_uses_private_node_and_loopback_inspector() {
+    fn production_controller_uses_private_node_and_loopback_renderer_cdp() {
         let options = resolved_options();
         let command = desktop_controller_command(&options, &runtime_control(), &[]);
         assert_eq!(command.get_program(), "/opt/node");
@@ -1561,7 +1582,7 @@ mod tests {
             command.get_args().collect::<Vec<_>>(),
             [
                 "/opt/desktop-controller.mjs",
-                "--inspector-endpoint",
+                "--renderer-cdp-endpoint",
                 "http://127.0.0.1:43123",
                 "--renderer",
                 "/opt/renderer-extension.js",
@@ -1575,26 +1596,26 @@ mod tests {
         );
 
         let control = allocate_runtime_control().expect("ephemeral runtime control");
-        assert!(control.inspector_endpoint.starts_with("http://127.0.0.1:"));
-        let inspector_port = control
-            .inspector_endpoint
-            .rsplit(':')
-            .next()
-            .expect("Inspector endpoint port")
-            .parse::<u16>()
-            .expect("numeric Inspector endpoint port");
-        assert_ne!(inspector_port, control.attachment_port);
         assert!(
             control
-                .inspector_argument
-                .to_string_lossy()
-                .starts_with("--inspect=127.0.0.1:")
+                .renderer_cdp_endpoint
+                .starts_with("http://127.0.0.1:")
         );
-        assert!(
-            !control
-                .inspector_argument
-                .to_string_lossy()
-                .contains("remote-debugging")
+        let renderer_cdp_port = control
+            .renderer_cdp_endpoint
+            .rsplit(':')
+            .next()
+            .expect("Renderer CDP endpoint port")
+            .parse::<u16>()
+            .expect("numeric Renderer CDP endpoint port");
+        assert_ne!(renderer_cdp_port, control.attachment_port);
+        assert_eq!(
+            control.renderer_cdp_arguments[0].to_string_lossy(),
+            "--remote-debugging-address=127.0.0.1"
+        );
+        assert_eq!(
+            control.renderer_cdp_arguments[1].to_string_lossy(),
+            format!("--remote-debugging-port={renderer_cdp_port}")
         );
         let environment = desktop_environment(
             &options,

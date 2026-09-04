@@ -4,11 +4,15 @@ import {
 } from "@codexhost/shared-contracts";
 import { describe, expect, it } from "vitest";
 
-import { rendererPermissionModePresentation } from "../src/renderer-harness-localization.js";
+import {
+  rendererHarnessMessages,
+  rendererPermissionModePresentation,
+} from "../src/renderer-harness-localization.js";
 import { isExternalPermissionModePickerVisible } from "../src/renderer-composer-dom.js";
 import {
   isPermissionModeControlReady,
   rendererPermissionModeLabel,
+  rendererPermissionModeMenuPlacement,
 } from "../src/renderer-permission-mode-picker.js";
 
 const catalog = harnessPermissionModeCatalogSchema.parse({
@@ -25,6 +29,26 @@ const catalog = harnessPermissionModeCatalogSchema.parse({
 });
 
 describe("Renderer Permission Mode picker presentation", () => {
+  it("normalizes menu geometry against the Codex window zoom", () => {
+    expect(
+      rendererPermissionModeMenuPlacement(
+        { left: 800, top: 1_312 },
+        { width: 1_920, height: 1_440 },
+        1.6,
+      ),
+    ).toEqual({ width: 320, left: 500, bottom: 86 });
+  });
+
+  it("falls back to unscaled menu geometry when the Codex window zoom is unavailable", () => {
+    expect(
+      rendererPermissionModeMenuPlacement(
+        { left: 500, top: 820 },
+        { width: 1_200, height: 900 },
+        Number.NaN,
+      ),
+    ).toEqual({ width: 320, left: 500, bottom: 86 });
+  });
+
   it("is ready only for an Adapter-confirmed catalog entry", () => {
     const selected = harnessPermissionModeIdSchema.parse("default");
     expect(isPermissionModeControlReady({ status: "ready", catalog, selected })).toBe(true);
@@ -128,6 +152,25 @@ describe("Renderer Permission Mode picker presentation", () => {
     expect(rendererPermissionModeLabel({ status: "loading" }, "zh-CN")).toBe("正在加载权限...");
     expect(rendererPermissionModeLabel({ status: "error", error: "offline" }, "zh-CN")).toBe(
       "权限不可用",
+    );
+  });
+
+  it("keeps the current mode label when selection is locked at create", () => {
+    const selected = harnessPermissionModeIdSchema.parse("default");
+    expect(
+      rendererPermissionModeLabel({
+        status: "ready",
+        catalog,
+        selected,
+        selectionLocked: true,
+        selectionLockedReason: rendererHarnessMessages("en").permissionModeFixedAtCreate,
+      }),
+    ).toBe("Default");
+    expect(rendererHarnessMessages("en").permissionModeFixedAtCreate).toBe(
+      "Grok fixes its Permission Mode when the Session is created. Start a new Thread to change it.",
+    );
+    expect(rendererHarnessMessages("zh-CN").permissionModeFixedAtCreate).toBe(
+      "Grok 的权限模式在会话创建时确定，如需更改请新建会话",
     );
   });
 });

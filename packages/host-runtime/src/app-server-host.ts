@@ -25,7 +25,6 @@ import {
   harnessInspectParamsSchema,
   harnessConfigurationStateSchema,
   harnessInspectionSchema,
-  harnessModelRefSchema,
   harnessModelSelectionStateSchema,
   harnessThinkingOptionIdSchema,
   hostItemIdSchema,
@@ -43,6 +42,7 @@ import {
   threadThinkingSelectParamsSchema,
   threadOwnershipListParamsSchema,
   threadOwnershipListResultSchema,
+  permissionModeFixedAtCreate,
   updateCheckResultSchema,
   updateEmptyParamsSchema,
   updateStartResultSchema,
@@ -123,6 +123,11 @@ import type {
 import { projectDelegationThreadSnapshot } from "./delegation-snapshot.js";
 import { OfficialRequestBroker } from "./official-request-broker.js";
 import {
+  canonicalizeOfficialCodexModelRef,
+  decodeOfficialCodexModelRef,
+  encodeOfficialCodexModelRef,
+} from "./official-codex-model-ref.js";
+import {
   spawnOfficialAppServerConnection,
   type OfficialAppServerConnection,
 } from "./official-app-server-connection.js";
@@ -140,6 +145,8 @@ const THREAD_WORKSPACE_UPDATED_METHOD = "codexhost/thread/workspace/updated";
 // Native Codex account quota is still pulled through its official API; keep
 // that reading briefly cached so concurrent Composer inspections coalesce.
 const OFFICIAL_RATE_LIMIT_TTL_MS = 15_000;
+const OFFICIAL_OUTPUT_DRAIN_TIMEOUT_MS = 250;
+const NEVER_SETTLES = new Promise<never>(() => undefined);
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -288,6 +295,7 @@ export function officialEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEn
     "CODEXHOST_PI_COMMAND",
     "CODEXHOST_ENABLE_CLAUDE_CODE",
     "CODEXHOST_CLAUDE_COMMAND",
+    "CODEXHOST_OPENCODE_COMMAND",
     "CODEXHOST_STOCK_CODEX_PATH",
     "CODEXHOST_LAUNCHER_PID",
     "CODEXHOST_LAUNCHER_EXECUTABLE",
@@ -337,10 +345,14 @@ function approvalServerName(harnessId: ExternalHarnessId): string {
       return "DeepSeek Harness";
     case "grok":
       return "Grok";
+    case "opencode":
+      return "OpenCode";
     case "omp":
       return "Oh My Pi";
     case "cursor":
       return "Cursor";
+    case "antigravity":
+      return "Antigravity CLI";
   }
 }
 
@@ -485,6 +497,8 @@ export class AppServerHost {
   #delegationCoordinator: HarnessDelegationCoordinator;
   #unregisterDelegationApi: (() => void) | undefined;
   #activeOfficialTurns = new Map<string, string>();
+  #pendingOfficialTurnStarts = new Map<unknown, string>();
+  #activeWorkDrainWaiters = new Set<() => void>();
   #pendingOfficialDelegationThreads = new Set<string>();
   #pendingOfficialTerminalStatuses = new Map<string, DelegationStartResult["status"]>();
   #officialUsageByThread = new Map<string, HostUsage>();
@@ -508,6 +522,8 @@ export class AppServerHost {
     });
   });
   #titleOverlayWatch: TitleOverlayWatch;
+  #drainActiveWorkOnInputEnd = false;
+  #desktopInputEnded = false;
 
   constructor(options: AppServerHostOptions) {
     this.#options = {
@@ -591,8 +607,17 @@ export class AppServerHost {
     this.#closeRequested = true;
     this.#titleOverlayWatch.dispose();
     this.#workspaceWatch.dispose();
+    this.#signalActiveWorkChanged();
     this.#options.desktopInput.destroy();
     this.#terminateOfficial();
+  }
+
+  disconnect(): void {
+    if (this.#closeRequested || this.#desktopInputEnded || this.#drainActiveWorkOnInputEnd) return;
+    this.#drainActiveWorkOnInputEnd = true;
+    const desktopInput = this.#options.desktopInput as Readable & { end?: () => void };
+    if (typeof desktopInput.end === "function") desktopInput.end();
+    else desktopInput.destroy();
   }
 
   async run(): Promise<number> {
@@ -628,9 +653,26 @@ export class AppServerHost {
     this.#official = official;
     const exited = official.closed;
     if (this.#closeRequested) this.#terminateOfficial();
+    const forwardDesktop = this.#forwardDesktop();
+    const forwardOfficial = this.#forwardOfficial();
+    const officialOutput = forwardOfficial.then(() => {
+      if (!this.#closeRequested && !this.#desktopInputEnded) {
+        throw new Error("official app-server output closed before Desktop input ended");
+      }
+    });
+    const officialExit = exited.then((result) => {
+      if (!this.#closeRequested && !this.#desktopInputEnded) {
+        const status = result.error
+          ? result.error.message
+          : result.signal
+            ? `signal ${result.signal}`
+            : `code ${String(result.code ?? "unknown")}`;
+        throw new Error(`official app-server exited before Desktop input ended (${status})`);
+      }
+      return result;
+    });
     try {
-      await Promise.all([this.#forwardDesktop(), this.#forwardOfficial()]);
-      const result = await exited;
+      const [, , result] = await Promise.all([forwardDesktop, officialOutput, officialExit]);
       if (result.error) throw result.error;
       if (result.signal) {
         if (this.#closeRequested) return 0;
@@ -639,8 +681,24 @@ export class AppServerHost {
       return result.code ?? 1;
     } catch (error) {
       if (!this.#closeRequested) this.#diagnose(error);
+      this.#options.desktopInput.destroy();
       this.#terminateOfficial();
-      await exited.catch(() => undefined);
+      let forwardingSettled = false;
+      const forwarding = Promise.allSettled([forwardDesktop, forwardOfficial]).then(() => {
+        forwardingSettled = true;
+      });
+      let drainTimer: NodeJS.Timeout | null = null;
+      const drainTimeout = new Promise<void>((resolve) => {
+        drainTimer = setTimeout(resolve, OFFICIAL_OUTPUT_DRAIN_TIMEOUT_MS);
+      });
+      await Promise.race([forwarding, drainTimeout]);
+      if (drainTimer) clearTimeout(drainTimer);
+      if (!forwardingSettled) {
+        official.stdin.destroy();
+        official.stdout.destroy();
+        this.#options.desktopOutput.destroy();
+      }
+      void exited.catch(() => undefined);
       return this.#closeRequested ? 0 : 1;
     } finally {
       const threads = this.#externalRuntime.values();
@@ -661,6 +719,7 @@ export class AppServerHost {
       }
       this.#officialRequestBroker.failAll(new Error("codexhost Host Runtime closed"));
       this.#externalRuntime.clear();
+      this.#pendingOfficialTurnStarts.clear();
       this.#routeObservationTracker.clear();
       this.#unregisterDelegationApi?.();
       this.#unregisterDelegationApi = undefined;
@@ -675,6 +734,49 @@ export class AppServerHost {
     const official = this.#official;
     if (!official) return;
     official.close();
+  }
+
+  #hasActiveWork(): boolean {
+    return (
+      this.#pendingOfficialTurnStarts.size > 0 ||
+      this.#activeOfficialTurns.size > 0 ||
+      this.#runningSubagentsByParent.size > 0 ||
+      this.#externalRuntime
+        .values()
+        .some((thread) => thread.running || thread.activeTurnId !== null)
+    );
+  }
+
+  async #waitForActiveWorkToDrain(): Promise<void> {
+    while (!this.#closeRequested && this.#hasActiveWork()) {
+      await new Promise<void>((resolve) => this.#activeWorkDrainWaiters.add(resolve));
+    }
+  }
+
+  #signalActiveWorkChanged(): void {
+    if (!this.#closeRequested && this.#hasActiveWork()) return;
+    const waiters = [...this.#activeWorkDrainWaiters];
+    this.#activeWorkDrainWaiters.clear();
+    for (const resolve of waiters) resolve();
+  }
+
+  #observeOfficialTurnStartResponse(value: JsonValue): void {
+    if (!isRecord(value) || !("id" in value)) return;
+    const threadId = this.#pendingOfficialTurnStarts.get(value.id);
+    if (!threadId) return;
+    this.#pendingOfficialTurnStarts.delete(value.id);
+    const result = isRecord(value.result) ? value.result : null;
+    const turn = result && isRecord(result.turn) ? result.turn : null;
+    if (turn && typeof turn.id === "string") {
+      this.#activeOfficialTurns.set(threadId, turn.id);
+    }
+    this.#signalActiveWorkChanged();
+  }
+
+  #forgetPendingOfficialTurnStarts(threadId: string): void {
+    for (const [requestId, pendingThreadId] of this.#pendingOfficialTurnStarts) {
+      if (pendingThreadId === threadId) this.#pendingOfficialTurnStarts.delete(requestId);
+    }
   }
 
   async #forwardDesktop(): Promise<void> {
@@ -984,6 +1086,9 @@ export class AppServerHost {
           await this.#startExternalTurn(request, resolution.thread);
           continue;
         }
+        if (typeof threadId === "string") {
+          this.#pendingOfficialTurnStarts.set(request.id, threadId);
+        }
       }
       if (request.method === "turn/interrupt") {
         const params = requestObject(request);
@@ -1129,20 +1234,38 @@ export class AppServerHost {
           continue;
         }
       }
-      await writeFrame(official.stdin, frame);
+      try {
+        await writeFrame(official.stdin, frame);
+      } catch (error) {
+        if (request.method === "turn/start") {
+          this.#pendingOfficialTurnStarts.delete(request.id);
+          this.#signalActiveWorkChanged();
+        }
+        throw error;
+      }
     }
-    official.stdin.end();
+    this.#desktopInputEnded = true;
+    if (this.#drainActiveWorkOnInputEnd) await this.#waitForActiveWorkToDrain();
+    if (!this.#closeRequested) official.stdin.end();
   }
 
   async #forwardOfficial(): Promise<void> {
     const official = this.#official;
     if (!official) throw new Error("official app-server is unavailable");
     try {
-      for await (const frame of readLfFrames(official.stdout)) {
+      const frames = readLfFrames(official.stdout)[Symbol.asyncIterator]();
+      let current = await frames.next();
+      while (!current.done) {
+        const frame = current.value;
+        const following = frames.next();
         const parsed = parseJsonFrame(frame);
+        this.#observeOfficialTurnStartResponse(parsed);
         if (isRecord(parsed) && parsed.method === "account/updated")
           this.#resetOfficialUsageState();
-        if (this.#officialRequestBroker.handle(parsed)) continue;
+        if (this.#officialRequestBroker.handle(parsed)) {
+          current = await following;
+          continue;
+        }
         const tokenUsage = observeCodexTokenUsage(parsed);
         if (tokenUsage) {
           const previous = this.#officialUsageByThread.get(tokenUsage.threadId);
@@ -1163,7 +1286,12 @@ export class AppServerHost {
           this.#diagnose(error);
         }
         this.#routeObservationTracker.bindOfficialResponse(parsed);
-        await this.#writer.frame(frame);
+        const prematureOutputEnd = following.then((result) => {
+          if (!result.done || this.#closeRequested || this.#desktopInputEnded) return NEVER_SETTLES;
+          throw new Error("official app-server output closed before Desktop input ended");
+        });
+        await Promise.race([this.#writer.frame(frame), prematureOutputEnd]);
+        current = await following;
       }
     } finally {
       this.#officialRequestBroker.failAll(new Error("official app-server output closed"));
@@ -1175,11 +1303,15 @@ export class AppServerHost {
     const params = value.params;
     if (value.method === "turn/started" && typeof params.threadId === "string") {
       const turn = isRecord(params.turn) ? params.turn : null;
-      if (turn && typeof turn.id === "string")
+      if (turn && typeof turn.id === "string") {
+        this.#forgetPendingOfficialTurnStarts(params.threadId);
         this.#activeOfficialTurns.set(params.threadId, turn.id);
+      }
     }
     if (value.method === "turn/completed" && typeof params.threadId === "string") {
+      this.#forgetPendingOfficialTurnStarts(params.threadId);
       this.#activeOfficialTurns.delete(params.threadId);
+      this.#signalActiveWorkChanged();
       const delegation = await this.#repository.getDelegationByChild(
         hostThreadIdSchema.parse(params.threadId),
       );
@@ -1263,7 +1395,7 @@ export class AppServerHost {
         : [];
       return [
         {
-          ref: harnessModelRefSchema.parse({ id: candidate.model }),
+          ref: encodeOfficialCodexModelRef(candidate.model),
           label:
             typeof candidate.displayName === "string" && candidate.displayName.trim()
               ? candidate.displayName
@@ -1277,7 +1409,7 @@ export class AppServerHost {
     );
     const defaultModel =
       isRecord(defaultEntry) && typeof defaultEntry.model === "string"
-        ? harnessModelRefSchema.parse({ id: defaultEntry.model })
+        ? encodeOfficialCodexModelRef(defaultEntry.model)
         : undefined;
     return {
       harnessId: input.harnessId,
@@ -1293,6 +1425,7 @@ export class AppServerHost {
             selectModel: models.length > 0,
             selectThinkingOption: thinkingById.size > 0,
             selectPermissionMode: false,
+            permissionModeScope: "live",
           },
           history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
         },
@@ -1303,12 +1436,19 @@ export class AppServerHost {
   async #startOfficialDelegation(
     input: DelegationStartInput & { parentThreadId: string },
   ): Promise<DelegationStartResult> {
+    let requestedModel: HarnessModelRef | undefined;
+    try {
+      requestedModel = input.model ? canonicalizeOfficialCodexModelRef(input.model) : undefined;
+    } catch {
+      throw new DelegationControlError("INVALID_ARGUMENT", "Official Model Ref is invalid");
+    }
+    const nativeModelId = requestedModel ? decodeOfficialCodexModelRef(requestedModel) : undefined;
     const digest = createHash("sha256")
       .update(
         JSON.stringify({
           task: input.task,
           cwd: input.cwd,
-          modelId: input.model?.id ?? null,
+          modelId: requestedModel?.id ?? null,
           thinkingOptionId: input.thinkingOptionId ?? null,
         }),
       )
@@ -1346,7 +1486,7 @@ export class AppServerHost {
         },
       };
     }
-    if (input.model || input.thinkingOptionId) {
+    if (requestedModel || input.thinkingOptionId) {
       const inspected = await this.#inspectOfficialDelegationTarget({
         harnessId: "codex",
         cwd: input.cwd,
@@ -1358,9 +1498,9 @@ export class AppServerHost {
         );
       }
       if (
-        input.model &&
+        requestedModel &&
         !inspected.inspection.catalog.models.some(
-          (candidate) => candidate.ref.id === input.model?.id,
+          (candidate) => candidate.ref.id === requestedModel.id,
         )
       ) {
         throw new DelegationControlError("INVALID_ARGUMENT", "Official Model is unavailable", {
@@ -1368,7 +1508,7 @@ export class AppServerHost {
         });
       }
       if (input.thinkingOptionId) {
-        const selectedModel = input.model ?? inspected.inspection.catalog.defaultModel;
+        const selectedModel = requestedModel ?? inspected.inspection.catalog.defaultModel;
         const selectedEntry = selectedModel
           ? inspected.inspection.catalog.models.find(
               (candidate) => candidate.ref.id === selectedModel.id,
@@ -1386,7 +1526,7 @@ export class AppServerHost {
     }
     const started = await this.#officialRequestBroker.request("thread/start", {
       cwd: input.cwd,
-      ...(input.model ? { model: input.model.id } : {}),
+      ...(nativeModelId ? { model: nativeModelId } : {}),
       ephemeral: false,
       historyMode: "paginated",
     });
@@ -1400,7 +1540,7 @@ export class AppServerHost {
       const turn = await this.#officialRequestBroker.request("turn/start", {
         threadId,
         input: [{ type: "text", text: input.task }],
-        ...(input.model ? { model: input.model.id } : {}),
+        ...(nativeModelId ? { model: nativeModelId } : {}),
         ...(input.thinkingOptionId ? { effort: input.thinkingOptionId } : {}),
       });
       const turnResult = isRecord(turn.result) ? turn.result : null;
@@ -1438,16 +1578,16 @@ export class AppServerHost {
         harnessId: "codex",
         deepLink: `codex://threads/${threadId}`,
         status: pendingTerminal ?? "running",
-        ...(input.model || input.thinkingOptionId
+        ...(requestedModel || input.thinkingOptionId
           ? {
               configuration: {
                 requested: {
-                  ...(input.model ? { model: input.model } : {}),
+                  ...(requestedModel ? { model: requestedModel } : {}),
                   ...(input.thinkingOptionId ? { thinkingOptionId: input.thinkingOptionId } : {}),
                 },
                 effective: {
                   ...(startedResult && typeof startedResult.model === "string"
-                    ? { effectiveModel: harnessModelRefSchema.parse({ id: startedResult.model }) }
+                    ? { effectiveModel: encodeOfficialCodexModelRef(startedResult.model) }
                     : {}),
                 },
               },
@@ -1460,6 +1600,7 @@ export class AppServerHost {
       };
     } catch (error) {
       this.#activeOfficialTurns.delete(threadId);
+      this.#signalActiveWorkChanged();
       await this.#officialRequestBroker
         .request("thread/delete", { threadId })
         .catch(() => undefined);
@@ -2363,6 +2504,7 @@ export class AppServerHost {
       thread.responseGates.delete(turnId);
       thread.ephemeralTurnIds.delete(turnId);
       gate.resolve();
+      this.#signalActiveWorkChanged();
       throw error;
     }
     if (!result.ok) {
@@ -2372,6 +2514,7 @@ export class AppServerHost {
       thread.responseGates.delete(turnId);
       thread.ephemeralTurnIds.delete(turnId);
       gate.resolve();
+      this.#signalActiveWorkChanged();
       await this.#writer.json(rpcError(request, -32073, result.error.message));
       return;
     }
@@ -2568,6 +2711,12 @@ export class AppServerHost {
     if (!thread.session.capabilities.configuration.selectPermissionMode) {
       await this.#writer.json(
         rpcError(request, -32078, "External Harness does not support Permission Mode selection"),
+      );
+      return;
+    }
+    if (permissionModeFixedAtCreate(thread.session.capabilities.configuration)) {
+      await this.#writer.json(
+        rpcError(request, -32078, "Permission Mode is fixed at Session creation"),
       );
       return;
     }
@@ -3629,6 +3778,7 @@ export class AppServerHost {
       thread.activeTurnId = null;
       thread.projectedTurns.delete(turnId);
       thread.responseGates.delete(turnId);
+      this.#signalActiveWorkChanged();
       throw new Error(result.error.message);
     }
   }
@@ -3743,6 +3893,7 @@ export class AppServerHost {
       thread.projectedTurns.delete(turnId);
       thread.responseGates.delete(turnId);
       gate.resolve();
+      this.#signalActiveWorkChanged();
       await replyError(-32073, result.error.message);
       this.#dispatchQueuedExternalTurn(thread);
       return;
@@ -4012,6 +4163,7 @@ export class AppServerHost {
       thread.activeTurnId = null;
       thread.projectedTurns.delete(event.turnId);
       thread.responseGates.delete(event.turnId);
+      this.#signalActiveWorkChanged();
       const delegation = await this.#repository.getDelegationByChild(thread.record.hostThreadId);
       if (delegation) {
         const status =
@@ -4372,6 +4524,7 @@ export class AppServerHost {
     if (!running) return;
     running.delete(childThreadId);
     if (running.size === 0) this.#runningSubagentsByParent.delete(parentThreadId);
+    this.#signalActiveWorkChanged();
   }
 
   #hasRunningSubagents(parentThreadId: string): boolean {

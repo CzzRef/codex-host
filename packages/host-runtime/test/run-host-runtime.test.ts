@@ -6,6 +6,7 @@ import {
   createRemoteControlOfficialAppServerPlan,
   createRemoteOfficialAppServerPlan,
   hasLauncherManagedUpdateRuntime,
+  MANAGED_REMOTE_APP_SERVER_PROCESS_TITLE,
 } from "../src/run-host-runtime.js";
 
 describe("Host Runtime composition", () => {
@@ -17,6 +18,15 @@ describe("Host Runtime composition", () => {
       }),
     ).toBe(false);
   });
+
+  it("keeps the managed listener outside the official Desktop bootstrap kill selector", () => {
+    const officialDesktopBootstrapKillSelector = /codex.*desktop-ssh-websocket-v0\.sock/;
+
+    expect(MANAGED_REMOTE_APP_SERVER_PROCESS_TITLE).not.toMatch(
+      officialDesktopBootstrapKillSelector,
+    );
+  });
+
   it("shares one official listener across every remote Host session", () => {
     expect(
       createRemoteOfficialAppServerPlan(

@@ -1,9 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import { isNativeModelControlCandidate } from "../src/renderer-composer-dom.js";
-import { rendererAgentPickerView } from "../src/renderer-agent-picker.js";
+import {
+  rendererAgentMenuPlacement,
+  rendererAgentPickerView,
+} from "../src/renderer-agent-picker.js";
 
 describe("Renderer Agent picker presentation", () => {
+  it("normalizes viewport coordinates against the Codex window zoom", () => {
+    expect(
+      rendererAgentMenuPlacement(
+        { right: 1_440, top: 1_312 },
+        { width: 1_920, height: 1_440 },
+        1.6,
+      ),
+    ).toEqual({ left: 700, bottom: 86 });
+  });
+
+  it("falls back to unscaled positioning when the Codex window zoom is unavailable", () => {
+    expect(
+      rendererAgentMenuPlacement(
+        { right: 900, top: 820 },
+        { width: 1_200, height: 900 },
+        Number.NaN,
+      ),
+    ).toEqual({ left: 700, bottom: 86 });
+  });
+
   it("keeps a Codex draft switchable while disabling unavailable external Agents", () => {
     expect(
       rendererAgentPickerView({ agent: "codex", phase: "draft" }, "unsupported", false, [
@@ -18,6 +41,7 @@ describe("Renderer Agent picker presentation", () => {
       nativeModelHidden: false,
       optionDisabled: { codex: false, pi: true, "claude-code": true, grok: true },
       downloadVisible: { pi: false, "claude-code": false, grok: false },
+      errorVisible: { pi: false, "claude-code": false, grok: false },
     });
   });
 
@@ -32,6 +56,7 @@ describe("Renderer Agent picker presentation", () => {
       nativeModelHidden: true,
       optionDisabled: { codex: true, pi: true },
       downloadVisible: { pi: false },
+      errorVisible: { pi: false },
     });
   });
 
@@ -57,6 +82,34 @@ describe("Renderer Agent picker presentation", () => {
       nativeModelHidden: false,
       optionDisabled: { codex: false, pi: true },
       downloadVisible: { pi: true },
+      errorVisible: { pi: false },
+    });
+  });
+
+  it("surfaces a distinct error action (not the install action) once a Harness fails", () => {
+    expect(
+      rendererAgentPickerView({ agent: "codex", phase: "draft" }, "ready", false, ["codex", "pi"], {
+        pi: "error",
+      }),
+    ).toEqual({
+      label: "Codex",
+      triggerDisabled: false,
+      nativeModelHidden: false,
+      optionDisabled: { codex: false, pi: true },
+      downloadVisible: { pi: false },
+      errorVisible: { pi: true },
+    });
+  });
+
+  it("does not treat a first-load check as a connection error", () => {
+    expect(
+      rendererAgentPickerView({ agent: "codex", phase: "draft" }, "ready", false, ["codex", "pi"], {
+        pi: "checking",
+      }),
+    ).toMatchObject({
+      optionDisabled: { codex: false, pi: true },
+      downloadVisible: { pi: false },
+      errorVisible: { pi: false },
     });
   });
 

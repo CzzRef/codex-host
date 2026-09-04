@@ -5,7 +5,6 @@ import type {
   HostReasoningItem,
   HostUserMessageItem,
   HostThreadSnapshot,
-  HostToolExecutionItem,
   HostToolOutput,
   HistoricalTurnOutcome,
 } from "@codexhost/harness-adapter";
@@ -22,6 +21,7 @@ import {
 } from "@codexhost/shared-contracts";
 
 import { encodeOmpModelRef, type OmpNativeModelRef } from "./omp-model-catalog.js";
+import { projectOmpToolItem } from "./omp-tool-presentation.js";
 
 export interface OmpSessionHistory {
   entries: JsonObject[];
@@ -308,12 +308,13 @@ function snapshotItems(entries: OmpEntry[], outcome: HistoricalTurnOutcome): Hos
     const call = toolCalls.get(nativeMessage.toolCallId);
     if (!call || call.name !== nativeMessage.toolName) continue;
     const output = toolOutput(nativeMessage.content);
-    const item: HostToolExecutionItem = {
-      type: "toolExecution",
-      itemId: itemId(call.entryId, "tool", call.ordinal),
-      toolName: call.name,
-      arguments: call.arguments,
-      ...(output ? { output } : {}),
+    const item = {
+      ...projectOmpToolItem({
+        itemId: itemId(call.entryId, "tool", call.ordinal),
+        toolName: call.name,
+        arguments: call.arguments,
+      }),
+      ...(output ? { output: textContent(output.content) } : {}),
     };
     const toolSucceeded = nativeMessage.isError === false;
     snapshots.push({

@@ -11,6 +11,7 @@ import type {
   HarnessModelRef,
   HarnessPermissionModeCatalog,
   HarnessPermissionModeId,
+  HarnessPermissionModeScope,
   HarnessThinkingOption,
   HarnessThinkingOptionId,
   HostInteractionId,
@@ -205,6 +206,7 @@ export class FakeHarnessSession implements HarnessSession {
     permissionModes?: HarnessPermissionModeCatalog,
     initialPermissionModeId: HarnessPermissionModeId | undefined = permissionModes?.defaultModeId,
     supportsRollbackLastTurn = false,
+    permissionModeScope: HarnessPermissionModeScope = "live",
   ) {
     this.harnessId = harnessId;
     const availableThinkingOptions = thinkingOptionsForModel(catalog, initialModel);
@@ -218,6 +220,7 @@ export class FakeHarnessSession implements HarnessSession {
         selectModel: true,
         selectThinkingOption: catalog.thinkingOptions.length > 0,
         selectPermissionMode: permissionModes !== undefined,
+        permissionModeScope,
       },
       history: {
         fork: supportsFork,
@@ -857,6 +860,16 @@ export class FakeHarnessSession implements HarnessSession {
         },
       };
     }
+    if (this.capabilities.configuration.permissionModeScope === "atCreate") {
+      return {
+        ok: false,
+        error: {
+          code: "invalidRequest",
+          message: "Permission Mode is fixed at Session creation",
+          retryable: false,
+        },
+      };
+    }
     if (this.#nextPermissionModeRejection) {
       const error = this.#nextPermissionModeRejection;
       this.#nextPermissionModeRejection = null;
@@ -1031,6 +1044,7 @@ export class FakeHarnessAdapter implements HarnessAdapter {
   readonly supportsFork: boolean;
   readonly supportsForkAcrossCwd: boolean;
   readonly supportsRollbackLastTurn: boolean;
+  readonly permissionModeScope: HarnessPermissionModeScope;
   inspectionCalls = 0;
   #closePromise: Promise<void> | null = null;
   #sessionOrdinal = 0;
@@ -1044,6 +1058,7 @@ export class FakeHarnessAdapter implements HarnessAdapter {
     initialUsage: HostUsage | null = null,
     permissionModes?: HarnessPermissionModeCatalog,
     supportsRollbackLastTurn = false,
+    permissionModeScope: HarnessPermissionModeScope = "live",
   ) {
     this.harnessId = harnessId;
     this.catalog = catalog;
@@ -1052,6 +1067,7 @@ export class FakeHarnessAdapter implements HarnessAdapter {
     this.supportsFork = supportsFork;
     this.supportsForkAcrossCwd = supportsForkAcrossCwd;
     this.supportsRollbackLastTurn = supportsRollbackLastTurn;
+    this.permissionModeScope = permissionModeScope;
   }
 
   async inspect(input: InspectHarnessInput = {}): Promise<HarnessInspection> {
@@ -1076,6 +1092,7 @@ export class FakeHarnessAdapter implements HarnessAdapter {
           selectModel: true,
           selectThinkingOption: this.catalog.thinkingOptions.length > 0,
           selectPermissionMode: this.permissionModes !== undefined,
+          permissionModeScope: this.permissionModeScope,
         },
         history: {
           fork: this.supportsFork,
@@ -1318,6 +1335,7 @@ export class FakeHarnessAdapter implements HarnessAdapter {
       this.permissionModes,
       permissionModeId,
       this.supportsRollbackLastTurn,
+      this.permissionModeScope,
     );
     this.sessions.push(session);
     this.#sessionsByNativeId.set(nativeRef.nativeSessionId, session);

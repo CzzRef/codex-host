@@ -21,10 +21,13 @@ describe("production Renderer release chain", () => {
     ]);
 
     expect(agentState).toContain('"deepseek-harness",');
+    expect(agentState).toContain('"opencode",');
     expect(agentState).toContain('"grok",');
     expect(agentState).toContain("DEFAULT_RENDERER_AGENTS = KNOWN_RENDERER_AGENTS");
     expect(productionEntry).toContain("installRendererBinding(DEFAULT_RENDERER_AGENTS");
     expect(productionEntry).toContain("__codexhostProductionConfigV1");
+    expect(productionEntry).toContain('window.addEventListener("DOMContentLoaded"');
+    expect(productionEntry).toContain("document.documentElement && document.body");
     expect(productionEntry).not.toContain("RendererConfiguration");
     expect(probeEntry).toContain("installRendererBinding(DEFAULT_RENDERER_AGENTS)");
     expect(probeEntry).not.toContain("enableClaudeCode");
@@ -40,6 +43,7 @@ describe("production Renderer release chain", () => {
       adapter: { state: "ready", reason: "ready", modelUpdates: 0 },
     });
 
+    expect(RENDERER_PROBE_AGENTS).toContain("opencode");
     expect(RENDERER_PROBE_AGENTS).toContain("grok");
     expect(status.selections).toEqual([
       { composerId: "composer-grok", agent: "grok", phase: "draft" },
@@ -88,7 +92,8 @@ describe("production Renderer release chain", () => {
 
     expect(layout).toContain("desktop_controller");
     expect(layout).toContain("renderer_extension");
-    expect(launcher).toContain("--inspector-endpoint");
+    expect(launcher).toContain("--renderer-cdp-endpoint");
+    expect(launcher).toContain("--remote-debugging-port=");
     expect(launcher).toContain("desktop_controller");
     expect(launcher).toContain("renderer_extension");
   });
