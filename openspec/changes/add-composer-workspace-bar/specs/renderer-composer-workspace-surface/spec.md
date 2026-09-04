@@ -4,17 +4,27 @@
 
 The Renderer SHALL render the codexhost-owned workspace surface as the second, single-line row of the pinned Turn header (a `document.body` child positioned `fixed` at the top of the transcript, horizontally aligned to the verified `[data-codex-composer-root]` box, opaque) instead of a bar above the Composer. Nothing codexhost-owned SHALL float above the Composer or pad the transcript's bottom for it. It SHALL NOT insert into the Composer's parent, `data-above-composer-portal`, or React-owned transcript nodes, so that transformed or filtered ancestors cannot offset it. Unsupported or ambiguous Composer identities SHALL render nothing. Expanding anything in the row SHALL NOT change the header's height.
 
+The second row SHALL exist only while the conversation has changed files. With no changed files the core workspace chip SHALL ride in the Turn row instead and the second row SHALL be removed from layout, so a resting Thread costs the transcript one row rather than two; while the Turn row carries a pinned prompt the core chip SHALL step aside for it, since repeating the prompt is why the header exists.
+
 #### Scenario: Thread cwd is known
 
 - **WHEN** a connected Thread Composer root is unique and visible
 - **AND** workspace inspection returns a primary repository
-- **THEN** the Renderer SHALL show one single-line workspace row in the Turn header whose first chip is the core workspace (the Thread cwd root) with its Worktree identity and branch, marked as core
-- **AND** the core chip SHALL remain visible while the conversation has no file changes
+- **THEN** the Renderer SHALL show the core workspace chip (the Thread cwd root) with its Worktree identity and branch, marked as core
+- **AND** the core chip SHALL remain available while the conversation has no file changes
+
+#### Scenario: Thread has no changed files
+
+- **WHEN** workspace inspection returns a primary repository and no conversation file changes exist
+- **THEN** the header SHALL be a single row carrying the index, the prompt slot, the core chip and the actions
+- **AND** the second row SHALL take no vertical space
+- **WHEN** the header then pins the current Turn's prompt
+- **THEN** the core chip SHALL yield its width to the prompt without changing the header's height
 
 #### Scenario: Conversation file changes are available
 
 - **WHEN** conversation file-change data is present for the Composer Thread
-- **THEN** the Renderer SHALL add the right-side file disclosure to the workspace row
+- **THEN** the Renderer SHALL show the second row with the repository chips and add the right-side file disclosure to it
 - **AND** SHALL show per-repository conversation additions/deletions on each chip that has any, never repository diff totals
 - **AND** MAY show conversation-file aggregate additions/deletions beside the right-side file disclosure
 
@@ -95,7 +105,7 @@ The codexhost file-change disclosure SHALL occupy the right edge of the workspac
 
 ### Requirement: Turn actions live in the Turn header and act on the current Turn
 
-The Renderer SHALL mount one pinned Turn header per verified Thread Composer as a `document.body` child positioned `fixed` at the top edge of the transcript scroller, below Desktop's own title chrome (`header[data-pip-obstacle="app-shell-header"]`), horizontally aligned to the Composer box, with an opaque surface. It SHALL reserve the header's height as extra `padding-top` on the transcript content column so the first Turn is never covered at scroll-top, and SHALL restore the column's own padding on unmount. The header SHALL describe the current Turn — the last `[data-turn-key]` (Desktop's `history-gap:` placeholders excluded) whose top edge sits at or above the header's bottom edge, the last Turn while the transcript end is in view, the first Turn otherwise — with a few pixels of hysteresis, recomputed on scroll, resize, DOM mutation and column resize coalesced into one animation frame. It SHALL show `第 N/M 轮` / `Turn N/M` between previous / next arrows that step the current Turn explicitly (the stepped Turn stays current until the user scrolls, so a transcript that cannot scroll can still target an earlier Turn), and the current Turn's user prompt only while that Turn's user bubble (`[data-user-message-bubble]`; a Turn without one shows no prompt) has scrolled fully under the header; activating the prompt SHALL scroll the transcript back to the Turn and a chevron SHALL open the full prompt below the header. It SHALL show Edit / Rollback / Redo for the current Turn inside the header and SHALL NOT paint any floating chip, rail dot or cluster over the transcript. The actions SHALL be hidden while Desktop's own edit-message mode (Cancel / Send) is open on the current Turn and disabled with a reason while a Turn is running. Rollback SHALL count the Turns it drops from the Host's `turnIds` when inspect publishes them (Desktop virtualises long transcripts, so the DOM window under-counts) and from the transcript only otherwise; it SHALL be disabled with a reason when the Host's `rollback` bits say the request would be refused; Edit SHALL require confirmation only when a rollback will actually run; Edit SHALL prefer Desktop's native pencil and otherwise refill the Composer with the Turn's prompt. Copy SHALL NOT promise to rewrite project files, the Renderer SHALL NOT click Desktop's Undo implicitly, and lookups for native controls SHALL skip codexhost's own overlays. The header SHALL apply to official Codex and external Threads alike and SHALL render nothing for drafts.
+The Renderer SHALL mount one pinned Turn header per verified Thread Composer as a `document.body` child positioned `fixed` at the top edge of the transcript scroller, below Desktop's own title chrome (`header[data-pip-obstacle="app-shell-header"]`), horizontally aligned to the Composer box, with an opaque surface. It SHALL reserve the header's height as extra `padding-top` on the transcript content column so the first Turn is never covered at scroll-top, and SHALL restore the column's own padding on unmount. The header SHALL describe the current Turn — the last `[data-turn-key]` (Desktop's `history-gap:` placeholders excluded) whose top edge sits at or above a probe line a fixed distance below the header's bottom edge, the last Turn while the transcript end is in view, the first Turn otherwise — with a few pixels of hysteresis, recomputed on scroll, resize, DOM mutation and column resize coalesced into one animation frame. That probe distance SHALL exceed the gap the header itself scrolls a Turn to, so a Turn reached through the prompt button or a step arrow resolves as the current Turn instead of falling back to its predecessor. It SHALL show `第 N/M 轮` / `Turn N/M` from the Host's `turnIds` when inspect publishes them and from the transcript window only otherwise, because Desktop virtualises long transcripts and a DOM-only count labels a 22-Turn Thread `Turn 1/3`. The index SHALL sit between previous / next arrows that step the current Turn explicitly (the stepped Turn stays current until the user scrolls, so a transcript that cannot scroll can still target an earlier Turn) and that SHALL be hidden when the Thread has a single Turn. The header SHALL repeat the current Turn's user prompt only once that Turn's user bubble (`[data-user-message-bubble]`; a Turn without one shows no prompt) has left the transcript viewport — the boundary is the scroller's own top edge, not the header's bottom edge, because Desktop's app-shell chrome is transparent and a bubble between the two still reads at full contrast, so an earlier boundary would show the same prompt twice. Activating the prompt SHALL scroll the transcript back to the Turn, and a chevron SHALL open the full prompt flush below the header, offered only when the single line actually clipped the prompt. It SHALL show Edit / Rollback / Redo for the current Turn inside the header and SHALL NOT paint any floating chip, rail dot or cluster over the transcript. The actions SHALL be hidden while Desktop's own edit-message mode (Cancel / Send) is open on the current Turn and disabled with a reason while a Turn is running. Rollback SHALL count the Turns it drops from the Host's `turnIds` when inspect publishes them (Desktop virtualises long transcripts, so the DOM window under-counts) and from the transcript only otherwise; it SHALL be disabled with a reason when the Host's `rollback` bits say the request would be refused; Edit SHALL require confirmation only when a rollback will actually run; Edit SHALL prefer Desktop's native pencil and otherwise refill the Composer with the Turn's prompt. Copy SHALL NOT promise to rewrite project files, the Renderer SHALL NOT click Desktop's Undo implicitly, and lookups for native controls SHALL skip codexhost's own overlays. The header SHALL apply to official Codex and external Threads alike and SHALL render nothing for drafts.
 
 #### Scenario: Scrolling changes the current Turn
 
@@ -107,8 +117,21 @@ The Renderer SHALL mount one pinned Turn header per verified Thread Composer as 
 
 - **WHEN** the current Turn's prompt bubble is still visible below the header
 - **THEN** the header SHALL show only the index
-- **WHEN** that bubble has scrolled fully under the header
+- **WHEN** that bubble sits above the header but is still inside the transcript viewport
+- **THEN** the header SHALL still show only the index, so the prompt is never displayed twice at once
+- **WHEN** that bubble has left the transcript viewport
 - **THEN** the header SHALL repeat the prompt on one line
+
+#### Scenario: Header scrolls to a Turn it names
+
+- **WHEN** the user activates the prompt button or a step arrow
+- **THEN** the transcript SHALL scroll that Turn's top edge just under the header
+- **AND** the index SHALL still name that Turn once the explicit step expires and the viewport rule takes over
+
+#### Scenario: Virtualised transcript holds fewer Turns than the Thread
+
+- **WHEN** inspect publishes `turnIds` for the Thread and Desktop's transcript window holds fewer Turns
+- **THEN** the index SHALL report the current Turn's position inside the Host's Turn list, not inside the DOM window
 
 #### Scenario: Harness Turn without a native pencil
 
