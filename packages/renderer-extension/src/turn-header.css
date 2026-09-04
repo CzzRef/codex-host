@@ -67,8 +67,10 @@
   box-shadow: inset 0 -1px 0 rgb(51 156 255 / 60%);
 }
 .codexhost-turn-header-prompt {
-  flex: 1 1 auto;
-  min-width: 0;
+  /* Zero basis: the prompt takes the leftover width instead of forcing the
+     row to overflow and squeezing the workspace chip into an ellipsis. */
+  flex: 1 1 0;
+  min-width: 120px;
   appearance: none;
   border: 0;
   border-radius: 6px;
@@ -128,14 +130,16 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(100% + 6px);
+  /* Flush with the header: a gap would show transcript text through the seam. */
+  top: 100%;
   z-index: 4;
   box-sizing: border-box;
   max-height: min(160px, 40vh);
   overflow: auto;
   padding: 8px 10px;
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 10px;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
   background: rgb(24 24 24);
   box-shadow: 0 12px 32px rgb(0 0 0 / 38%);
   white-space: pre-wrap;
@@ -147,6 +151,11 @@
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+/* The open panel continues the header, so the header stops rounding here. */
+.codexhost-turn-header:has(.codexhost-turn-header-panel:not([hidden])) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 /* Desktop's own edit mode owns the Turn; codexhost's actions step aside. */
 .codexhost-turn-header[data-native-edit="true"] .codexhost-turn-actions {
@@ -186,4 +195,29 @@
 .codexhost-turn-header .codexhost-workspace-surface .codexhost-workspace-more-list {
   left: 8px;
   top: calc(100% + 6px);
+}
+/* Nothing to say about the workspace: the header stays a single Turn row. */
+.codexhost-turn-header-row.codexhost-workspace-surface[data-codexhost-turn-header-workspace="empty"] {
+  display: none;
+}
+/*
+ * Row-1 slot for the core workspace chip while there are no changed files.
+ * It yields width to the prompt, which is the reason the header exists.
+ */
+.codexhost-turn-header-core {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: 200px;
+  overflow: hidden;
+}
+/* A pinned prompt is why the header exists: the chip steps aside for it. */
+.codexhost-turn-header[data-pinned="true"] .codexhost-turn-header-core {
+  display: none;
+}
+.codexhost-turn-header-core[hidden] {
+  display: none;
+}
+.codexhost-turn-header-core .codexhost-workspace-chips {
+  flex: 0 1 auto;
 }

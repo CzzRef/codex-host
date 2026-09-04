@@ -311,7 +311,7 @@ export function installRendererTurnHeader(options: {
       pinned = promptNode
         ? promptPinned({
             promptBottom: promptNode.getBoundingClientRect().bottom,
-            headerBottom,
+            viewportTop: scrollerTop,
             previous: state.pinned && !keyChanged,
           })
         : false;
@@ -328,11 +328,16 @@ export function installRendererTurnHeader(options: {
       );
     }
     const zh = chinese();
+    const position = key ? state.controller.hostTurnPosition(key) : null;
     const reloading = count === 0 && Date.now() < state.reloadUntil;
     const signature = [
       state.threadId,
+      // The clipped-prompt test depends on the row's width, so a resize repaints.
+      box.width,
       index,
       count,
+      position?.index,
+      position?.count,
       key,
       pinned,
       nativeEdit,
@@ -346,6 +351,7 @@ export function installRendererTurnHeader(options: {
       state.view.paintRow({
         count,
         index,
+        position,
         pinned,
         nativeEdit,
         busy,

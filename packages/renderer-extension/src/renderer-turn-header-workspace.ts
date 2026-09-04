@@ -19,7 +19,7 @@ const PREVIEW_GAP = 8;
 export interface WorkspaceRowState {
   threadId: string;
   composer: Element;
-  view: { root: HTMLElement; workspace: HTMLElement };
+  view: { root: HTMLElement; workspace: HTMLElement; core: HTMLElement };
   currentKey: string | null;
   filesExpanded: boolean;
   lastWorkspace: string;
@@ -66,14 +66,24 @@ export function createWorkspaceRowPainter(options: {
       if (grouped.unresolved.length > 0) {
         filesState.requestExtraPaths(state.threadId, grouped.unresolved);
       }
-      const host = state.view.workspace;
-      host.replaceChildren();
+      // Without changed files the workspace is one short chip: it rides in the
+      // Turn row so the header stays a single line, which is the whole point of
+      // "collapse to one row and expand on demand".
+      const compact = files.length === 0;
+      const host = compact ? state.view.core : state.view.workspace;
+      state.view.workspace.replaceChildren();
+      state.view.core.replaceChildren();
+      state.view.core.hidden = true;
       if (grouped.groups.length === 0 && files.length === 0) {
-        host.setAttribute(TURN_HEADER_WORKSPACE_ATTRIBUTE, "empty");
+        state.view.workspace.setAttribute(TURN_HEADER_WORKSPACE_ATTRIBUTE, "empty");
         options.syncNativeDiffVisibility();
         return;
       }
-      host.setAttribute(TURN_HEADER_WORKSPACE_ATTRIBUTE, files.length > 0 ? "files" : "core");
+      state.view.workspace.setAttribute(
+        TURN_HEADER_WORKSPACE_ATTRIBUTE,
+        compact ? "empty" : "files",
+      );
+      state.view.core.hidden = !compact;
       const chips = renderWorkspaceChips(ownerDocument, grouped.groups, chinese);
       host.append(chips);
       if (files.length > 0) {
@@ -120,8 +130,10 @@ export function createWorkspaceRowPainter(options: {
       options.syncNativeDiffVisibility();
     },
     collapse(state) {
-      for (const more of state.view.workspace.querySelectorAll(`[${WORKSPACE_MORE_ATTRIBUTE}]`)) {
-        more.setAttribute("aria-expanded", "false");
+      for (const host of [state.view.workspace, state.view.core]) {
+        for (const more of host.querySelectorAll(`[${WORKSPACE_MORE_ATTRIBUTE}]`)) {
+          more.setAttribute("aria-expanded", "false");
+        }
       }
       if (!state.filesExpanded) return;
       state.filesExpanded = false;
