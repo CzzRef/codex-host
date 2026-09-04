@@ -7,7 +7,7 @@ description: Diagnose whether a Codex Desktop update changed codexhost Composer/
 
 Audit before changing codexhost. Produce a verdict backed by bundle and live-Renderer evidence. Apply a fix only when the user explicitly requests one.
 
-可先运行 `npm run audit:codex-desktop` 辅助检测；该命令不能替代下面的语义对比、ownership 追踪、真实 Renderer 探测和必要的行为验证，后续步骤仍须继续执行。
+可先运行 `npm run audit:codex-desktop` 辅助检测，更新后第一步则用 `npm run live-check:codex-desktop -- --open official|external`（识别版本 / asar / fuse，拉起或附着 CDP，探测 Renderer 并按 owner 归因，见 [tools/codex-desktop-live-check](../../../tools/codex-desktop-live-check/README.md)）；该命令不能替代下面的语义对比、ownership 追踪、真实 Renderer 探测和必要的行为验证，后续步骤仍须继续执行。
 
 ## Guardrails
 
