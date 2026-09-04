@@ -2,7 +2,7 @@
 
 Tool: claude-code
 Date: 2026-09-03 16:31 (+08:00)
-Status: `implemented / focused-verified / partially live-verified`（2026-09-03 20:33 源码重启后真机量测通过；真机发现的四处缺陷已修，其中三处需再次重启才进入运行中的 Desktop）
+Status: `implemented / focused-verified / partially live-verified / relaunch-blocked`（2026-09-03 20:33 源码重启后真机量测通过；真机发现的四处缺陷已修，其中三处的复核因 2026-09-04 Desktop 自动升级到 26.901 关闭 inspect fuse 而阻塞，见 E10）
 Documentation level: `standard requirement`
 
 Raw source: [raw-requirement.md](raw-requirement.md)
@@ -165,7 +165,7 @@ Verification Decision: focused（renderer 单测 + Composer E2E + 静态门）+ 
 | E7 | 20:2x–20:33 | 用户选 F-1；`czz-dev` 已被 `c852197` 推进，四提交 rebase（`5eca7b8` `d7b96eb` `4668afe` `cbfc9c2`）后主检出快进、重建 TS + Renderer、`codexhost launch` 成功（launcher 15134 / Desktop 15137 / Host 15598） |
 | E8 | 20:4x–21:0x | 真机只读量测；修正 `891e4fe`（history-gap、气泡标记、无气泡不钉） |
 | E9 | 21:1x–21:3x | 临时 Pi 线程回滚 / Redo；发现短线程不可触达早先轮 → `18b4a46` 箭头；发现窗口化导致回滚数量错误 → `00510e0` `turnIds`；线程归档 |
-| E10 | 待办 | 再次授权重启后复核 891e4fe / 18b4a46 / 00510e0；分页线程的 `thread/reverted` 重读、Stop 标签、原生编辑 DOM |
+| E10 | 09-04 09:0x–10:0x | 用户正常退出后三次 `codexhost launch`：一次 30s 内未等到 Host 链、一次 Host 链就绪但 inspector 未监听、一次带 `CODEXHOST_STARTUP_TRACE=1`——controller 等 90s「Electron main-process Inspector did not become ready」，Desktop 在启动后 30s「Stopping app-server transport」并退出，launcher 收回。根因：用户 09-04 上午直接启动过普通 Desktop，Sparkle 把它从 26.831.21537 (7579) 升到 **26.901.20858 (7658)**，Electron 152.0.7977.64，fuse 块 `0 1 0 0 1 1 0 0 1` 第 4 位 `EnableNodeCliInspectArguments = 0`，`--inspect` 被忽略；shim 仍被 `CODEX_CLI_PATH` 接受，app-server 报 0.153.0-alpha.5。与本任务代码无关，三处真机修正的复核被阻塞，转交 update-impact 审计任务 |
 
 ## Closeout
 
