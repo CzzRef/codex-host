@@ -15,6 +15,16 @@ export type TurnActionId = "edit" | "rollback" | "redo";
 /** What the Host reports `thread/rollback` can do for the current Thread. */
 export type RollbackSupport = "full" | "lastTurnOnly" | "none";
 
+/**
+ * What activating Edit will do to the Thread.
+ *
+ * - `native`: Desktop's own edit-message control owns the Turn.
+ * - `replace`: roll the Thread back to *before* this Turn, then refill the
+ *   Composer, so sending replaces the Turn instead of appending a duplicate.
+ * - `append`: the Turn cannot be dropped, so Edit only refills the Composer.
+ */
+export type EditMode = "native" | "replace" | "append";
+
 /** Why every action is unavailable for the moment, independent of the Turn. */
 export type TurnActionBlock = "nativeEdit" | "busy" | "noTurns";
 
@@ -95,6 +105,15 @@ export function turnActionCopy(input: {
   redoAvailable?: boolean;
   /** Host-reported rollback ability; defaults to `full` for official Threads. */
   rollbackSupport?: RollbackSupport;
+  /**
+   * What Edit will actually do. `native` hands the Turn to Desktop's own pencil
+   * (today's behaviour). `replace` rolls the Thread back to *before* this Turn
+   * and refills the Composer, so resending replaces the Turn instead of
+   * appending a duplicate. `append` cannot drop the Turn and only refills.
+   */
+  editMode?: EditMode;
+  /** Why `append` cannot replace the Turn. */
+  editAppendReason?: "firstTurn" | "unsupported";
 }): TurnActionCopy {
   const redoAvailable = input.redoAvailable === true;
   const support = input.rollbackSupport ?? "full";
@@ -102,7 +121,12 @@ export function turnActionCopy(input: {
     input.laterTurns > 0 &&
     (support === "none" || (support === "lastTurnOnly" && input.laterTurns > 1));
   const rollbackPossible = input.laterTurns > 0 && !input.rolledBack && !rollbackUnsupported;
-  const editNeedsConfirm = rollbackPossible;
+  const editMode = input.editMode ?? "native";
+  const replaces = editMode === "replace";
+  // A replacing Edit always drops a Turn, including the last one, so it always
+  // asks first; the native pencil keeps the old rule.
+  const editNeedsConfirm = replaces || (editMode === "native" && rollbackPossible);
+  const firstTurn = input.editAppendReason === "firstTurn";
   if (input.chinese) {
     const unsupportedReason =
       support === "none"
@@ -110,15 +134,22 @@ export function turnActionCopy(input: {
         : `此线程只能回滚最后一轮，选中轮次之后还有 ${input.laterTurns} 轮`;
     return {
       editLabel: "编辑",
-      editTitle: editNeedsConfirm
-        ? "将先回滚该轮之后的对话，再到本轮开始处编辑；文件不会自动回退"
-        : rollbackUnsupported
-          ? `${unsupportedReason}；编辑会把本轮提示回填到输入框重新发送`
-          : input.rolledBack
-            ? "已回滚到本轮开始，可直接编辑提示"
-            : "这是最后一轮，直接编辑提示",
-      editConfirm:
-        "编辑会先回滚该轮之后的对话，再打开提示。文件不会自动回退，如需回退请用官方 Undo 或 Git。确定继续？",
+      editTitle: replaces
+        ? "回滚到本轮之前——本轮及之后的对话都会取消，再把提示回填到输入框改写重发；文件不会自动回退"
+        : editMode === "append"
+          ? firstTurn
+            ? "这是第一轮，无法取消；编辑会把提示回填到输入框追加发送"
+            : `${unsupportedReason}；编辑会把本轮提示回填到输入框追加发送`
+          : rollbackUnsupported
+            ? `${unsupportedReason}；编辑会把本轮提示回填到输入框重新发送`
+            : editNeedsConfirm
+              ? "将先回滚该轮之后的对话，再到本轮开始处编辑；文件不会自动回退"
+              : input.rolledBack
+                ? "已回滚到本轮开始，可直接编辑提示"
+                : "这是最后一轮，直接编辑提示",
+      editConfirm: replaces
+        ? "编辑会回滚到本轮之前：本轮及之后的对话都会被取消，然后把提示回填到输入框由你改写重发。文件不会自动回退，如需回退请用官方 Undo 或 Git。确定继续？"
+        : "编辑会先回滚该轮之后的对话，再打开提示。文件不会自动回退，如需回退请用官方 Undo 或 Git。确定继续？",
       editConfirmAction: "确认编辑",
       rollbackLabel: "回滚",
       rollbackTitle: rollbackUnsupported
@@ -138,7 +169,9 @@ export function turnActionCopy(input: {
       redoDisabled: !redoAvailable,
       editNeedsConfirm,
       cancelLabel: "取消",
-      editNotice: "已回滚到本轮开始，后续对话已取消，可以编辑后重新发送",
+      editNotice: replaces
+        ? "已回滚到本轮之前，本轮及之后的对话已取消；改好提示直接发送即可"
+        : "已回滚到本轮开始，后续对话已取消，可以编辑后重新发送",
       editFallbackNotice: "官方编辑不可用，已把本轮提示回填到输入框",
       editFailedNotice: "找不到官方编辑按钮，也读不到本轮提示文本",
       rollbackNotice: "已回滚到本轮开始，后续对话已取消",
@@ -159,15 +192,22 @@ export function turnActionCopy(input: {
       : `This Thread can only roll back its last turn; ${input.laterTurns} turns follow the selected one`;
   return {
     editLabel: "Edit",
-    editTitle: editNeedsConfirm
-      ? "Roll back later turns to this turn, then edit; files are not rewritten"
-      : rollbackUnsupported
-        ? `${unsupportedReason}; Edit places this turn's prompt in the Composer to resend`
-        : input.rolledBack
-          ? "Already rolled back to this turn; edit the prompt"
-          : "Last turn; edit the prompt",
-    editConfirm:
-      "Editing will first roll back later turns, then open the prompt. Files are not rewritten; use the official Undo or Git for that. Continue?",
+    editTitle: replaces
+      ? "Roll back to before this turn — this turn and the later ones are dropped — then edit the prompt and resend; files are not rewritten"
+      : editMode === "append"
+        ? firstTurn
+          ? "The first turn cannot be dropped; Edit places its prompt in the Composer to append"
+          : `${unsupportedReason}; Edit places this turn's prompt in the Composer to append`
+        : rollbackUnsupported
+          ? `${unsupportedReason}; Edit places this turn's prompt in the Composer to resend`
+          : editNeedsConfirm
+            ? "Roll back later turns to this turn, then edit; files are not rewritten"
+            : input.rolledBack
+              ? "Already rolled back to this turn; edit the prompt"
+              : "Last turn; edit the prompt",
+    editConfirm: replaces
+      ? "Editing rolls the thread back to before this turn: this turn and the later ones are dropped, then the prompt is placed in the Composer for you to rewrite and resend. Files are not rewritten; use the official Undo or Git for that. Continue?"
+      : "Editing will first roll back later turns, then open the prompt. Files are not rewritten; use the official Undo or Git for that. Continue?",
     editConfirmAction: "Confirm edit",
     rollbackLabel: "Rollback",
     rollbackTitle: rollbackUnsupported
@@ -189,7 +229,9 @@ export function turnActionCopy(input: {
     redoDisabled: !redoAvailable,
     editNeedsConfirm,
     cancelLabel: "Cancel",
-    editNotice: "Rolled back to this turn. Later turns were dropped; you can edit and resend.",
+    editNotice: replaces
+      ? "Rolled back to before this turn. This turn and the later ones were dropped; edit the prompt and send."
+      : "Rolled back to this turn. Later turns were dropped; you can edit and resend.",
     editFallbackNotice: "Native edit is unavailable; the prompt was placed in the Composer",
     editFailedNotice: "Neither a native Edit control nor this turn's prompt text was found",
     rollbackNotice: "Rolled back to this turn; later turns were dropped",

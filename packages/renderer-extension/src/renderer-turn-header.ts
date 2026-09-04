@@ -72,6 +72,13 @@ const BOTTOM_TOLERANCE = 24;
 const RELOAD_GRACE_MS = 600;
 /** Scroll events this long after our own scrollBy are ours, not the user's. */
 const OWN_SCROLL_MS = 600;
+/** A Turn this close to its target counts as reached. */
+const SCROLL_SETTLED_PX = 4;
+/** Frames a single scroll-to-Turn may spend converging. */
+const SCROLL_ATTEMPTS = 12;
+/** Only a miss this large is worth correcting after Desktop settles. */
+const SCROLL_RECHECK_PX = 24;
+const SCROLL_RECHECK_MS = 400;
 /** Legacy transcripts get no `thread/reverted`; after this long the user is told. */
 const STALE_TRANSCRIPT_MS = 1_500;
 
@@ -98,6 +105,7 @@ interface HeaderState {
    */
   overrideIndex: number | null;
   ownScrollUntil: number;
+  scrollRecheck: ReturnType<typeof setTimeout> | null;
   pinned: boolean;
   blocked: TurnActionBlock | null;
   filesExpanded: boolean;
@@ -412,12 +420,49 @@ export function installRendererTurnHeader(options: {
   };
 
   const mount = (composer: Element, threadId: string): HeaderState => {
+    /**
+     * Bring a Turn's top edge just under the header, then keep it there while
+     * Desktop's virtualiser settles.
+     */
     const scrollToTurn = (turn: Element): void => {
-      const headerBottom = state.view.root.getBoundingClientRect().bottom;
-      const delta = scrollDeltaToTurn({ turnTop: turn.getBoundingClientRect().top, headerBottom });
+      const scroller = state.scroller;
+      // `scrollIntoView` is the only move Desktop's transcript honours in full;
+      // a raw `scrollTop` jump of the same distance stops after ~130px or is
+      // pulled back, which is what made the prompt button and the arrows land
+      // on a neighbouring Turn. The header offset is corrected afterwards,
+      // and a short delta is small enough for the container to keep.
+      turn.scrollIntoView({ block: "start" });
       state.ownScrollUntil = Date.now() + OWN_SCROLL_MS;
-      if (state.scroller) state.scroller.scrollBy({ top: delta, behavior: "smooth" });
-      else turn.scrollIntoView({ block: "start" });
+      if (!scroller) return;
+      const remaining = (): number =>
+        scrollDeltaToTurn({
+          turnTop: turn.getBoundingClientRect().top,
+          headerBottom: state.view.root.getBoundingClientRect().bottom,
+        });
+      const nudge = (budget: number): void => {
+        if (disposed || !headers.has(state.composer) || budget <= 0) return;
+        const delta = remaining();
+        state.ownScrollUntil = Date.now() + OWN_SCROLL_MS;
+        if (Math.abs(delta) <= SCROLL_SETTLED_PX) {
+          scheduleFrame();
+          return;
+        }
+        const before = scroller.scrollTop;
+        scroller.scrollTop = before + delta;
+        // Clamped at an edge: there is nowhere left to go.
+        if (scroller.scrollTop === before) {
+          scheduleFrame();
+          return;
+        }
+        view?.requestAnimationFrame(() => nudge(budget - 1));
+      };
+      nudge(SCROLL_ATTEMPTS);
+      if (state.scrollRecheck !== null) clearTimeout(state.scrollRecheck);
+      state.scrollRecheck = setTimeout(() => {
+        state.scrollRecheck = null;
+        if (disposed || !headers.has(state.composer)) return;
+        if (Math.abs(remaining()) > SCROLL_RECHECK_PX) nudge(SCROLL_ATTEMPTS);
+      }, SCROLL_RECHECK_MS);
     };
     const headerView = createTurnHeaderView(documentNode, {
       threadId,
@@ -482,6 +527,7 @@ export function installRendererTurnHeader(options: {
       currentKey: null,
       overrideIndex: null,
       ownScrollUntil: 0,
+      scrollRecheck: null,
       pinned: false,
       blocked: null,
       filesExpanded: false,
@@ -501,6 +547,8 @@ export function installRendererTurnHeader(options: {
     const state = headers.get(composer);
     if (!state) return;
     headers.delete(composer);
+    if (state.scrollRecheck !== null) clearTimeout(state.scrollRecheck);
+    state.scrollRecheck = null;
     state.controller.dispose();
     state.columnObserver?.disconnect();
     if (state.column) releaseTranscriptColumn(state.column);

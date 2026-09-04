@@ -96,7 +96,8 @@ describe("Turn action controller", () => {
     const view = h.controller.view({ chinese: false, blocked: null });
     expect(view.confirming).toBeNull();
     expect(view.copy.rollbackDisabled).toBe(true);
-    expect(view.copy.editTitle).toContain("Already rolled back");
+    // Edit on a Turn that can be dropped now means "replace this Turn".
+    expect(view.copy.editTitle).toContain("Roll back to before this turn");
     expect(h.notices.at(-1)).toContain("Rolled back to this turn");
     // The rollback re-inspects the Thread for the authoritative Redo slot.
     expect(h.calls.filter((call) => call.method === "inspect")).toHaveLength(2);
@@ -242,6 +243,65 @@ describe("Turn action controller", () => {
       count: 5,
     });
     expect(h.controller.hostTurnPosition("nope")).toBeNull();
+  });
+
+  it("edits by rolling back past the Turn so the resend replaces it", async () => {
+    const h = harness({ keys: ["a", "b", "c"] });
+    h.controller.setCurrent({ threadId: "thread-1", turnKey: "b", turn: fakeTurn("second") });
+    await flush();
+    const copy = h.controller.view({ chinese: false, blocked: null }).copy;
+    // No native pencil and the Turn is not the first: Edit drops it too.
+    expect(copy.editNeedsConfirm).toBe(true);
+    expect(copy.editConfirm).toContain("this turn and the later ones are dropped");
+    h.controller.activate("edit");
+    h.controller.confirm();
+    await flush();
+    // One later Turn plus this one.
+    expect(h.calls).toContainEqual({
+      method: "rollback",
+      params: { threadId: "thread-1", numTurns: 2 },
+    });
+    expect(h.notices).toContainEqual(
+      expect.stringContaining("Rolled back to before this turn"),
+    );
+
+    // Last Turn with nothing after it still drops exactly itself.
+    const last = harness({ keys: ["a", "b"] });
+    last.controller.setCurrent({ threadId: "thread-1", turnKey: "b", turn: fakeTurn("second") });
+    await flush();
+    last.controller.activate("edit");
+    last.controller.confirm();
+    await flush();
+    expect(last.calls).toContainEqual({
+      method: "rollback",
+      params: { threadId: "thread-1", numTurns: 1 },
+    });
+
+    // The Host always keeps the first Turn, so editing it only refills.
+    const first = harness({ keys: ["a", "b"] });
+    first.controller.setCurrent({ threadId: "thread-1", turnKey: "a", turn: fakeTurn("first") });
+    await flush();
+    const firstCopy = first.controller.view({ chinese: false, blocked: null }).copy;
+    expect(firstCopy.editNeedsConfirm).toBe(false);
+    expect(firstCopy.editTitle).toContain("first turn cannot be dropped");
+    first.controller.activate("edit");
+    await flush();
+    expect(first.calls.some((call) => call.method === "rollback")).toBe(false);
+
+    // A last-turn-only Harness cannot drop a Turn with others after it.
+    const limited = harness({
+      keys: ["a", "b", "c"],
+      inspection: {
+        owner: "external",
+        historyRedoAvailable: false,
+        rollback: { lastTurn: true, multiTurn: false },
+      },
+    });
+    limited.controller.setCurrent({ threadId: "thread-1", turnKey: "b", turn: fakeTurn("second") });
+    await flush();
+    const limitedCopy = limited.controller.view({ chinese: false, blocked: null }).copy;
+    expect(limitedCopy.editNeedsConfirm).toBe(false);
+    expect(limitedCopy.editTitle).toContain("to append");
   });
 
   it("has no Host position for an official Thread", async () => {

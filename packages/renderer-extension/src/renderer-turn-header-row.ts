@@ -171,6 +171,9 @@ export function createTurnHeaderView(
         !state.reloading && state.count < 2 && (position?.count ?? state.count) < 2;
       previous.hidden = singleTurn;
       next.hidden = singleTurn;
+      // Bounds stay on the transcript window even though the label counts Host
+      // Turns: measured on a forked Thread whose inherited first Turn Desktop
+      // never renders, so a Host-bounded arrow would be permanently dead.
       previous.disabled = state.index === null || state.index <= 0;
       next.disabled = state.index === null || state.index >= state.count - 1;
       previous.setAttribute("aria-label", zh ? "上一轮" : "Previous turn");

@@ -9,6 +9,7 @@ import {
   turnActionCopy,
   turnPromptText,
   turnsAfterKey,
+  type EditMode,
   type TurnActionBlock,
   type TurnActionCopy,
   type TurnActionId,
@@ -119,14 +120,51 @@ export function createTurnActionController(options: {
         })
       : 0;
 
-  const copyFor = (chinese: boolean): TurnActionCopy =>
-    turnActionCopy({
+  const nativePencil = (): HTMLButtonElement | null =>
+    current?.turn ? nativeTurnButton(current.turn, /edit message|编辑消息|^edit$|^编辑$/i) : null;
+
+  /** Position of the current Turn: Host list first, transcript window otherwise. */
+  const currentPosition = (): number => {
+    const target = current;
+    if (!target) return -1;
+    const host = hostPosition(target.turnKey);
+    if (host) return host.index;
+    return options
+      .orderedTurnKeys()
+      .findIndex(
+        (key) => turnKeyMatches(key, target.turnKey) || turnKeyMatches(target.turnKey, key),
+      );
+  };
+
+  /**
+   * Edit's real effect. Desktop's pencil keeps owning official Turns. Otherwise
+   * Edit rolls the Thread back past this Turn so resending replaces it — the
+   * Host always keeps the first Turn, and a `lastTurnOnly` Harness can only
+   * drop one, so those cases fall back to appending.
+   */
+  const editModeNow = (): { mode: EditMode; reason?: "firstTurn" | "unsupported" } => {
+    if (!current) return { mode: "append", reason: "unsupported" };
+    if (nativePencil()) return { mode: "native" };
+    if (currentPosition() <= 0) return { mode: "append", reason: "firstTurn" };
+    const support = rollbackSupportFor(rollbackCapability);
+    const drops = laterTurns() + 1;
+    if (support === "none" || (support === "lastTurnOnly" && drops > 1))
+      return { mode: "append", reason: "unsupported" };
+    return { mode: "replace" };
+  };
+
+  const copyFor = (chinese: boolean): TurnActionCopy => {
+    const edit = editModeNow();
+    return turnActionCopy({
       chinese,
       rolledBack: current !== null && rolledBackKey === current.turnKey,
       laterTurns: laterTurns(),
       redoAvailable,
       rollbackSupport: rollbackSupportFor(rollbackCapability),
+      editMode: edit.mode,
+      ...(edit.reason ? { editAppendReason: edit.reason } : {}),
     });
+  };
 
   const inspect = (): Promise<void> => {
     const target = current;
@@ -161,15 +199,19 @@ export function createTurnActionController(options: {
       });
   };
 
-  const runRollback = (): Promise<void> => {
+  /**
+   * `inclusive` drops the current Turn as well, which is what "edit and resend"
+   * means: without it the edited Turn survives and the resend is appended.
+   */
+  const runRollback = (input?: { inclusive?: boolean }): Promise<void> => {
     const target = current;
-    const later = laterTurns();
-    if (!target || later === 0) {
+    const numTurns = laterTurns() + (input?.inclusive === true ? 1 : 0);
+    if (!target || numTurns === 0) {
       if (target) rolledBackKey = target.turnKey;
       return Promise.resolve();
     }
     return (
-      options.getClient()?.rollbackThread?.({ threadId: target.threadId, numTurns: later }) ??
+      options.getClient()?.rollbackThread?.({ threadId: target.threadId, numTurns }) ??
       Promise.resolve()
     ).then(() => {
       rolledBackKey = target.turnKey;
@@ -185,14 +227,14 @@ export function createTurnActionController(options: {
    * Prefers Desktop's own pencil (official Turns). Harness Turns rarely have
    * one, so the prompt is refilled into the Composer instead.
    */
-  const clickEdit = (copy: TurnActionCopy): void => {
+  const clickEdit = (copy: TurnActionCopy, prompt?: string): void => {
     const turn = current?.turn ?? null;
-    const pencil = turn ? nativeTurnButton(turn, /edit message|编辑消息|^edit$|^编辑$/i) : null;
+    const pencil = prompt === undefined ? nativePencil() : null;
     if (pencil) {
       pencil.click();
       return;
     }
-    const text = turn ? turnPromptText(turn) : "";
+    const text = prompt ?? (turn ? turnPromptText(turn) : "");
     const editor = options.composerEditor();
     if (!editor || text.length === 0) {
       options.notify(copy.editFailedNotice);
@@ -283,9 +325,13 @@ export function createTurnActionController(options: {
       confirming = null;
       const copy = copyFor(options.chinese());
       if (pending === "edit") {
-        void runRollback().then(() => {
+        const inclusive = editModeNow().mode === "replace";
+        // Read the prompt before the rollback: an inclusive rollback may take
+        // the Turn's nodes with it on a paginated transcript.
+        const prompt = current?.turn ? turnPromptText(current.turn) : "";
+        void runRollback({ inclusive }).then(() => {
           options.notify(copy.editNotice);
-          clickEdit(copy);
+          clickEdit(copy, inclusive ? prompt : undefined);
           options.onChange();
         });
       } else if (pending === "rollback") {

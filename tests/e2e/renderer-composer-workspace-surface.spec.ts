@@ -496,18 +496,27 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
     "aria-label",
     /No later turns/,
   );
+  // No native pencil: Edit rolls the Thread back past this Turn so the resend
+  // replaces it instead of appending a duplicate, and says so before running.
   await expect(page.locator('[data-codexhost-turn-action="edit"]')).toHaveAttribute(
     "aria-label",
-    /Last turn; edit the prompt/,
+    /Roll back to before this turn/,
   );
-  // No native pencil on this Turn: Edit refills the Composer with the prompt.
+  // Scrolling across every Turn so far re-used the one Thread inspection.
+  expect(await page.evaluate("globalThis.__threadInspectCalls")).toBe(inspectCallsBeforeScrolling);
   const editorForEdit = page.locator('[data-codex-composer][contenteditable="true"]');
   await page.locator('[data-codexhost-turn-action="edit"]').click();
+  await expect(page.locator("[data-codexhost-turn-confirm]")).toContainText(
+    "this turn and the later ones are dropped",
+  );
+  await page.locator("[data-codexhost-turn-confirm] .codexhost-overlay-primary").click();
   await expect(editorForEdit).toContainText("third prompt");
   await expect(page.locator(".codexhost-turn-notice")).toContainText("placed in the Composer");
   await editorForEdit.evaluate((node) => {
     node.textContent = "";
   });
+  // The rollback the Edit ran re-reads the Thread for the authoritative state.
+  const inspectCallsAfterEdit = await page.evaluate("globalThis.__threadInspectCalls");
   // Desktop's own edit mode on the current Turn hides the Host actions.
   await page.evaluate("globalThis.setNativeEdit('turn-c', true)");
   await expect(header).toHaveAttribute("data-native-edit", "true");
@@ -518,7 +527,7 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(header.locator("[data-codexhost-turn-actions]")).toBeVisible();
   await expect(headerPrompt).toHaveText("third prompt");
   // Following the viewport across Turns never re-inspects the Thread.
-  expect(await page.evaluate("globalThis.__threadInspectCalls")).toBe(inspectCallsBeforeScrolling);
+  expect(await page.evaluate("globalThis.__threadInspectCalls")).toBe(inspectCallsAfterEdit);
   // With the transcript end in view the last Turn is current and its prompt is pinned.
   await page.evaluate("globalThis.scrollTranscriptToBottom()");
   await expect(headerIndex).toHaveText("Turn 3/3");
