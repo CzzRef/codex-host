@@ -575,6 +575,12 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   );
   await expect(coreDetail).toHaveCount(1);
   await expect(coreDetail).toContainText("/workspace/app");
+  // A native `title` would shadow it with the OS tooltip's ~1s delay.
+  expect(
+    await page
+      .locator('[data-codexhost-workspace-core="true"]')
+      .evaluate((node) => node.getAttribute("title")),
+  ).toBeNull();
   await expect(page.locator("[data-codexhost-workspace-files]")).toHaveCount(0);
   await expect(nativeChanges).toBeVisible();
   await expect(nativeReview).toBeVisible();
@@ -773,6 +779,16 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "worktree");
   await expect(runLocation).toHaveText("Local");
   expect(await selections()).toEqual(["/workspace/source-worktrees/codex/260901-existing"]);
+  // Desktop drifting back to its own Worktree mode must not discard the pick:
+  // that is what started Threads in the project root instead of the worktree.
+  await page.evaluate(() => {
+    const owner = document.querySelector('[data-composer-navigation-target="run-location"]');
+    const fiber = owner as unknown as { __reactFiber$fixture?: { return?: { memoizedProps?: { setComposerMode?: (mode: string) => void } } } };
+    fiber.__reactFiber$fixture?.return?.memoizedProps?.setComposerMode?.("worktree");
+  });
+  await page.waitForTimeout(600);
+  expect(await selections()).toEqual(["/workspace/source-worktrees/codex/260901-existing"]);
+  await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "worktree");
   expect(JSON.parse((await storedPick()) as string)).toMatchObject({
     kind: "worktree",
     root: "/workspace/source-worktrees/codex/260901-existing",

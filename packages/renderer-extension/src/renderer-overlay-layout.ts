@@ -188,9 +188,11 @@ export function ensureOverlayChromeStyle(ownerDocument: Document): void {
       pointer-events: none;
       opacity: 0;
       translate: 0 4px;
+      /* No entry delay: this replaces the native tooltip, which people already
+         read as sluggish because the OS waits about a second. */
       transition:
-        opacity 120ms ease,
-        translate 120ms ease;
+        opacity 90ms ease 0ms,
+        translate 90ms ease 0ms;
     }
     .codexhost-overlay-action:hover .codexhost-overlay-tooltip,
     .codexhost-overlay-action:focus-within .codexhost-overlay-tooltip,
