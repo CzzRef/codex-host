@@ -18,12 +18,31 @@ export const harnessPermissionModeIdSchema = nonBlankTextSchema
 
 export type HarnessPermissionModeId = z.infer<typeof harnessPermissionModeIdSchema>;
 
+/**
+ * The Permission Mode vocabulary codexhost offers for every Harness, in
+ * increasing order of what the agent may do without asking.
+ *
+ * Harnesses name and implement these differently — Claude Code's
+ * `bypassPermissions`, Grok's `always-approve`, OMP's `yolo`, OpenCode's
+ * `allow` and Antigravity's `dangerously-skip-permissions` are all `bypass` —
+ * so an Adapter tags each native Mode with the kind it corresponds to. The
+ * native id stays the wire value; the kind only drives what the user is
+ * offered, so the same four choices appear whichever Harness is selected.
+ */
+export const HARNESS_PERMISSION_MODE_KINDS = ["plan", "ask", "auto", "bypass"] as const;
+
+export const harnessPermissionModeKindSchema = z.enum(HARNESS_PERMISSION_MODE_KINDS);
+
+export type HarnessPermissionModeKind = z.infer<typeof harnessPermissionModeKindSchema>;
+
 export const harnessPermissionModeSchema = z
   .object({
     id: harnessPermissionModeIdSchema,
     label: nonBlankTextSchema.max(HARNESS_PERMISSION_MODE_LABEL_MAX_LENGTH),
     description: nonBlankTextSchema.max(HARNESS_PERMISSION_MODE_DESCRIPTION_MAX_LENGTH).optional(),
     dangerous: z.boolean().optional(),
+    /** Which shared choice this native Mode stands for, when it maps to one. */
+    canonical: harnessPermissionModeKindSchema.optional(),
   })
   .strict();
 
