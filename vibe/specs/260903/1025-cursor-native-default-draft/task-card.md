@@ -101,3 +101,13 @@ Adapter 与 Host 本身没有问题：用主检出 dist 直驱 `CursorAdapter`�
 - 顺带修两处与本任务无关但挡住门禁的环境问题：`eslint.config.js` 忽略 `.claude/worktrees/**`（嵌套 worktree 是同一仓库的另一份检出，从父目录 lint 会因两个候选 tsconfig 根解析失败）；`packages/shared-contracts/dist/index.js` 是一份过期的 bundle，`tsc -b` 认为无需重建，`tsc -b packages/shared-contracts --force` 后恢复。
 - Live gap 不变：Desktop 目视仍未做。
 
+## Live check（2026-09-05 17:40–17:43，合并后重启的 Desktop）
+
+- 环境：`~/.local/bin/codexhost launch` 拉起（launcher 61643 / Desktop 61645 / CDP 50154），载入的是合并后 17:48 重建的 `production.js`；全程只读 CDP 旁观，未向页面派发任何输入。
+- 用户实测一条 Cursor 消息（cwd `GoNavi`）：composer `selections` 从 `{agent:"cursor", phase:"draft"}` 转为 `phase:"locked"`，出现 Thread `b5c9ec81-8a6f-48a5-a2bb-d7df8f43607e`，轮次数 1，Cursor 实际执行（thinking / commands / read file）并停在 `Awaiting approval`。
+- Host 记录 `~/.codexhost/mapping-store/threads/b5c9ec81…json`：`harnessId: "cursor"`、`historyMode: "paginated"`、`nativeSessionRef` 指向真实 ACP Session `5ba40588-c3de-460e-9b2e-34a2fba75331` —— 路由确实落到 Cursor 而不是原生 Codex。
+- 权限模式端到端带过去了：`transportModelId: "codexhost/cursor-native@cursor.ZGVmYXVsdFtd@agent"`，末段 `@agent` 即 Composer 上选的 Agent 模式。
+- 全窗口 `Runtime.exceptionThrown` 计数 0；仅有两条与本任务无关的资源 404（剪贴板临时图片、favicon）。
+- **本次没有覆盖到空目录分支**：模型标签实测是 `Auto`（`cursor.ZGVmYXVsdFtd`），说明本机 Cursor 目录当时非空，走的是有目录的完整传输 id，而不是本任务修的 `codexhost/cursor-native@@<mode>`。结论只到「合并后 Cursor 正常可用、未被破坏」，空目录场景仍待一次冷目录复现。
+- 顺带验到本会话另一处修改：该 Thread 第一轮的置顶栏 Edit 提示为 `The first turn cannot be dropped; Edit places its prompt in the Composer to append`，即 `append` 模式在真机按预期生效。
+
