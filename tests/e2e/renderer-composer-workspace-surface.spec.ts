@@ -800,10 +800,19 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "desktop");
   expect(await selections()).toEqual(["/workspace/source-worktrees/codex/260901-existing", null]);
   // Creating: bad names are rejected inline, Host errors are shown, success selects it.
+  // The name is prefilled complete from what is already typed in the Composer,
+  // so creating a worktree needs no naming step.
+  const composerEditor = page.locator('[data-codex-composer][contenteditable="true"]');
+  await composerEditor.evaluate((node) => {
+    node.textContent = "Cursor bypass mode";
+  });
   await picker.click();
   await option("create").click();
   const nameInput = menu.locator("input");
-  await expect(nameInput).toHaveValue("260903-");
+  await expect(nameInput).toHaveValue("260903-cursor-bypass-mode");
+  await composerEditor.evaluate((node) => {
+    node.textContent = "";
+  });
   await nameInput.fill("Bad Name");
   await nameInput.press("Enter");
   await expect(menu.locator(".codexhost-draft-worktree-error")).toContainText(/yyMMdd/);

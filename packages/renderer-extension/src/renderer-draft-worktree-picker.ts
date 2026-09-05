@@ -1,4 +1,7 @@
-import type { WorkspaceWorktreeListResult } from "@codexhost/shared-contracts";
+import {
+  suggestWorkspaceWorktreeName,
+  type WorkspaceWorktreeListResult,
+} from "@codexhost/shared-contracts";
 
 import type { RendererModelClient } from "./renderer-model-client.js";
 import type { RendererDraftPrewarmPolicy } from "./versioned-renderer-adapter.js";
@@ -516,6 +519,20 @@ export function installRendererDraftWorktreePicker(
     }
   };
 
+  /** What the user already typed in the Composer, as a naming hint. */
+  const draftPromptHint = (): string => {
+    const editors = documentNode.querySelectorAll<HTMLElement>(
+      '[data-codex-composer] textarea, [data-codex-composer][contenteditable="true"], [data-codex-composer] [contenteditable="true"]',
+    );
+    for (const editor of editors) {
+      if (editor.getClientRects().length === 0) continue;
+      const text =
+        editor instanceof HTMLTextAreaElement ? editor.value : (editor.textContent ?? "");
+      if (text.trim().length > 0) return text.trim().slice(0, 200);
+    }
+    return "";
+  };
+
   const resetDraft = (): void => {
     clearVerificationTimer();
     if (activeDraft) applyWorkspace(null);
@@ -805,7 +822,14 @@ export function installRendererDraftWorktreePicker(
       input.autocomplete = "off";
       input.spellcheck = false;
       input.placeholder = text.createPlaceholder;
-      input.value = list?.result?.suggestedName ?? "";
+      // Prefilled complete: the core comes from what is already typed in the
+      // Composer, so picking a new worktree needs no naming step. The date part
+      // still comes from the Host when it sent one.
+      input.value = suggestWorkspaceWorktreeName({
+        hint: draftPromptHint(),
+        ...(list?.result?.suggestedName ? { prefix: list.result.suggestedName } : {}),
+        taken: (list?.result?.worktrees ?? []).map((entry) => entry.name),
+      });
       input.disabled = creating;
       input.setAttribute("aria-label", text.create);
       const submit = documentNode.createElement("button");

@@ -124,6 +124,7 @@ export {
   WORKSPACE_WORKTREE_LIST_METHOD,
   WORKSPACE_WORKTREE_MAX_LENGTH,
   WORKSPACE_WORKTREE_NAME_PATTERN,
+  suggestWorkspaceWorktreeName,
   suggestedWorkspaceWorktreeName,
   workspaceWorktreeBranch,
   workspaceWorktreeCreateParamsSchema,

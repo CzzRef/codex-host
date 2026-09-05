@@ -95,6 +95,46 @@ export function suggestedWorkspaceWorktreeName(now: Date = new Date()): string {
   return `${yy}${mm}${dd}-`;
 }
 
+const CORE_MAX_LENGTH = 28;
+
+/**
+ * A complete `yyMMdd-core` name, so picking a new worktree does not ask the
+ * user to invent one. The core comes from what they already typed in the
+ * Composer; a prompt with no ASCII words (Chinese, for example) cannot produce
+ * a readable slug, so it falls back to the GMT+8 time, which still says when
+ * the worktree was made. `taken` disambiguates with a numeric suffix.
+ */
+export function suggestWorkspaceWorktreeName(
+  input: {
+    hint?: string | null;
+    now?: Date;
+    taken?: readonly string[];
+    /** `yyMMdd-` from the Host, so the date does not come from the browser. */
+    prefix?: string;
+  } = {},
+): string {
+  const now = input.now ?? new Date();
+  const prefix =
+    input.prefix && /^\d{6}-$/u.test(input.prefix)
+      ? input.prefix
+      : suggestedWorkspaceWorktreeName(now);
+  const shifted = new Date(now.getTime() + 8 * 60 * 60 * 1_000);
+  const clock = `${String(shifted.getUTCHours()).padStart(2, "0")}${String(
+    shifted.getUTCMinutes(),
+  ).padStart(2, "0")}`;
+  const slug = (input.hint ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, CORE_MAX_LENGTH)
+    .replace(/-+$/u, "");
+  const core = slug.length >= 2 ? slug : `wt-${clock}`;
+  const taken = new Set(input.taken ?? []);
+  let candidate = `${prefix}${core}`;
+  for (let suffix = 2; taken.has(candidate); suffix += 1) candidate = `${prefix}${core}-${suffix}`;
+  return candidate;
+}
+
 /** Lane implied by a branch like `codex/260903-x`; `null` for other layouts. */
 export function workspaceWorktreeLaneFromBranch(branch: string | null): WorkspaceWorktreeLane | null {
   if (!branch) return null;
