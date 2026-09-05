@@ -569,6 +569,12 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(workspace).toBeHidden();
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
   await expect(page.locator('[data-codexhost-workspace-core="true"]')).toContainText("app-feature");
+  // The chip is clipped to keep one line, so hovering must reveal the full root.
+  const coreDetail = page.locator(
+    '[data-codexhost-workspace-core="true"] .codexhost-workspace-detail',
+  );
+  await expect(coreDetail).toHaveCount(1);
+  await expect(coreDetail).toContainText("/workspace/app");
   await expect(page.locator("[data-codexhost-workspace-files]")).toHaveCount(0);
   await expect(nativeChanges).toBeVisible();
   await expect(nativeReview).toBeVisible();
@@ -579,6 +585,15 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(headerPrompt).toBeHidden();
   await expect(header).toHaveAttribute("data-pinned", "false");
   await expect(coreSlot).toBeVisible();
+  // Hovering the clipped chip reveals the full root, worktree and branch.
+  const detailOpacity = () =>
+    coreDetail.evaluate((node) => {
+      const view = node.ownerDocument.defaultView;
+      return view ? Number.parseFloat(view.getComputedStyle(node).opacity) : -1;
+    });
+  expect(await detailOpacity()).toBe(0);
+  await page.locator('[data-codexhost-workspace-core="true"]').hover();
+  await expect.poll(detailOpacity).toBe(1);
   await page.evaluate("globalThis.scrollTranscriptToBottom()");
   await expect(headerPrompt).toHaveText("third prompt");
   await expect(header).toHaveAttribute("data-pinned", "true");

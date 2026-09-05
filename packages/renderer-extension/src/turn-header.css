@@ -221,3 +221,18 @@
 .codexhost-turn-header-core .codexhost-workspace-chips {
   flex: 0 1 auto;
 }
+/*
+ * Workspace chips are clipped to keep the header on one line, so the full root
+ * path, worktree owner and branch live in a hover tooltip. Inside the header it
+ * opens downward, like every other panel here.
+ */
+.codexhost-turn-header [data-codexhost-workspace-row] {
+  position: relative;
+}
+.codexhost-turn-header .codexhost-workspace-detail {
+  bottom: auto;
+  top: calc(100% + 6px);
+  translate: 0 -4px;
+  white-space: pre-line;
+  max-width: 420px;
+}
