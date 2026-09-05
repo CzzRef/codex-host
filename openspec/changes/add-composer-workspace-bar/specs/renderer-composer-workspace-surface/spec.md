@@ -6,6 +6,12 @@ The Renderer SHALL render the codexhost-owned workspace surface as the second, s
 
 The second row SHALL exist only while the conversation has changed files. With no changed files the core workspace chip SHALL ride in the Turn row instead and the second row SHALL be removed from layout, so a resting Thread costs the transcript one row rather than two; while the Turn row carries a pinned prompt the core chip SHALL step aside for it, since repeating the prompt is why the header exists.
 
+#### Scenario: A chip is too narrow for its own text
+
+- **WHEN** the user hovers or focuses a workspace chip clipped by the single-line row
+- **THEN** the Renderer SHALL show the full role, repository root, worktree owner and branch in its own overlay tooltip
+- **AND** SHALL NOT set a native `title`, whose delay reads as the chip being slow
+
 #### Scenario: Thread cwd is known
 
 - **WHEN** a connected Thread Composer root is unique and visible
@@ -165,7 +171,7 @@ The Renderer SHALL mount one pinned Turn header per verified Thread Composer as 
 
 ### Requirement: Draft worktree picker selects where a new Thread starts
 
-For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL render a `Worktree ▾` chip beside the branch control instead of a checkbox. Its menu SHALL offer `Local` (Desktop's project directory), `Temporary worktree` (Desktop's own anonymous worktree via `setComposerMode("worktree")`), every Host-managed linked worktree of the draft's project (`codexhost/workspace/worktree/list`, name · branch · dirty marker, primary checkout excluded), and `New worktree…` (name prefilled with `yyMMdd-`, created through `codexhost/workspace/worktree/create` on lane `codex`). Picking a Host-managed worktree SHALL keep Desktop's Composer mode on `local` and SHALL hand the worktree root to the desktop-control draft policy (`selectWorkspace({ cwd })`), which rewrites `cwd` (and matching `runtimeWorkspaceRoots`) on the draft's non-ephemeral `thread/start` for official Codex and external Threads alike. Every new draft SHALL start on `Local`; the last pick SHALL be persisted only to mark that entry as last used. The Renderer SHALL NOT invoke Git itself.
+For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL render a `Worktree ▾` chip beside the branch control instead of a checkbox. Its menu SHALL offer `Local` (Desktop's project directory), `Temporary worktree` (Desktop's own anonymous worktree via `setComposerMode("worktree")`), every Host-managed linked worktree of the draft's project (`codexhost/workspace/worktree/list`, name · branch · dirty marker, primary checkout excluded), and `New worktree…` (created through `codexhost/workspace/worktree/create` on lane `codex`). The new-worktree name SHALL be prefilled complete, not just with the `yyMMdd-` date: the functional core comes from what the user has already typed in the Composer, slugified and truncated, falling back to the GMT+8 time when the prompt yields no ASCII word, and disambiguated against the worktree names that already exist. The suggestion SHALL always satisfy the Host's name pattern, and the user SHALL still be able to edit it. Picking a Host-managed worktree SHALL keep Desktop's Composer mode on `local` and SHALL hand the worktree root to the desktop-control draft policy (`selectWorkspace({ cwd })`), which rewrites `cwd` (and matching `runtimeWorkspaceRoots`) on the draft's non-ephemeral `thread/start` for official Codex and external Threads alike. While a Host-managed worktree is picked, Desktop's own run-location drifting back to `worktree` SHALL re-request `local` rather than discard the pick, since discarding it silently started the Thread in the project root. Every new draft SHALL start on `Local`; the last pick SHALL be persisted only to mark that entry as last used. The Renderer SHALL NOT invoke Git itself.
 
 #### Scenario: New draft starts Local and lists Host-managed worktrees
 
