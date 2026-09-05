@@ -91,3 +91,13 @@ Adapter 与 Host 本身没有问题：用主检出 dist 直驱 `CursorAdapter`�
 
 - Cursor 目录在第一条 Turn 之后才进入 Adapter 缓存；侧栏已锁定 Thread 会由 `session.state.changed` 拿到实际模型，新的 draft 仍显示 `Default model`，直到 Renderer 下一次 `harness/inspect`（刷新或重新挂载）。
 - 若 Cursor 未来在 `initialize` 上暴露目录（类似 Grok `_meta.modelState`），应改冷检查而不是保留这条空目录路径。
+
+## Merge into `czz-dev`（2026-09-05）
+
+- Rebase `2b243a4` → `644e69b`，落在 `695932e` 之上（跨 144 个提交：upstream v0.4.4 合并与置顶轮次头重构）。唯一冲突在 `packages/renderer-extension/src/renderer-binding-probe.ts`：`czz-dev` 已把就绪判定重构成 `isExternalConfigurationReadyView(modelView, permissionModeView)`，解决方式是把空目录规则并进该函数而不是保留旧的内联判断。
+- **收敛决定**：空目录 = 原生默认模型这条规则改为按 Harness 生效——新增 `externalAgentUsesNativeDefaultModel(agent)`（[renderer-composer-dom.ts](../../../packages/renderer-extension/src/renderer-composer-dom.ts) 第 713-736 行），当前只有 `cursor` 返回 `true`。原因：`czz-dev` 在本任务之后加入了「同一 Host 的 Claude 空目录是终态」契约（`renderer-binding-probe-host-catalog.test.ts` 第 448 行断言提交被拦下），若把空目录一律当成可发送，该用例会失败、Claude 的空目录会被误判成可用。`shouldApplyDraftAgentCarrier` 与 draft 阶段写 carrier 的分支同样收敛到该断言。
+- 用例同步：`renderer-composer-model-ready.test.ts` 改为按 agent 传参，新增「Claude Code / Grok 的空目录仍不可发送」一例。
+- 合并后门禁（主检出 `czz-dev`）：`npm run typecheck` 通过；`npm run lint` 通过；`vitest run --config tests/vitest.config.js` 210 文件 1842 通过 / 9 跳过；Playwright `renderer-composer-workspace-surface` 1 通过；`npm run build:renderer` 通过。
+- 顺带修两处与本任务无关但挡住门禁的环境问题：`eslint.config.js` 忽略 `.claude/worktrees/**`（嵌套 worktree 是同一仓库的另一份检出，从父目录 lint 会因两个候选 tsconfig 根解析失败）；`packages/shared-contracts/dist/index.js` 是一份过期的 bundle，`tsc -b` 认为无需重建，`tsc -b packages/shared-contracts --force` 后恢复。
+- Live gap 不变：Desktop 目视仍未做。
+
