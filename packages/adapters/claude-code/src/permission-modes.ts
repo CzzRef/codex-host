@@ -24,16 +24,19 @@ const claudePermissionModes = [
     id: "plan",
     label: "Plan mode",
     description: "Analyze and plan without executing tools.",
+    canonical: "plan",
   },
   {
     id: "default",
     label: "Default",
     description: "Ask before edits and other protected actions.",
+    canonical: "ask",
   },
   {
     id: "acceptEdits",
     label: "Accept edits",
     description: "Allow file edits and ask for other protected actions.",
+    canonical: "auto",
   },
   {
     id: "auto",
@@ -45,6 +48,7 @@ const claudePermissionModes = [
     label: "Bypass permissions",
     description: "Skip Claude Code permission checks.",
     dangerous: true,
+    canonical: "bypass",
   },
 ] as const;
 

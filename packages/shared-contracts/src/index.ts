@@ -13,9 +13,11 @@ export {
   HARNESS_PERMISSION_MODE_CATALOG_MAX_LENGTH,
   HARNESS_PERMISSION_MODE_DESCRIPTION_MAX_LENGTH,
   HARNESS_PERMISSION_MODE_ID_MAX_LENGTH,
+  HARNESS_PERMISSION_MODE_KINDS,
   HARNESS_PERMISSION_MODE_LABEL_MAX_LENGTH,
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
+  harnessPermissionModeKindSchema,
   harnessPermissionModeSchema,
   threadPermissionModeSelectParamsSchema,
 } from "./harness-permission-modes.js";
@@ -23,6 +25,7 @@ export type {
   HarnessPermissionMode,
   HarnessPermissionModeCatalog,
   HarnessPermissionModeId,
+  HarnessPermissionModeKind,
   ThreadPermissionModeSelectParams,
 } from "./harness-permission-modes.js";
 export {

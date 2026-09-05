@@ -31,3 +31,6 @@ export const packageMetadata = {
   contractVersion: WORKSPACE_CONTRACT_VERSION,
   adapterContract: harnessAdapter.name,
 } as const;
+
+// The shared Permission Mode vocabulary is asserted across Harnesses.
+export { ANTIGRAVITY_PERMISSION_MODE_CATALOG } from "./permission-modes.js";

@@ -2,6 +2,7 @@ import type {
   HarnessPermissionMode,
   HarnessPermissionModeCatalog,
   HarnessPermissionModeId,
+  HarnessPermissionModeKind,
 } from "@codexhost/shared-contracts";
 import type { IconNode } from "lucide";
 import createElement from "lucide/dist/esm/createElement.mjs";
@@ -312,6 +313,44 @@ export function mountRendererPermissionModePicker(
   return control;
 }
 
+/**
+ * The shared choices, weakest first. Every Harness is offered all four so the
+ * menu reads the same whichever agent is selected; a Harness that has no
+ * native Mode for one of them shows it disabled with the reason, rather than
+ * silently omitting it and leaving a different menu per agent.
+ */
+const KIND_ORDER: readonly HarnessPermissionModeKind[] = ["plan", "ask", "auto", "bypass"];
+
+const KIND_COPY: Record<
+  HarnessPermissionModeKind,
+  { en: string; zh: string; enMissing: string; zhMissing: string }
+> = {
+  plan: {
+    en: "Plan only",
+    zh: "只做计划",
+    enMissing: "This agent has no plan-only mode",
+    zhMissing: "该 Agent 没有只做计划的模式",
+  },
+  ask: {
+    en: "Ask every time",
+    zh: "每次询问",
+    enMissing: "This agent has no ask-every-time mode",
+    zhMissing: "该 Agent 没有每次询问的模式",
+  },
+  auto: {
+    en: "Auto-accept edits",
+    zh: "自动接受编辑",
+    enMissing: "This agent has no auto-accept mode",
+    zhMissing: "该 Agent 没有自动接受编辑的模式",
+  },
+  bypass: {
+    en: "Bypass approvals",
+    zh: "全部放行",
+    enMissing: "This agent has no bypass mode",
+    zhMissing: "该 Agent 没有全部放行的模式",
+  },
+};
+
 function rebuildOptions(
   control: RendererPermissionModePickerControl,
   catalog: HarnessPermissionModeCatalog,
@@ -319,7 +358,19 @@ function rebuildOptions(
 ): void {
   control.options.clear();
   control.menu.replaceChildren();
+  const zh = locale === "zh-CN";
+  // Native Modes first, in the shared order; unmapped ones keep their place.
+  const byKind = new Map<HarnessPermissionModeKind, HarnessPermissionMode>();
   for (const mode of catalog.modes) {
+    if (mode.canonical && !byKind.has(mode.canonical)) byKind.set(mode.canonical, mode);
+  }
+  const ordered = [
+    ...KIND_ORDER.map((kind) => byKind.get(kind)).filter(
+      (mode): mode is HarnessPermissionMode => mode !== undefined,
+    ),
+    ...catalog.modes.filter((mode) => !mode.canonical || byKind.get(mode.canonical) !== mode),
+  ];
+  for (const mode of ordered) {
     const presentation = rendererPermissionModePresentation(mode, locale);
     const button = document.createElement("button");
     button.type = "button";
@@ -336,7 +387,12 @@ function rebuildOptions(
     const copy = document.createElement("span");
     copy.className = "min-w-0 flex-1";
     const title = document.createElement("span");
-    title.textContent = presentation.label;
+    // The shared name leads; the Harness's own name follows it, so the menu is
+    // identical across agents without hiding what the Harness calls the Mode.
+    const shared = mode.canonical ? KIND_COPY[mode.canonical] : undefined;
+    title.textContent = shared
+      ? `${zh ? shared.zh : shared.en} · ${presentation.label}`
+      : presentation.label;
     title.className = "block font-medium";
     title.style.letterSpacing = "0";
     copy.append(title);
@@ -355,6 +411,36 @@ function rebuildOptions(
     check.style.visibility = "hidden";
     button.append(modeIcon, copy, check);
     control.options.set(mode.id, { button, check, mode });
+    control.menu.append(button);
+  }
+  for (const kind of KIND_ORDER) {
+    if (byKind.has(kind)) continue;
+    const shared = KIND_COPY[kind];
+    if (!shared) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.permissionModeKind = kind;
+    button.setAttribute("role", "menuitemradio");
+    button.className = OPTION_CLASSES;
+    button.style.letterSpacing = "0";
+    button.disabled = true;
+    button.title = zh ? shared.zhMissing : shared.enMissing;
+    const modeIcon = document.createElement("span");
+    modeIcon.className = "inline-flex h-5 w-5 shrink-0 items-center justify-center";
+    modeIcon.append(icon(Shield, 17));
+    const copy = document.createElement("span");
+    copy.className = "min-w-0 flex-1";
+    const title = document.createElement("span");
+    title.textContent = zh ? shared.zh : shared.en;
+    title.className = "block font-medium";
+    title.style.letterSpacing = "0";
+    const description = document.createElement("span");
+    description.textContent = zh ? shared.zhMissing : shared.enMissing;
+    description.className = "mt-0.5 block text-xs text-token-text-tertiary";
+    description.style.lineHeight = "16px";
+    description.style.whiteSpace = "normal";
+    copy.append(title, description);
+    button.append(modeIcon, copy);
     control.menu.append(button);
   }
 }

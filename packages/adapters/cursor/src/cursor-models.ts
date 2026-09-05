@@ -10,6 +10,26 @@ import {
 
 const PREFIX = "cursor.";
 
+/**
+ * Cursor's own Permission Modes only ever ask; ACP has no "run everything"
+ * Mode and codexhost deliberately does not pass `--force` / `--yolo` to the
+ * CLI. This synthetic Mode keeps the shared `bypass` choice available by
+ * answering Cursor's own permission requests inside the Host instead.
+ */
+export const CURSOR_BYPASS_PERMISSION_MODE_ID = "codexhost-bypass";
+
+export function isCursorBypassPermissionMode(value: string): boolean {
+  return value === CURSOR_BYPASS_PERMISSION_MODE_ID;
+}
+
+/** Which shared choice each native Cursor Mode stands for. */
+function cursorModeKind(id: string): "plan" | "ask" | "auto" | undefined {
+  if (id === "plan") return "plan";
+  if (id === "ask") return "ask";
+  if (id === "agent") return "auto";
+  return undefined;
+}
+
 export function cursorModelRef(nativeId: string): HarnessModelRef {
   return harnessModelRefSchema.parse({
     id: PREFIX + Buffer.from(nativeId, "utf8").toString("base64url"),
@@ -46,11 +66,25 @@ export function cursorConfiguration(response: Pick<NewSessionResponse, "configOp
   const permissionModes =
     response.modes && modes.length > 0
       ? harnessPermissionModeCatalogSchema.parse({
-          modes: modes.map((mode) => ({
-            id: mode.id,
-            label: mode.name,
-            ...(mode.description ? { description: mode.description } : {}),
-          })),
+          modes: [
+            ...modes.map((mode) => {
+              const canonical = cursorModeKind(mode.id);
+              return {
+                id: mode.id,
+                label: mode.name,
+                ...(mode.description ? { description: mode.description } : {}),
+                ...(canonical ? { canonical } : {}),
+              };
+            }),
+            {
+              id: CURSOR_BYPASS_PERMISSION_MODE_ID,
+              label: "Bypass approvals",
+              description:
+                "Answer Cursor's permission requests automatically for this Thread. Cursor keeps its own sandbox; codexhost does not pass --force.",
+              dangerous: true,
+              canonical: "bypass",
+            },
+          ],
           defaultModeId: response.modes.currentModeId,
         })
       : undefined;

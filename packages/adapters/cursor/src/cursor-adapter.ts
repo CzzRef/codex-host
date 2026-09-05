@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import type { NewSessionResponse } from "@agentclientprotocol/sdk";
+import type {
+  NewSessionResponse,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+} from "@agentclientprotocol/sdk";
 import {
   HarnessOutputChannel,
   type HarnessAdapter,
@@ -33,6 +37,7 @@ import {
 } from "@codexhost/harness-adapter";
 import {
   harnessIdSchema,
+  harnessPermissionModeIdSchema,
   nativeSessionRefSchema,
   type NativeTurnRef,
   hostItemIdSchema,
@@ -49,7 +54,13 @@ import {
   latestCursorNativeTurn,
   mapCursorHistory,
 } from "./cursor-history.js";
-import { cursorCapabilities, cursorConfiguration, cursorNativeModelId } from "./cursor-models.js";
+import {
+  CURSOR_BYPASS_PERMISSION_MODE_ID,
+  cursorCapabilities,
+  cursorConfiguration,
+  cursorNativeModelId,
+  isCursorBypassPermissionMode,
+} from "./cursor-models.js";
 import { CursorTurn } from "./cursor-turn.js";
 
 const cursorId = harnessIdSchema.parse("cursor");
@@ -108,6 +119,13 @@ class CursorSession implements HarnessSession {
   #runTask: Promise<void> | undefined;
   #closed = false;
   #configuring = false;
+  // The synthetic `bypass` Mode is not a Cursor Mode: it is answered here.
+  #bypassPermissions = false;
+
+  /** Starts this Session under the synthetic `bypass` Permission Mode. */
+  enableBypassPermissions(): void {
+    this.#bypassPermissions = true;
+  }
   #closeTask: Promise<void> | undefined;
   readonly #sessionId: string;
   readonly #knownTurnRefs: readonly NativeTurnRef[];
@@ -226,7 +244,30 @@ class CursorSession implements HarnessSession {
         "unsupported",
         "Cursor reasoning settings are part of its native Model selection",
       );
+    if (
+      command.type === "permissionMode.select" &&
+      isCursorBypassPermissionMode(command.permissionModeId)
+    ) {
+      // Cursor has no native "run everything" Mode; the Host answers its
+      // permission requests instead, so nothing is sent to the CLI.
+      this.#bypassPermissions = true;
+      this.#channel.emit({
+        kind: "event",
+        event: {
+          type: "session.state.changed",
+          state: {
+            ...cursorConfiguration(this.native).state,
+            effectivePermissionModeId: harnessPermissionModeIdSchema.parse(
+              CURSOR_BYPASS_PERMISSION_MODE_ID,
+            ),
+            ...(this.initialState.nativeRef ? { nativeRef: this.initialState.nativeRef } : {}),
+          },
+        },
+      });
+      return { ok: true, value: { completed: true } };
+    }
     if (command.type === "model.select" || command.type === "permissionMode.select") {
+      this.#bypassPermissions = false;
       this.#configuring = true;
       try {
         await selectNative(
@@ -289,6 +330,23 @@ class CursorSession implements HarnessSession {
     }
   }
 
+  /**
+   * Under the synthetic `bypass` Mode the Host answers Cursor's own permission
+   * request with its "allow" option instead of raising a Host approval.
+   * Cursor still runs inside its own sandbox: no CLI flag is changed.
+   */
+  #permission(
+    turn: CursorTurn,
+    request: RequestPermissionRequest,
+  ): Promise<RequestPermissionResponse> {
+    if (!this.#bypassPermissions) return turn.interactions.permission(request);
+    const allow =
+      request.options.find((option) => option.kind === "allow_always") ??
+      request.options.find((option) => option.kind === "allow_once");
+    if (!allow) return turn.interactions.permission(request);
+    return Promise.resolve({ outcome: { outcome: "selected", optionId: allow.optionId } });
+  }
+
   async #run(turn: CursorTurn, text: string): Promise<void> {
     try {
       const previousKeysTask = this.#readHistorySnapshot()
@@ -296,7 +354,7 @@ class CursorSession implements HarnessSession {
         .catch(() => new Set<string>());
       let response = await this.transport.runTurn(text, {
         update: (update) => turn.update(update),
-        permission: (request) => turn.interactions.permission(request),
+        permission: (request) => this.#permission(turn, request),
         extension: (method, params) => turn.interactions.extension(method, params),
       });
       // An interrupt that carried a steer re-prompts inside this Host Turn;
@@ -330,7 +388,7 @@ class CursorSession implements HarnessSession {
         });
         response = await this.transport.runTurn(steerText, {
           update: (update) => turn.update(update),
-          permission: (request) => turn.interactions.permission(request),
+          permission: (request) => this.#permission(turn, request),
           extension: (method, params) => turn.interactions.extension(method, params),
         });
       }
@@ -485,7 +543,13 @@ export class CursorAdapter implements HarnessAdapter {
           : await transport.open({ kind: "create" });
       if (input.kind === "create" && input.model)
         await selectNative(transport, response, "model", cursorNativeModelId(input.model));
-      if (input.kind === "create" && input.permissionModeId)
+      // The synthetic `bypass` Mode is not a Cursor Mode: never send it to the
+      // CLI, carry it as Host-side auto-approval on the Session instead.
+      const bypassAtCreate =
+        input.kind === "create" &&
+        input.permissionModeId !== undefined &&
+        isCursorBypassPermissionMode(input.permissionModeId);
+      if (input.kind === "create" && input.permissionModeId && !bypassAtCreate)
         await selectNative(transport, response, "mode", input.permissionModeId);
       if (fault) {
         await transport.close();
@@ -513,6 +577,7 @@ export class CursorAdapter implements HarnessAdapter {
         input.kind === "resume" ? (input.knownTurnRefs ?? []) : [],
         this.options.nativeHistorySettleTimeoutMs ?? 2_000,
       );
+      if (bypassAtCreate) session.enableBypassPermissions();
       this.#sessions.add(session);
       return { ok: true, value: session };
     } catch (error) {
