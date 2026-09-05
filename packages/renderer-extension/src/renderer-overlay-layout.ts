@@ -197,7 +197,9 @@ export function ensureOverlayChromeStyle(ownerDocument: Document): void {
     .codexhost-overlay-chip:hover .codexhost-overlay-tooltip,
     .codexhost-overlay-chip:focus-visible .codexhost-overlay-tooltip,
     .codexhost-workspace-stats:hover .codexhost-overlay-tooltip,
-    .codexhost-workspace-stats:focus-visible .codexhost-overlay-tooltip {
+    .codexhost-workspace-stats:focus-visible .codexhost-overlay-tooltip,
+    [data-codexhost-workspace-row]:hover .codexhost-workspace-detail,
+    [data-codexhost-workspace-row]:focus-visible .codexhost-workspace-detail {
       opacity: 1;
       translate: 0 0;
     }

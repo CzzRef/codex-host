@@ -109,6 +109,18 @@ export function renderRow(
         ? "涉及的仓库"
         : "Repository touched";
   row.title = `${roleLabel}\n${repository.root}\n${branchText}`;
+  // The chip is clipped to keep the header one line, so hovering has to be able
+  // to show the full root path, worktree owner and branch.
+  const detail = ownerDocument.createElement("span");
+  detail.className = "codexhost-overlay-tooltip codexhost-workspace-detail";
+  detail.setAttribute("aria-hidden", "true");
+  const lines: string[] = [roleLabel, repository.root];
+  if (repository.isWorktree && owner !== display) {
+    lines.push(chinese ? `${owner} 的工作树` : `${owner} worktree`);
+  }
+  lines.push(chinese ? `分支 ${branchText}` : `Branch ${branchText}`);
+  detail.textContent = lines.join("\n");
+  row.append(detail);
   return row;
 }
 
