@@ -133,11 +133,16 @@ codexhost launch
 
 - 当前 Host 运行期间可连续对话、流式显示文本/推理/工具、处理审批与问题、读取当前任务投影。
 - Host 退出后，可按同一 Native Session ID 恢复；快照来自 ACP session store，NativeTurnRef 使用 assistant message id 或 blob hash。
-- Cursor 仍不支持 Fork、Rollback、独立 Thinking 选项或 Usage 计量。Side chat 继续因 `fork: false` 不可用。
+- Cursor 仍不支持 Fork、Rollback、独立 Thinking 选项或 Usage 计量。Side chat 继续因 `fork: false` 不可用。**这是 ACP 协议面的限制，不是 codexhost 主动关掉的**：2026-09-05 只读探针（只发 `initialize`，不建 Session）实测 `cursor-agent acp` 的 `agentCapabilities` 只有 `loadSession: true` 与 `sessionCapabilities: { list: {} }`，既没有 `fork`，也没有任何 rewind / truncate / checkpoint 能力位，`session/delete` 同样是 `-32601`。Cursor APP 自己的检查点/回滚做得很好，但那套能力没有出现在 `cursor-agent acp` 上，codexhost 只经 ACP 与 Cursor 通信，所以拿不到。若 Cursor 后续在 `sessionCapabilities` 里放出 fork / rewind，应据此升级 Adapter。
 - Cursor 第一个真实 Session 创建后，才从原生 configOptions 得到当前账号的模型/模式目录；冷 `inspect` 只跑 `cursor-agent status` + ACP `initialize`，而 Cursor 的 `initialize` 不带模型（`_meta` 为空，Grok 则在 `_meta.modelState` 里给目录），所以 `codexhost doctor` 会显示 `cursor: ready, models: 0`。2026-09-03 起 Composer 把空目录当成「Harness 原生默认模型」：模型标签显示 `Default model`，发送可用，draft 仍写 `codexhost/cursor-native`（带权限模式时为 `codexhost/cursor-native@@<mode>`）路由到 Cursor；此前空目录会禁用发送并让 draft 落回原生 Codex。原生模型里的 reasoning/effort 参数作为完整模型 ID 保留。不为拿目录在 inspect 时建 Session：ACP `session/new` 会立刻落 `~/.cursor/acp-sessions/<id>/meta.json` 并进入 `session/list`，且没有 `session/delete`；`cursor-agent --list-models` 的 id 也不是 ACP 目录 id。任务卡：[1025](../vibe/specs/260903/1025-cursor-native-default-draft/task-card.md)。
 - 使用专用 `cursor-agent`，绝不把通用 `agent` 当作 Cursor：本机该名称实际属于 Grok。
 - 不自动调用 authenticate 或打开登录浏览器；登录缺失时提示用户通过 Cursor CLI 登录。
-- 不加 `--force`、`--trust` 或关闭 sandbox 的参数；原生权限请求、问答、计划审批通过 Host 显式处理。
+- 不加 `--force`、`--trust`、`--yolo` 或关闭 sandbox 的参数——**这条不变**。默认下原生权限请求、问答、计划审批仍通过 Host 显式处理。
+- 2026-09-05 起新增一条例外，且只在用户显式选择时生效：权限模式选择器里的 `bypass`（Cursor 上是合成模式 `codexhost-bypass`）让 Host 自动应答 Cursor 的 ACP `session/request_permission`（优先 `allow_always`，否则 `allow_once`）。它**不改任何 CLI 参数**，Cursor 自己的 sandbox 与规则不变；作用范围是当前线程，切回 `Agent / Plan / Ask` 立即恢复逐次审批，合成 id 也绝不会发给 Cursor。
+
+### 权限模式统一词表
+
+各 Harness 原本各叫各的：Claude Code `bypassPermissions`、Grok `always-approve`、OMP `yolo`、OpenCode `allow`、Antigravity `dangerously-skip-permissions`，Cursor 则只有 ACP 的 `agent / plan / ask`。2026-09-05 起 `HarnessPermissionMode` 增加可选 `canonical`（`plan` / `ask` / `auto` / `bypass`），Adapter 给每个原生模式打标，**原生 id 仍是唯一线上值**，`canonical` 只决定 Composer 怎么呈现，不改传输语义、已有线程不受影响。选择器按固定顺序渲染这四档，标题是「共享名 · Harness 原名」；当前 Harness 没有的档位显示为禁用并写明原因，而不是隐藏——保证换 Agent 时看到的是同一组选项。跨 Harness 回归用例在 `packages/host-runtime/test/permission-mode-vocabulary.test.ts`。
 
 该适配是受限接入，不能声称已经具备与 Claude/Grok 相同的持久化能力。未来如果 Cursor 发布稳定的 transcript/replay API，应据原生 identity 升级 Adapter，而不是建立第二份 Host 历史存储。
 
