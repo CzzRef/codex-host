@@ -160,6 +160,8 @@ codexhost thread rename --name "260901-示例标题"
 codexhost thread archive codex://threads/<thread-id>
 ```
 
+委派 Skill 由 Host 启动时写入 `~/.agents/skills`、`~/.claude/skills` 与 `~/.cursor/skills`（2026-09-05 补上第三个）。Cursor 只读 `~/.cursor/skills`，此前两个目录它都看不到，所以 Cursor 线程虽然拿得到 `CODEXHOST_RUNTIME_ENDPOINT` / `TOKEN` / `CODEXHOST_THREAD_ID`，却不知道有 `codexhost thread rename` 这条命令，会话标题一直停在 Desktop 生成的那个。你手写的同名 SKILL.md 仍按 `conflict` 保留、不被覆盖。
+
 Cursor 的 `delegate start --permission-mode` 取 `harness inspect cursor` 的 `permissionModes`（`agent` / `plan` / `ask`）；`--model` 在第一条 Cursor Turn 之前拿不到目录，省略即用 Cursor 原生默认模型。
 
 这些委派命令需要当前 codexhost Host 注入的 Runtime endpoint/token/thread 环境；`delegate start` 使用调用方当前工作目录。安装命令本身不意味着普通 Shell 已经连接到当前 Codex。不要把 token 写进仓库或复制到文档。
