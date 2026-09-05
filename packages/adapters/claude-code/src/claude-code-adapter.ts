@@ -341,13 +341,36 @@ function invalidState(message: string): HarnessError {
   return { code: "invalidState", message, retryable: false };
 }
 
-function transportFailure(kind: ClaudeTransportFailureKind): HarnessError {
+/**
+ * Names the Claude Code build behind an authentication failure. A machine can
+ * carry several independent installs — the CLI on PATH, a version manager's
+ * copy, the one the Claude desktop app bundles — and each keeps its own login,
+ * so a bare "authentication is required" sends people to re-authenticate an
+ * install this Adapter never spawns. Falls back to the plain sentence when the
+ * executable cannot be resolved.
+ */
+function authenticationRequired(installation?: () => string | undefined): HarnessError {
+  let executable: string | undefined;
+  try {
+    executable = installation?.();
+  } catch {
+    // An unresolvable command still yields the plain, correct sentence.
+  }
+  return {
+    code: "authenticationRequired",
+    message: executable
+      ? `Claude Code authentication is required for ${executable}`
+      : "Claude Code authentication is required",
+    retryable: true,
+  };
+}
+
+function transportFailure(
+  kind: ClaudeTransportFailureKind,
+  installation?: () => string | undefined,
+): HarnessError {
   if (kind === "authentication") {
-    return {
-      code: "authenticationRequired",
-      message: "Claude Code authentication is required",
-      retryable: true,
-    };
+    return authenticationRequired(installation);
   }
   if (kind === "protocol") {
     return {
@@ -368,7 +391,7 @@ function transportFailure(kind: ClaudeTransportFailureKind): HarnessError {
   };
 }
 
-function startupFailure(error: unknown): HarnessError {
+function startupFailure(error: unknown, installation?: () => string | undefined): HarnessError {
   if (error instanceof ClaudeCodeExecutableError) {
     return { code: "notInstalled", message: error.message, retryable: false };
   }
@@ -378,11 +401,7 @@ function startupFailure(error: unknown): HarnessError {
     text.includes("authentication") ||
     text.includes("api key")
   ) {
-    return {
-      code: "authenticationRequired",
-      message: "Claude Code authentication is required",
-      retryable: true,
-    };
+    return authenticationRequired(installation);
   }
   return {
     code: "unavailable",
@@ -499,6 +518,7 @@ class ClaudeHarnessSession implements HarnessSession {
   readonly #cancelTimeoutMs: number;
   readonly #closeTimeoutMs: number;
   readonly #createTransport: ClaudeAdapterDependencies["createTransport"];
+  readonly #inspectInstallation: ClaudeAdapterDependencies["inspectInstallation"];
   readonly #cwd: string;
   readonly #nativeRef: NativeSessionRef;
   readonly #onClosed: () => void;
@@ -562,6 +582,7 @@ class ClaudeHarnessSession implements HarnessSession {
     this.#createTransport = environment
       ? (input) => dependencies.createTransport({ ...input, environment })
       : dependencies.createTransport;
+    this.#inspectInstallation = dependencies.inspectInstallation;
     this.#randomUUID = dependencies.randomUUID;
     this.#readSessionMessages = dependencies.readSessionMessages;
     this.#cancelTimeoutMs = options.cancelTimeoutMs;
@@ -588,6 +609,15 @@ class ClaudeHarnessSession implements HarnessSession {
     this.#state = this.initialState;
     this.#statePublished = this.#openMode === "resume";
     this.outputs = this.#channel.outputs;
+  }
+
+  /**
+   * Resolved path of the Claude Code build this Session spawns, for failures
+   * that must say which install they mean. Returns undefined when the command
+   * no longer resolves so the caller keeps its unqualified message.
+   */
+  #installationLocator(): string | undefined {
+    return this.#inspectInstallation()?.executable;
   }
 
   async readSnapshot(): Promise<HarnessResult<HostThreadSnapshot>> {
@@ -711,7 +741,7 @@ class ClaudeHarnessSession implements HarnessSession {
       transport = await this.#ensureTransport();
     } catch (error) {
       this.#acceptingTurn = false;
-      return { ok: false, error: startupFailure(error) };
+      return { ok: false, error: startupFailure(error, () => this.#installationLocator()) };
     }
     this.#acceptingTurn = false;
     if (this.#phase !== "open") {
@@ -819,7 +849,7 @@ class ClaudeHarnessSession implements HarnessSession {
       transport = await this.#ensureTransport();
     } catch (error) {
       this.#acceptingTurn = false;
-      return { ok: false, error: startupFailure(error) };
+      return { ok: false, error: startupFailure(error, () => this.#installationLocator()) };
     }
     this.#acceptingTurn = false;
     if (this.#phase !== "open") {
@@ -1836,13 +1866,19 @@ class ClaudeHarnessSession implements HarnessSession {
   #finishResult(active: ActiveTurn, result: ClaudeTransportTurnResult): void {
     if (this.#active !== active) return;
     if (result.status === "succeeded" && (active.tools.size > 0 || active.subagents.size > 0)) {
-      this.#finishFailed(active, transportFailure("protocol"));
+      this.#finishFailed(
+        active,
+        transportFailure("protocol", () => this.#installationLocator()),
+      );
     } else if (result.status === "succeeded") {
       this.#finish(active, { status: "succeeded" });
     } else if (result.status === "cancelled") {
       this.#finish(active, { status: "cancelled", reason: result.reason });
     } else {
-      this.#finishFailed(active, transportFailure(result.kind));
+      this.#finishFailed(
+        active,
+        transportFailure(result.kind, () => this.#installationLocator()),
+      );
     }
   }
 
@@ -2454,9 +2490,11 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     let inspector: ClaudeModelInspector | null = null;
     const startedAt = Date.now();
     let stage = "resolve-executable";
+    let executable: string | undefined;
     try {
       const identity = this.#dependencies.inspectInstallation();
       if (identity) record.fingerprint = identity.fingerprint;
+      executable = identity?.executable;
       stage = "startup";
       inspector = this.#dependencies.createInspector({ cwd });
       this.#inspectors.add(inspector);
@@ -2504,7 +2542,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
               message: "Claude Code returned an invalid Model catalog",
               retryable: false,
             } satisfies HarnessError)
-          : startupFailure(error);
+          : startupFailure(error, () => executable);
       return {
         status: normalized.code === "notInstalled" ? "notInstalled" : "error",
         error: {

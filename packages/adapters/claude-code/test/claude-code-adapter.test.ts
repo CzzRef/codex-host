@@ -4549,6 +4549,79 @@ describe("Claude Code HarnessAdapter", () => {
     await session.close();
   });
 
+  it("names the Claude Code install behind an authentication failure", async () => {
+    const { adapter, inspectInstallation, transports } = fixture();
+    inspectInstallation.mockReturnValue({
+      executable: "/Users/dev/.local/share/claude/versions/2.1.259",
+      fingerprint: "259",
+    });
+    const session = await openSession(adapter);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+
+    await session.execute(textTurn("auth-named"));
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    transports[0]?.finish({ status: "failed", kind: "authentication" });
+    await nextEvent(iterator);
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: {
+        status: "failed",
+        error: {
+          code: "authenticationRequired",
+          message:
+            "Claude Code authentication is required for /Users/dev/.local/share/claude/versions/2.1.259",
+        },
+      },
+    });
+    await session.close();
+  });
+
+  it("keeps the unqualified authentication message when the command stops resolving", async () => {
+    const { adapter, inspectInstallation, transports } = fixture();
+    const session = await openSession(adapter);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+    inspectInstallation.mockImplementation(() => {
+      throw new ClaudeCodeExecutableError("Claude Code is not installed");
+    });
+
+    await session.execute(textTurn("auth-unresolved"));
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    transports[0]?.finish({ status: "failed", kind: "authentication" });
+    await nextEvent(iterator);
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: {
+        status: "failed",
+        error: {
+          code: "authenticationRequired",
+          message: "Claude Code authentication is required",
+        },
+      },
+    });
+    await session.close();
+  });
+
+  it("names the Claude Code install when inspection cannot authenticate", async () => {
+    const { adapter, dependencies, inspectInstallation } = fixture();
+    inspectInstallation.mockReturnValue({ executable: "/claude/2.1.259", fingerprint: "259" });
+    vi.mocked(dependencies.createInspector).mockImplementationOnce(() => {
+      throw new Error("Not logged in");
+    });
+
+    await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toMatchObject({
+      status: "error",
+      error: {
+        code: "authenticationRequired",
+        message: "Claude Code authentication is required for /claude/2.1.259",
+      },
+    });
+    await adapter.close();
+  });
+
   it("finalizes an active Turn before a Query fault", async () => {
     const { adapter, transports } = fixture();
     const session = await openSession(adapter);
