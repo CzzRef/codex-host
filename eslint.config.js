@@ -14,6 +14,10 @@ const javaScriptFiles = [
 export default [
   {
     ignores: [
+      // Nested Git worktrees are separate checkouts of this same repository:
+      // linting them from the parent double-reports and, when they sit on an
+      // older commit, breaks type-aware parsing with two candidate roots.
+      ".claude/worktrees/**",
       ".codexhost/**",
       ".pi/**",
       "build/**",
