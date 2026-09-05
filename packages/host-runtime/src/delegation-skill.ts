@@ -131,9 +131,14 @@ export async function installDelegationSkills(
   } = {},
 ): Promise<DelegationSkillInstallResult[]> {
   const home = input.homeDirectory ?? os.homedir();
+  // Every agent that can be a Host Thread needs to find the CLI, or it has no
+  // way to rename its own Thread or delegate. Cursor reads `~/.cursor/skills`
+  // and neither of the other two roots, which is why Cursor Threads kept the
+  // Desktop-generated title while the other Harnesses renamed themselves.
   const destinations = [
     path.join(home, ".agents", SKILL_RELATIVE_PATH),
     path.join(home, ".claude", SKILL_RELATIVE_PATH),
+    path.join(home, ".cursor", SKILL_RELATIVE_PATH),
   ];
   const knownDigests = new Set([
     CURRENT_DIGEST,

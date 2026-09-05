@@ -14,6 +14,8 @@ function paths(root: string): string[] {
   return [
     path.join(root, ".agents", "skills", "codexhost-delegation", "SKILL.md"),
     path.join(root, ".claude", "skills", "codexhost-delegation", "SKILL.md"),
+    // Cursor reads neither of the other two roots.
+    path.join(root, ".cursor", "skills", "codexhost-delegation", "SKILL.md"),
   ];
 }
 
@@ -21,8 +23,15 @@ describe("delegation Skill installation", () => {
   it("atomically installs identical managed copies", async () => {
     const root = await home();
     const results = await installDelegationSkills({ homeDirectory: root });
-    expect(results.map((result) => result.status)).toEqual(["installed", "installed"]);
-    const [agents, claude] = await Promise.all(paths(root).map((file) => readFile(file, "utf8")));
+    expect(results.map((result) => result.status)).toEqual([
+      "installed",
+      "installed",
+      "installed",
+    ]);
+    const [agents, claude, cursor] = await Promise.all(
+      paths(root).map((file) => readFile(file, "utf8")),
+    );
+    expect(cursor).toBe(agents);
     expect(agents).toBe(CODEXHOST_DELEGATION_SKILL);
     expect(claude).toBe(agents);
   });
@@ -35,7 +44,7 @@ describe("delegation Skill installation", () => {
     const before = await stat(file);
     const results = await installDelegationSkills({ homeDirectory: root });
     const after = await stat(file);
-    expect(results.map((result) => result.status)).toEqual(["current", "current"]);
+    expect(results.map((result) => result.status)).toEqual(["current", "current", "current"]);
     expect(after.mtimeMs).toBe(before.mtimeMs);
   });
 
@@ -54,7 +63,7 @@ describe("delegation Skill installation", () => {
       homeDirectory: root,
       previousManagedDigests: [createHash("sha256").update(previous).digest("hex")],
     });
-    expect(results.map((result) => result.status)).toEqual(["updated", "updated"]);
+    expect(results.map((result) => result.status)).toEqual(["updated", "updated", "updated"]);
     await expect(readFile(destinations[0] ?? "", "utf8")).resolves.toBe(CODEXHOST_DELEGATION_SKILL);
   });
 
@@ -67,7 +76,7 @@ describe("delegation Skill installation", () => {
     );
     await writeFile(agents, "user content\n", "utf8");
     const results = await installDelegationSkills({ homeDirectory: root });
-    expect(results.map((result) => result.status)).toEqual(["conflict", "installed"]);
+    expect(results.map((result) => result.status)).toEqual(["conflict", "installed", "installed"]);
     await expect(readFile(agents, "utf8")).resolves.toBe("user content\n");
   });
 
