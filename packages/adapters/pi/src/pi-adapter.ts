@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   HarnessOutputChannel,
   validateHostQuestionResponse,
+  hostInputText,
   type HarnessAdapter,
   type HarnessCommandAccepted,
   type HarnessCommandCapability,
@@ -704,7 +705,7 @@ class PiHarnessSession implements HarnessSession {
         },
       };
     }
-    const text = command.input.map((input) => input.text).join("\n");
+    const text = hostInputText(command.input);
     if (text.length === 0) {
       return {
         ok: false,
@@ -1646,7 +1647,7 @@ class PiHarnessSession implements HarnessSession {
     if (!active || active.command.turnId !== command.turnId || !transport) {
       return { ok: false, error: invalidState("Pi Turn steer must reference the active Turn") };
     }
-    const text = command.input.map((input) => input.text).join("\n");
+    const text = hostInputText(command.input);
     if (text.length === 0) {
       return {
         ok: false,

@@ -64,18 +64,30 @@ export const brokerInspectInputSchema = z
 const textInputSchema = z
   .object({ type: z.literal("text"), text: z.string().max(4_000_000) })
   .strict();
+// File parts travel as an absolute Host path, never inlined bytes: the text
+// cap above exists because JSON-RPC frames are not a transport for file
+// contents, and a base64 image would sit right against it.
+const fileInputSchema = z
+  .object({
+    type: z.literal("file"),
+    path: z.string().min(1).max(4_096),
+    mediaType: z.string().min(1).max(255),
+    bytes: z.number().int().nonnegative(),
+  })
+  .strict();
+const turnInputSchema = z.discriminatedUnion("type", [textInputSchema, fileInputSchema]);
 const turnStartSchema = z
   .object({
     type: z.literal("turn.start"),
     turnId: hostTurnIdSchema,
-    input: z.array(textInputSchema),
+    input: z.array(turnInputSchema),
   })
   .strict();
 const turnSteerSchema = z
   .object({
     type: z.literal("turn.steer"),
     turnId: hostTurnIdSchema,
-    input: z.array(textInputSchema),
+    input: z.array(turnInputSchema),
   })
   .strict();
 const turnCancelSchema = z

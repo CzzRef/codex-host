@@ -19,6 +19,7 @@ import {
   HarnessOutputChannel,
   validateHostApprovalResponse,
   validateHostQuestionResponse,
+  hostInputText,
   type HarnessAdapter,
   type HarnessCommandAccepted,
   type HarnessCommandCapability,
@@ -656,7 +657,7 @@ class OpenCodeHarnessSession implements HarnessSession, OpenCodeTransportListene
         },
       };
     }
-    const text = command.input.map(({ text: part }) => part).join("\n");
+    const text = hostInputText(command.input);
     if (!text) {
       return {
         ok: false,

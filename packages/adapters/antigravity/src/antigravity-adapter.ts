@@ -10,6 +10,7 @@ import type { Readable, Writable } from "node:stream";
 import {
   HarnessOutputChannel,
   sanitizeDiagnosticTail,
+  hostInputText,
   type HarnessAdapter,
   type HarnessError,
   type HarnessInspection,
@@ -488,10 +489,7 @@ class AntigravitySession implements HarnessSession {
         },
       };
     }
-    const text = command.input
-      .map(({ text: part }) => part)
-      .join("\n")
-      .trim();
+    const text = hostInputText(command.input).trim();
     if (!text) {
       return {
         ok: false,
@@ -821,7 +819,10 @@ class AntigravitySession implements HarnessSession {
     if (nativeTurnRef) {
       this.#history.append({
         nativeTurnRef,
-        turnInput: active.command.input,
+        // History carries text only until the attachment-in-history slice
+        // lands; no file part can reach here while no Adapter declares the
+        // file-input capability.
+        turnInput: active.command.input.filter((part) => part.type === "text"),
         items: active.completedItems,
         outcome:
           outcome.status === "failed"

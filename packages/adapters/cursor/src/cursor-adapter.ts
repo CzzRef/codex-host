@@ -8,6 +8,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import {
   HarnessOutputChannel,
+  hostInputText,
   type HarnessAdapter,
   type HarnessError,
   type HarnessInspection,
@@ -295,7 +296,7 @@ class CursorSession implements HarnessSession {
         this.#configuring = false;
       }
     }
-    const text = command.input.map((part) => part.text).join("\n");
+    const text = hostInputText(command.input);
     if (!text.trim()) return failure("invalidRequest", "Cursor requires non-empty text input");
     const turn = new CursorTurn(command.turnId, (output) => this.#channel.emit(output));
     this.#active = turn;
@@ -318,7 +319,7 @@ class CursorSession implements HarnessSession {
     if (turn.cancellationRequested) {
       return failure("invalidState", "Cursor Turn is already being cancelled");
     }
-    const text = command.input.map((part) => part.text).join("\n");
+    const text = hostInputText(command.input);
     if (!text.trim()) return failure("invalidRequest", "Cursor steer requires non-empty text");
     turn.pendingSteer = turn.pendingSteer ? `${turn.pendingSteer}\n${text}` : text;
     try {

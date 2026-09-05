@@ -1,9 +1,11 @@
 ## 1. 契约与线上 schema（切片 1，行为零变化）
 
-- [ ] 1.1 `packages/harness-adapter/src/text-session.ts`：新增 `HostFileInput`（`type: "file"` / `path` / `mediaType` / `bytes`）与 `HostInput` 联合；`TurnStartCommand.input`、`TurnSteerCommand.input` 改为 `HostInput[]`。
-- [ ] 1.2 `packages/shared-contracts/src/harness-models.ts`：`harnessSessionCapabilitiesSchema` 新增可选 `input`（`attachFiles` / `mediaTypes?` / `maxBytes?`），保持 `.strict()`。
-- [ ] 1.3 `packages/harness-broker/src/validation.ts`：新增 `fileInputSchema`（`.strict()`），`turnStartSchema` / `turnSteerSchema` 的 `input` 改为联合数组。
-- [ ] 1.4 回归：八个适配器不声明能力时，全部既有测试保持通过，纯文本轮次形态不变。
+- [x] 1.1 `packages/harness-adapter/src/text-session.ts`：新增 `HostFileInput`（`type: "file"` / `path` / `mediaType` / `bytes`）与 `HostInput` 联合；`TurnStartCommand.input`、`TurnSteerCommand.input` 改为 `HostInput[]`。
+- [x] 1.2 `packages/shared-contracts/src/harness-models.ts`：`harnessSessionCapabilitiesSchema` 新增可选 `input`（`attachFiles` / `mediaTypes?` / `maxBytes?`），保持 `.strict()`。
+- [x] 1.3 `packages/harness-broker/src/validation.ts`：新增 `fileInputSchema`（`.strict()`），`turnStartSchema` / `turnSteerSchema` 的 `input` 改为联合数组。
+- [x] 1.4 回归：八个适配器不声明能力时，全部既有测试保持通过，纯文本轮次形态不变。
+- [x] 1.5 新增 `hostInputText` / `hostInputFiles` 帮助函数，八个适配器与 testing 夹具的 `command.input.map(...).join()` 统一改用它，避免每个适配器各写一次收窄。
+- [ ] 1.6 切片 1 实现中发现的缺口：`HostTurnSnapshot.input` 与 `AutonomousTurnStartedEvent.input` 仍是 `HostTextInput[]`，历史投影暂时只保留文本部件（antigravity / deepseek-harness / testing 三处已显式过滤并注释）。附件进历史属独立切片，必须在任一适配器声明能力**之前**完成，否则附件会在历史里丢失。
 
 ## 2. Host 侧校验
 

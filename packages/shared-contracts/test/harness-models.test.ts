@@ -7,6 +7,7 @@ import {
   harnessInspectParamsSchema,
   harnessInspectionSchema,
   harnessModelCatalogSchema,
+  harnessSessionCapabilitiesSchema,
   harnessModelRefSchema,
   harnessModelSelectionStateSchema,
   harnessThinkingOptionIdSchema,
@@ -378,5 +379,41 @@ describe("Harness Model runtime contracts", () => {
         },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("Harness Session file input capability", () => {
+  const base = {
+    configuration: {
+      selectModel: true,
+      selectThinkingOption: true,
+      selectPermissionMode: true,
+    },
+    history: { fork: false, forkAcrossCwd: false, rollbackLastTurn: false },
+  };
+
+  it("treats an absent input segment as text only", () => {
+    const parsed = harnessSessionCapabilitiesSchema.safeParse(base);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.input).toBeUndefined();
+  });
+
+  it("accepts a declared file input capability with optional limits", () => {
+    const parsed = harnessSessionCapabilitiesSchema.safeParse({
+      ...base,
+      input: { attachFiles: true, mediaTypes: ["image/png"], maxBytes: 5_000_000 },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects unknown fields and non-positive ceilings in the input segment", () => {
+    for (const input of [
+      { attachFiles: true, inlineBytes: true },
+      { attachFiles: true, maxBytes: 0 },
+      { attachFiles: true, mediaTypes: [""] },
+      { mediaTypes: ["image/png"] },
+    ]) {
+      expect(harnessSessionCapabilitiesSchema.safeParse({ ...base, input }).success).toBe(false);
+    }
   });
 });

@@ -124,16 +124,32 @@ export interface HostTextInput {
   text: string;
 }
 
+/**
+ * A file the Turn carries, referenced by absolute Host path rather than
+ * inlined bytes. Every Harness runs as a local subprocess on this filesystem,
+ * so a path is a lossless handle, and it still degrades into something a
+ * text-only Harness can read for itself — inlined bytes could only be dropped
+ * there. Existence is guaranteed at Host validation time only.
+ */
+export interface HostFileInput {
+  type: "file";
+  path: string;
+  mediaType: string;
+  bytes: number;
+}
+
+export type HostInput = HostTextInput | HostFileInput;
+
 export interface TurnStartCommand {
   type: "turn.start";
   turnId: HostTurnId;
-  input: HostTextInput[];
+  input: HostInput[];
 }
 
 export interface TurnSteerCommand {
   type: "turn.steer";
   turnId: HostTurnId;
-  input: HostTextInput[];
+  input: HostInput[];
 }
 
 export interface TurnCancelCommand {

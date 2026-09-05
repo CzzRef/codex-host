@@ -1,3 +1,4 @@
+import { hostInputText } from "./turn-input.js";
 import {
   harnessIdSchema,
   harnessModelCatalogSchema,
@@ -406,7 +407,7 @@ export class FakeHarnessSession implements HarnessSession {
         },
       };
     }
-    const text = command.input.map((input) => input.text).join("\n");
+    const text = hostInputText(command.input);
     if (text.length === 0) {
       return {
         ok: false,
@@ -905,7 +906,7 @@ export class FakeHarnessSession implements HarnessSession {
     if (!active || active.command.turnId !== command.turnId) {
       return { ok: false, error: invalidState("Turn steer must reference the active Turn") };
     }
-    const text = command.input.map((input) => input.text).join("\n");
+    const text = hostInputText(command.input);
     if (text.length === 0) {
       return {
         ok: false,
@@ -1001,7 +1002,11 @@ export class FakeHarnessSession implements HarnessSession {
     const turn: HostTurnSnapshot = {
       nativeTurnRef,
       ...(checkpoint ? { checkpoint } : {}),
-      input: cloneJson(active.command.input),
+      // History projection still carries text only: `HostTurnSnapshot.input`
+      // stays `HostTextInput[]` until the slice that renders attachments in
+      // history lands. No file part can reach here yet, because no Adapter
+      // declares the file-input capability.
+      input: cloneJson(active.command.input.filter((part) => part.type === "text")),
       items: cloneJson(active.completedItems),
       outcome: historicalOutcome,
       ...(this.#state.effectiveModel ? { model: this.#state.effectiveModel } : {}),

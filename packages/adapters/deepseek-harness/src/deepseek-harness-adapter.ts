@@ -16,6 +16,7 @@ import {
   HarnessOutputChannel,
   validateHostApprovalResponse,
   validateHostQuestionResponse,
+  hostInputText,
   type HarnessAdapter,
   type HarnessCommandAccepted,
   type HarnessCommandCapability,
@@ -686,7 +687,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
         },
       };
     }
-    const text = command.input.map((input) => input.text).join("\n");
+    const text = hostInputText(command.input);
     if (!text) {
       return {
         ok: false,
@@ -1229,7 +1230,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
         error: invalidState("DeepSeek Harness steer requires the active Turn"),
       };
     }
-    const text = command.input.map((input) => input.text).join("\n");
+    const text = hostInputText(command.input);
     if (text.length === 0) {
       return {
         ok: false,
@@ -1706,7 +1707,10 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
     this.#turns.push({
       nativeTurnRef,
       checkpoint,
-      input: active.command.input,
+      // History carries text only until the attachment-in-history slice
+      // lands; no file part can reach here while no Adapter declares the
+      // file-input capability.
+      input: active.command.input.filter((part) => part.type === "text"),
       items: [...active.snapshots],
       outcome: terminal.history,
       model: this.#model,

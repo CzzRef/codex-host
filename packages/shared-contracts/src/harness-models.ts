@@ -197,6 +197,20 @@ export const harnessSessionCapabilitiesSchema = z
       })
       .strict()
       .optional(),
+    /**
+     * File parts a Turn may carry. Absent means the Session accepts text only,
+     * so every Adapter keeps working unchanged until it opts in. `mediaTypes`
+     * absent means the Adapter does not restrict media types, and `maxBytes`
+     * absent means it sets no ceiling of its own.
+     */
+    input: z
+      .object({
+        attachFiles: z.boolean(),
+        mediaTypes: z.array(z.string().min(1)).optional(),
+        maxBytes: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

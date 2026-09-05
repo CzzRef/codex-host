@@ -9,6 +9,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   HarnessOutputChannel,
+  hostInputText,
   parseHostUsage,
   validateHostApprovalResponse,
   validateHostQuestionResponse,
@@ -722,7 +723,7 @@ class ClaudeHarnessSession implements HarnessSession {
         },
       };
     }
-    const text = command.input.map((input) => input.text).join("\n");
+    const text = hostInputText(command.input);
     if (text.length === 0) {
       return {
         ok: false,
@@ -1233,7 +1234,7 @@ class ClaudeHarnessSession implements HarnessSession {
         error: invalidState("Claude Code Turn steer must reference the active Turn"),
       };
     }
-    const text = command.input.map((input) => input.text).join("\n");
+    const text = hostInputText(command.input);
     if (text.length === 0) {
       return {
         ok: false,

@@ -15,6 +15,8 @@
 
 四个有结构化部件、三个只有纯字符串、一个待测。契约必须同时容纳这三类，且不能让第二类静默丢数据。
 
+本仓库装的是 `@agentclientprotocol/sdk`，其 `schema/types.gen.d.ts` 里 `ContentBlock` 为 `text | image | audio | resource_link | resource` 五元联合，`prompt()` 接受 `string | ContentBlock | ContentBlock[]`。所以 grok / cursor 的结构化输入不是推测，而是 SDK 类型直接支持；文件部件走 `resource_link`（URI 形态）与决策 1 的路径引用天然对应。
+
 ## Goals / Non-Goals
 
 - Goals：一种输入部件形态覆盖八个 Harness；能力可声明；降级可预期；附件缺失时报错而非沉默。

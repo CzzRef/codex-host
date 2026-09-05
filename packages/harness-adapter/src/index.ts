@@ -6,6 +6,7 @@ export { HarnessOutputChannel } from "./output-channel.js";
 export { sanitizeDiagnosticTail } from "./diagnostics.js";
 export { validateHostQuestionResponse } from "./question.js";
 export { parseHostUsage } from "./usage.js";
+export { hostInputFiles, hostInputText } from "./turn-input.js";
 export type { HostUsage } from "./usage.js";
 export type {
   AutonomousTurnStartedEvent,
@@ -61,6 +62,8 @@ export type {
   HostSubagentState,
   HostSubagentStatus,
   HostThreadSnapshot,
+  HostFileInput,
+  HostInput,
   HostTextInput,
   HostTextQuestion,
   HostToolExecutionItem,
