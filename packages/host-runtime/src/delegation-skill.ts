@@ -3,23 +3,26 @@ import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const SKILL_VERSION = 5;
+const SKILL_VERSION = 6;
 const SKILL_RELATIVE_PATH = path.join("skills", "codexhost-delegation", "SKILL.md");
 const PREVIOUS_MANAGED_DIGESTS: readonly string[] = [
   "ba509f57e5448e796b3dfdd5031dcb08672eded50b61c0a54de84cfa02c49dd3",
   "d3ddf6db9bc5c5df825479c885bbbf0ca08da66f7057a12e02e1fdf57525149e",
   "15eb63519ff867e1536c97188a0c43738d7a49d38d4d6adeb7a1036726e7246d",
   "fa7944cd1e72ffbaf932fca2074bdb78aad4670d8990b6711220dd83c39509a0",
+  "206cbc7e19e3e63b3fcf4023c3b4f12873063a62865850da0a6ae71840227642",
 ];
 
 export const CODEXHOST_DELEGATION_SKILL = `---
 name: codexhost-delegation
 version: ${SKILL_VERSION}
 description: >
-  Delegate work to another coding agent. Use when the user explicitly asks
-  Claude Code, Pi, Codex/OpenAI, OMP, Grok, another agent, or an agent mentioned
-  as @<agent> to independently review, investigate, implement, test, or verify
-  something. Do not use when the user is merely discussing, comparing, or
+  Delegate work to another coding agent, and act on the Thread you are running
+  in. Use when the user explicitly asks Claude Code, Pi, Codex/OpenAI, OMP,
+  Grok, Cursor, another agent, or an agent mentioned as @<agent> to
+  independently review, investigate, implement, test, or verify something, and
+  whenever this conversation's own Thread has to be renamed, archived or
+  pinned. Do not use when the user is merely discussing, comparing, or
   configuring agents, choosing a Model or Provider, or asking the current agent
   to role-play as another agent.
 ---
@@ -67,6 +70,19 @@ user’s request and the task:
 
 When the result is needed, explicitly read the child Thread. Report only the
 visible result returned by that Thread.
+
+# Act on your own Thread
+
+When \`CODEXHOST_THREAD_ID\` is set in the environment, this conversation *is* a
+codexhost Thread, and the same CLI acts on it. Omit the Thread argument and the
+command applies to this one:
+
+\`codexhost thread rename --name "<title>"\`
+
+Use it whenever the conversation needs a title — a host's own rename tool, a
+product API or an editor command is a different surface and does not reach a
+codexhost Thread. \`thread archive\` / \`unarchive\` / \`pin\` / \`unpin\` work the
+same way. A title the user set by hand in Desktop is not overwritten.
 
 Provide the user with the necessary tracking information, including:
 

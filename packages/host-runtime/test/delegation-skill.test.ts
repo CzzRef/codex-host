@@ -81,11 +81,16 @@ describe("delegation Skill installation", () => {
   });
 
   it("routes natural agent requests and points execution to the authoritative help", () => {
-    expect(CODEXHOST_DELEGATION_SKILL).toContain("version: 5");
-    expect(CODEXHOST_DELEGATION_SKILL).toContain("Claude Code, Pi, Codex/OpenAI, OMP, Grok");
+    expect(CODEXHOST_DELEGATION_SKILL).toContain("version: 6");
+    expect(CODEXHOST_DELEGATION_SKILL).toContain("Claude Code, Pi, Codex/OpenAI, OMP,");
+    expect(CODEXHOST_DELEGATION_SKILL).toContain("Grok, Cursor, another agent");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("codexhost delegate --help");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("sole authoritative source");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("waiting, reading, listing, and renaming");
+    // A hosted agent renames the conversation it is running in through the same
+    // CLI; a host's own rename tool does not reach a codexhost Thread.
+    expect(CODEXHOST_DELEGATION_SKILL).toContain("CODEXHOST_THREAD_ID");
+    expect(CODEXHOST_DELEGATION_SKILL).toContain('codexhost thread rename --name');
     expect(CODEXHOST_DELEGATION_SKILL).toContain("send a follow-up message");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("cancel its current Turn");
     expect(CODEXHOST_DELEGATION_SKILL).toContain("list extra processes");
