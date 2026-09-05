@@ -946,7 +946,12 @@ export function installRendererDraftWorktreePicker(
     } else if (lastObservedMode !== binding.mode) {
       // Desktop's own run-location menu moved: mirror it without persisting.
       lastObservedMode = binding.mode;
-      if (binding.mode === "worktree" && selection.kind !== "desktop") {
+      if (binding.mode === "worktree" && selection.kind === "worktree") {
+        // A Host-managed worktree needs Desktop's own mode on `local`; drifting
+        // back to `worktree` used to discard the pick silently, so the Thread
+        // started in the project root instead of the worktree just created.
+        requestMode(binding, "local");
+      } else if (binding.mode === "worktree" && selection.kind !== "desktop") {
         applyWorkspace(null);
         selection = { kind: "desktop" };
       } else if (binding.mode === "local" && selection.kind === "desktop") {

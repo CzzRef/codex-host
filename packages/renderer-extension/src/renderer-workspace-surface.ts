@@ -108,7 +108,10 @@ export function renderRow(
       : chinese
         ? "涉及的仓库"
         : "Repository touched";
-  row.title = `${roleLabel}\n${repository.root}\n${branchText}`;
+  // No native `title`: the OS tooltip only appears after about a second and is
+  // unstyled, which reads as the chip being slow. The overlay tooltip below
+  // opens in 120ms instead; `aria-label` keeps the same text for assistive tech.
+  row.setAttribute("aria-label", `${roleLabel} ${repository.root} ${branchText}`);
   // The chip is clipped to keep the header one line, so hovering has to be able
   // to show the full root path, worktree owner and branch.
   const detail = ownerDocument.createElement("span");
