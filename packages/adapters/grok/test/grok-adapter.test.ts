@@ -3,7 +3,7 @@ import type {
   PromptResponse,
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
-import type { HarnessOutput } from "@codexhost/harness-adapter";
+import type { HarnessOutput, HostFileInput } from "@codexhost/harness-adapter";
 import { resolve } from "node:path";
 import {
   harnessModelRefSchema,
@@ -158,12 +158,16 @@ class FakeGrokTransport implements GrokAcpTransportLike {
     return null;
   }
 
+  promptFiles: HostFileInput[][] = [];
+
   runTurn(
     text: string,
     onEvent: (event: GrokTransportEvent) => void,
     onPermission: (request: GrokPermissionRequest) => Promise<RequestPermissionResponse>,
+    files: readonly HostFileInput[] = [],
   ): Promise<PromptResponse> {
     this.promptTexts.push(text);
+    this.promptFiles.push([...files]);
     this.#activePromptText = text;
     this.#activePromptEvents = [];
     this.#onEvent = onEvent;
@@ -2557,5 +2561,32 @@ describe("Grok Adapter ACP projection", () => {
       adapter.open({ kind: "rollbackLastTurn", cwd: "/synthetic", sourceRef }),
     ).resolves.toMatchObject({ ok: false, error: { code: "protocolError" } });
     await adapter.close();
+  });
+});
+
+describe("Grok file input", () => {
+  it("declares the file input capability", async () => {
+    const transport = new FakeGrokTransport();
+    const { session } = await openedSession(transport);
+    expect(session.capabilities.input).toEqual({ attachFiles: true });
+    await session.close();
+  });
+
+  it("forwards file parts of a started Turn to the Transport", async () => {
+    const transport = new FakeGrokTransport();
+    const { session } = await openedSession(transport);
+    await session.execute({
+      type: "turn.start",
+      turnId: hostTurnIdSchema.parse("grok-file-turn"),
+      input: [
+        { type: "text", text: "review this" },
+        { type: "file", path: "/synthetic/shot.png", mediaType: "image/png", bytes: 12 },
+      ],
+    });
+    expect(transport.promptTexts.at(-1)).toBe("review this");
+    expect(transport.promptFiles.at(-1)).toEqual([
+      { type: "file", path: "/synthetic/shot.png", mediaType: "image/png", bytes: 12 },
+    ]);
+    await session.close();
   });
 });

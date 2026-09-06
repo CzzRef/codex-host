@@ -10,6 +10,8 @@ import type {
 import {
   HarnessOutputChannel,
   validateHostApprovalResponse,
+  hostInputFiles,
+  hostInputPromptText,
   hostInputText,
   type HarnessAdapter,
   type HarnessCommandAccepted,
@@ -23,6 +25,7 @@ import {
   type HarnessSession,
   type HarnessSessionCapabilities,
   type HarnessSessionState,
+  type HostFileInput,
   type HostAgentMessageItem,
   type HostApprovalInteraction,
   type HostCommand,
@@ -154,6 +157,7 @@ export interface GrokAcpTransportLike {
     text: string,
     onEvent: (event: GrokTransportEvent) => void,
     onPermission: (request: GrokPermissionRequest) => Promise<RequestPermissionResponse>,
+    files?: readonly HostFileInput[],
   ): Promise<PromptResponse>;
   compact(
     userContext: string | undefined,
@@ -224,6 +228,7 @@ function capabilitiesForModels(modelState: GrokModelState): HarnessSessionCapabi
     },
     history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
     turns: { steer: true },
+    input: { attachFiles: true },
   };
 }
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
@@ -538,6 +543,7 @@ class GrokHarnessSession implements HarnessSession {
         text,
         (event) => this.#handleEvent(active, event),
         (request) => this.#requestPermission(active, request),
+        hostInputFiles(command.input),
       )
       .then(
         (response) =>
@@ -821,7 +827,10 @@ class GrokHarnessSession implements HarnessSession {
     if (!active || active.command.turnId !== command.turnId) {
       return { ok: false, error: invalidState("Grok Turn steer must reference the active Turn") };
     }
-    const text = hostInputText(command.input);
+    // Grok's interjection extension carries text only, so a steered
+    // attachment degrades to its path line here rather than being dropped.
+    // A started Turn still gets native `resource_link` blocks.
+    const text = hostInputPromptText(command.input);
     if (text.length === 0) {
       return {
         ok: false,

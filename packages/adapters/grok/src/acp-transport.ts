@@ -1,16 +1,19 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 
 import { sanitizeDiagnosticTail } from "@codexhost/harness-adapter";
+import type { HostFileInput } from "@codexhost/harness-adapter";
 import type { HarnessPermissionModeId } from "@codexhost/shared-contracts";
 import {
   ClientSideConnection,
   PROTOCOL_VERSION,
   RequestError,
   ndJsonStream,
+  type ContentBlock,
   type Client,
   type InitializeResponse,
   type NewSessionResponse,
@@ -826,6 +829,7 @@ export class GrokAcpTransport {
     text: string,
     onEvent: ActivePrompt["onEvent"],
     onPermission: ActivePrompt["onPermission"],
+    files: readonly HostFileInput[] = [],
   ): Promise<PromptResponse> {
     const connection = this.#connection;
     if (!connection || !this.#sessionId || this.#closed || this.#closing) {
@@ -837,7 +841,7 @@ export class GrokAcpTransport {
     try {
       return await connection.prompt({
         sessionId: this.#sessionId,
-        prompt: [{ type: "text", text }],
+        prompt: grokPromptBlocks(text, files),
       });
     } finally {
       if (this.#activePrompt === active) this.#activePrompt = null;
@@ -1001,4 +1005,26 @@ export class GrokAcpTransport {
     if (this.#closing || this.#closed) return;
     this.#options.onFault?.(error);
   }
+}
+
+/**
+ * ACP `ContentBlock[]` for one Turn. A file part becomes a `resource_link`:
+ * ACP already models a file by URI, which is exactly the Host contract's
+ * absolute-path reference, so nothing is inlined or re-encoded here.
+ */
+function grokPromptBlocks(text: string, files: readonly HostFileInput[]): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  if (text.length > 0) blocks.push({ type: "text", text });
+  for (const file of files) {
+    blocks.push({
+      type: "resource_link",
+      uri: pathToFileURL(file.path).href,
+      name: path.basename(file.path),
+      mimeType: file.mediaType,
+      size: file.bytes,
+    });
+  }
+  // A Turn that is only attachments still has to reach the Agent.
+  if (blocks.length === 0) blocks.push({ type: "text", text: "" });
+  return blocks;
 }

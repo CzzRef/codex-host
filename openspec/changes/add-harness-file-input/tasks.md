@@ -16,7 +16,8 @@
 
 ## 3. native 级适配器
 
-- [ ] 3.1 grok：`acp-transport.ts` 的 `prompt: [{ type: "text", text }]` 扩为 ACP `ContentBlock[]`，文件部件走 `resource_link`。
+- [x] 3.1 grok：`acp-transport.ts` 的 `prompt: [{ type: "text", text }]` 扩为 ACP `ContentBlock[]`，文件部件走 `resource_link`（`pathToFileURL` 生成 URI，带 name / mimeType / size）。
+- [x] 3.1.1 grok 的 steer 例外：Grok 的 interjection 扩展只收文本，因此**被插队的**附件降级为路径行（`hostInputPromptText`），已启动轮次仍走原生 `resource_link`。这是操作级降级，不是 Session 级；不丢弃。
 - [ ] 3.2 cursor：同上形态，与 grok 复用同一套构造逻辑。
 - [ ] 3.3 claude-code：`sdk-transport.ts` 的 `message: { role: "user", content: text }` 扩为内容块数组，图片与文档各走对应块。
 - [ ] 3.4 opencode：`session.promptAsync` 的 `parts` 追加文件部件；能力声明取自其模型目录已有的 `capabilities.input`。
