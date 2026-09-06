@@ -41,8 +41,8 @@
 
 ## 6. 验证与收尾
 
-- [ ] 6.1 全仓类型检查与各包测试。
-- [ ] 6.2 真机：至少在一个 native 适配器与一个 path-text 适配器上各跑一次带附件的轮次。
-- [ ] 6.3 文档影响：`docs/领域术语表.md` 补附件相关术语；枢纽登记本批次。
+- [x] 6.1 全仓类型检查与全量测试：typecheck 通过、lint 通过、vitest 245 files / 2725 passed / 9 skipped、cargo 全 crate 通过。
+- [ ] 6.2 真机带附件轮次**做不了**：至今没有任何入口能产出文件部件（Composer 上传属本变更的 Non-goals）。Desktop 26.901.51231 上的 Renderer 注入复核已单独跑过并判定 ok，但那验的是注入不是附件。此项要等附件生产者存在才有意义。
+- [x] 6.3 术语表补「文件部件」「附件降级」两条；枢纽 Current Focus 已登记本系列与 upstream v0.5.0 合并。
 - [x] 2.5 接线：`harness-broker` 的 `session.execute` 在 `turn.start` / `turn.steer` 派发前调用校验，`cwd` 取自会话记录、`capability` 取自 `session.capabilities.input`、`probe` 用 `statSync` 判定是文件并取真实大小。
 - [ ] 2.6 进程内路径（`app-server-host`）**暂未接线**：它今天只构造纯文本输入，没有任何生产者能产出文件部件，接上去会是一段无法被测试触发的死分支。等 Composer 或其它入口能产出附件时随该入口一起接。
