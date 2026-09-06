@@ -1002,11 +1002,7 @@ export class FakeHarnessSession implements HarnessSession {
     const turn: HostTurnSnapshot = {
       nativeTurnRef,
       ...(checkpoint ? { checkpoint } : {}),
-      // History projection still carries text only: `HostTurnSnapshot.input`
-      // stays `HostTextInput[]` until the slice that renders attachments in
-      // history lands. No file part can reach here yet, because no Adapter
-      // declares the file-input capability.
-      input: cloneJson(active.command.input.filter((part) => part.type === "text")),
+      input: cloneJson(active.command.input),
       items: cloneJson(active.completedItems),
       outcome: historicalOutcome,
       ...(this.#state.effectiveModel ? { model: this.#state.effectiveModel } : {}),

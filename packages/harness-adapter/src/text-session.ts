@@ -426,7 +426,7 @@ export type HistoricalTurnOutcome =
 export interface HostTurnSnapshot {
   nativeTurnRef: NativeTurnRef;
   checkpoint?: NativeCheckpointRef;
-  input: HostTextInput[];
+  input: HostInput[];
   items: HostItemSnapshot[];
   outcome: HistoricalTurnOutcome;
   model?: HarnessModelRef;
@@ -474,7 +474,7 @@ export interface TurnStartedEvent {
 export interface AutonomousTurnStartedEvent {
   type: "turn.autonomous.started";
   turnId: HostTurnId;
-  input: HostTextInput[];
+  input: HostInput[];
 }
 
 export interface ItemStartedEvent {

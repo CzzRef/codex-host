@@ -1,3 +1,4 @@
+import { hostFileInputLine } from "@codexhost/harness-adapter";
 import type {
   HostApprovalInteraction,
   HostFileChange,
@@ -625,7 +626,15 @@ export function projectHistoricalTurn(input: HistoricalTurnProjectionInput): Jso
         id: `${turnId}-user`,
         type: "userMessage",
         clientId: null,
-        content: snapshot.input.map(({ text }) => ({ type: "text", text, text_elements: [] })),
+        // The Codex UI content shape is Codex's, not ours, and it has no
+        // verified file variant — so a historical file part projects as the
+        // same deterministic line a text-only Harness receives, rather than a
+        // guessed image content block.
+        content: snapshot.input.map((part) => ({
+          type: "text" as const,
+          text: part.type === "text" ? part.text : hostFileInputLine(part),
+          text_elements: [],
+        })),
       },
       ...snapshot.items.flatMap(({ item, outcome }) => {
         if (item.type === "toolExecution") {
@@ -1184,7 +1193,11 @@ export class CodexTurnProjector {
             id: `${this.#turnId}-user`,
             type: "userMessage",
             clientId: null,
-            content: this.#input.map(({ text }) => ({ type: "text", text, text_elements: [] })),
+            content: this.#input.map((part) => ({
+              type: "text" as const,
+              text: part.type === "text" ? part.text : hostFileInputLine(part),
+              text_elements: [],
+            })),
           },
         ];
   }

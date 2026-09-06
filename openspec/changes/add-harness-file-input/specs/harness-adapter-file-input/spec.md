@@ -56,7 +56,9 @@ Host 与适配器 SHALL 按 `native`、`path-text`、`rejected` 三级之一投�
 
 - **WHEN** 适配器的原生协议只接受纯字符串提示词
 - **THEN** 适配器 SHALL 把文件部件降级为一行确定性文本引用该绝对路径，与用户文本一同发出
-- **AND** 该降级文本 SHALL 使用固定格式并对路径转义，使用户输入无法伪造成附件引用
+- **AND** 该降级文本 SHALL 使用固定标记开头的确定性格式
+- **AND** 路径中的换行 SHALL 被折叠，使一个路径无法引入额外行
+- **AND** codexhost SHALL NOT 把该行解析回文件部件——它只被生成，因此不存在可被伪造欺骗的解析器；用户手打相似文本误导 Agent 属文本通道固有风险，本契约不声称阻止
 
 #### Scenario: Reject rather than drop
 
@@ -84,3 +86,19 @@ Host SHALL 在派发前校验每个文件部件：绝对路径、存在、可读
 - **WHEN** 附件在校验通过之后、Agent 读取之前被删除
 - **THEN** 契约 SHALL 只保证校验时刻的存在性
 - **AND** Agent SHALL 按普通文件缺失处理
+
+### Requirement: History carries file parts
+
+`HostTurnSnapshot.input` 与 `AutonomousTurnStartedEvent.input` SHALL 携带与轮次命令相同的输入部件联合，使附件在历史中不丢失。Codex UI 投影 SHALL 把文件部件渲染为与纯文本 Harness 相同的那一行降级文本。
+
+#### Scenario: Attachment survives into history
+
+- **WHEN** 一个携带文件部件的轮次进入历史
+- **THEN** 该文件部件 SHALL 出现在历史快照的输入里
+- **AND** SHALL NOT 在投影时被丢弃
+
+#### Scenario: Codex UI projection does not invent a content shape
+
+- **WHEN** 历史轮次的文件部件被投影到 Codex UI
+- **THEN** 它 SHALL 渲染为确定性的降级文本行
+- **AND** SHALL NOT 猜测一个未经验证的 Codex UI 图片内容形态

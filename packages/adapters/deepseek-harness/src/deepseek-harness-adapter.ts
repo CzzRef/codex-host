@@ -1707,10 +1707,7 @@ class DeepSeekHarnessSession implements HarnessSession, DeepSeekHostSubscriber {
     this.#turns.push({
       nativeTurnRef,
       checkpoint,
-      // History carries text only until the attachment-in-history slice
-      // lands; no file part can reach here while no Adapter declares the
-      // file-input capability.
-      input: active.command.input.filter((part) => part.type === "text"),
+      input: active.command.input,
       items: [...active.snapshots],
       outcome: terminal.history,
       model: this.#model,

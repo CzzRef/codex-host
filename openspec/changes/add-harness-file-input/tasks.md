@@ -5,7 +5,7 @@
 - [x] 1.3 `packages/harness-broker/src/validation.ts`：新增 `fileInputSchema`（`.strict()`），`turnStartSchema` / `turnSteerSchema` 的 `input` 改为联合数组。
 - [x] 1.4 回归：八个适配器不声明能力时，全部既有测试保持通过，纯文本轮次形态不变。
 - [x] 1.5 新增 `hostInputText` / `hostInputFiles` 帮助函数，八个适配器与 testing 夹具的 `command.input.map(...).join()` 统一改用它，避免每个适配器各写一次收窄。
-- [ ] 1.6 切片 1 实现中发现的缺口：`HostTurnSnapshot.input` 与 `AutonomousTurnStartedEvent.input` 仍是 `HostTextInput[]`，历史投影暂时只保留文本部件（antigravity / deepseek-harness / testing 三处已显式过滤并注释）。附件进历史属独立切片，必须在任一适配器声明能力**之前**完成，否则附件会在历史里丢失。
+- [x] 1.6 切片 1 实现中发现的缺口：`HostTurnSnapshot.input` 与 `AutonomousTurnStartedEvent.input` 仍是 `HostTextInput[]`，历史投影暂时只保留文本部件（antigravity / deepseek-harness / testing 三处已显式过滤并注释）。附件进历史属独立切片，必须在任一适配器声明能力**之前**完成，否则附件会在历史里丢失。**已在本批次补齐**：两处放宽为 `HostInput[]`，三处过滤回退为直通，Codex UI 投影把文件部件渲染为共享的降级文本行。
 
 ## 2. Host 侧校验
 
