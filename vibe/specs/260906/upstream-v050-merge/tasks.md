@@ -19,7 +19,7 @@
   "verification_state": "planned",
   "push_state": "not-authorized",
   "integration_state": "not-started",
-  "next_action": "decide the plugin-architecture side, then resolve the 34 conflicts in the isolated worktree"
+  "next_action": "resolve the remaining 21 conflicts (app-server-host, renderer settings shell, AGENTS/CLAUDE routers), then re-port the DSH steer and native-title features"
 }
 ```
 
@@ -44,7 +44,7 @@
 ## 任务
 
 - [x] 1.1 在隔离 worktree 上执行 `git merge upstream/main`，冲突现场已保留（34 个 `UU`/`DU` 文件，未提交）
-- [ ] 1.2 先解 host-runtime 的插件装载架构冲突，决定 `adapter-composition.ts` 是删除并迁移到插件形态、还是保留
+- [x] 1.2 架构取向已定并执行：**接收上游核心**。`adapter-composition.ts` 及其测试接受上游删除（`git rm`），host-runtime 改用动态插件装载。
 - [ ] 1.3 解 renderer-extension 设置外壳冲突
 - [ ] 1.4 解六个适配器冲突，确认 `add-harness-file-input` 的改动在插件形态下仍成立
 - [ ] 1.5 解文档、锁文件与 Rust 侧冲突
@@ -67,3 +67,45 @@
 ### 唯一需要新建插件形态的适配器
 
 `cursor` 是 czz-dev 独有，上游七个适配器（antigravity / claude-code / deepseek-harness / grok / omp / opencode / pi）都已带 manifest 与 plugin 入口，cursor 没有。合并后必须为它补一份，否则它在新装载机制下不会被注册。
+
+## 已完成的适配化改造（2026-09-06）
+
+### cursor 补齐插件形态（本次合并唯一必须新建的适配器）
+
+czz-dev 对 `adapter-composition.ts` 的全部改动其实只有 9 行——注册 cursor。上游删掉该模块后，等价物就是给 cursor 补一套与另外七个一致的插件入口：
+
+- `packages/adapters/cursor/manifest.json`：`manifestVersion: 1` / `id: cursor` / `adapterApiVersion: 1` / `entry: ./dist/plugin.js` / `icon: ./assets/icon.svg`
+- `packages/adapters/cursor/src/plugin.ts`：导出 `createHarnessAdapter(context)`，沿用 `CODEXHOST_CURSOR_COMMAND` 环境变量，与 pi / grok 同形
+- `packages/adapters/cursor/assets/icon.svg`：复用 renderer 里已有的 cursor 图标路径，不另造
+- `packages/adapters/cursor/package.json`：补 `./plugin` 导出与 `manifest.json` / `assets` 打包项
+
+### 冲突解决（13/34）
+
+| 文件 | 取向 |
+| --- | --- |
+| `host-runtime/src/adapter-composition.ts` + 测试 | 接受上游删除 |
+| `host-runtime/tsconfig.json` | 取上游（适配器不再作为工程引用，插件独立构建） |
+| `host-runtime/src/harness-delegation-coordinator.ts` | 上游的注册表判定 + 保留本地 Codex 权限模式守卫 |
+| `protocol-core/src/model-routing.ts` | 上游通用插件路由**并存**本地 cursor 解码器（见下） |
+| `adapters/opencode/src/sdk-transport.ts` | 保留本地新 import，去掉上游已判定无用的 `AssistantMessage` |
+| `adapters/claude-code/src/permission-modes.ts` | 取上游更准确的描述 + 保留本地 `canonical: "plan"` |
+| `adapters/pi/src/pi-adapter.ts`、`pi-rpc-session.ts` | 两侧都是新增，全保留 |
+| `adapters/deepseek-harness/src/model-catalog.ts` | 上游的 provider 前缀 label 与可空 selection + 保留本地 description |
+| `adapters/deepseek-harness/src/deepseek-harness-adapter.ts` + 测试 | **整份取上游**（见回归风险） |
+
+cursor 路由：上游的 `decodeHarnessPluginRoute` 携带 `{harnessId, model?, thinkingOptionId?, permissionModeId?}`，本地 `decodeCursorTransportSelection` 只带 `{model?, permissionModeId?}`，是其真子集。合并期两个解码器并存以保住行为；Renderer 侧仍在编码旧形态，迁移完再删本地那支。
+
+## 两处必须补回的回归（阻塞集成）
+
+- [ ] R1 **DSH steer**：上游把 dsh 适配器重写了（`-2023/+502`，拆成 `legacy/` 与 `modern/`），且**不含** steer。本地 81 行里的 `turn.steer` / `#steer()` / `promptEchoed` 必须重新移植到新结构。
+- [ ] R2 **DSH 原生标题**：同上，`session/title` 事件与 `#nativeTitle` 也要重新移植。
+
+在 R1 R2 补回之前**不得集成回 czz-dev**，否则 DSH 的插队与标题会静默丢失。
+
+## 剩余 21 处冲突
+
+- **需要判断**：`host-runtime/src/app-server-host.ts`（4 hunk，本地相对 base 有 `+1239` 行）、`host-runtime/src/index.ts`（3）、`build-release.mjs`、两个 host-runtime 测试
+- **需要判断**：renderer-extension 六个文件（`settings/pages.ts` 5 hunk、`localization.ts` 2、`renderer-settings-lifecycle.ts` 2、`renderer-binding-probe.ts` 2、`settings/shell.css` 1）与三个测试
+- **归用户定夺**：`AGENTS.md` / `CLAUDE.md`——上游把它们扩写成含产品意图、代码布局与边界规则的完整文档，而 czz-dev 特意把它们瘦成 CodeNote 路由器。这是规则归属问题，不由 Agent 单方改写。
+- **机械**：`docs/README.en.md`、`docs/README.ko.md`、两个 `.agents/skills` 参考文档、`crates/launcher/src/main.rs`、`tests/release/host-bundle.test.mjs`
+- **最后处理**：`package-lock.json`——待所有 `package.json` 定稿后用 `npm install` 重新生成，不手工合
