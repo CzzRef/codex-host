@@ -8,6 +8,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import {
   HarnessOutputChannel,
+  hostInputFiles,
   hostInputText,
   type HarnessAdapter,
   type HarnessError,
@@ -16,6 +17,7 @@ import {
   type HarnessSession,
   type HarnessSessionState,
   type HarnessOutput,
+  type HostFileInput,
   type HostCommand,
   type HostThreadSnapshot,
   type InspectHarnessInput,
@@ -301,7 +303,7 @@ class CursorSession implements HarnessSession {
     const turn = new CursorTurn(command.turnId, (output) => this.#channel.emit(output));
     this.#active = turn;
     this.#channel.emit({ kind: "event", event: { type: "turn.started", turnId: command.turnId } });
-    this.#runTask = this.#run(turn, text);
+    this.#runTask = this.#run(turn, text, hostInputFiles(command.input));
     return { ok: true, value: { turnId: command.turnId } };
   }
 
@@ -322,11 +324,13 @@ class CursorSession implements HarnessSession {
     const text = hostInputText(command.input);
     if (!text.trim()) return failure("invalidRequest", "Cursor steer requires non-empty text");
     turn.pendingSteer = turn.pendingSteer ? `${turn.pendingSteer}\n${text}` : text;
+    turn.pendingSteerFiles.push(...hostInputFiles(command.input));
     try {
       await this.transport.cancel();
       return { ok: true, value: { accepted: true } };
     } catch (error) {
       turn.pendingSteer = undefined;
+      turn.pendingSteerFiles = [];
       return { ok: false, error: cursorError(error) };
     }
   }
@@ -348,16 +352,20 @@ class CursorSession implements HarnessSession {
     return Promise.resolve({ outcome: { outcome: "selected", optionId: allow.optionId } });
   }
 
-  async #run(turn: CursorTurn, text: string): Promise<void> {
+  async #run(turn: CursorTurn, text: string, files: HostFileInput[] = []): Promise<void> {
     try {
       const previousKeysTask = this.#readHistorySnapshot()
         .then(cursorNativeTurnKeys)
         .catch(() => new Set<string>());
-      let response = await this.transport.runTurn(text, {
-        update: (update) => turn.update(update),
-        permission: (request) => this.#permission(turn, request),
-        extension: (method, params) => turn.interactions.extension(method, params),
-      });
+      let response = await this.transport.runTurn(
+        text,
+        {
+          update: (update) => turn.update(update),
+          permission: (request) => this.#permission(turn, request),
+          extension: (method, params) => turn.interactions.extension(method, params),
+        },
+        files,
+      );
       // An interrupt that carried a steer re-prompts inside this Host Turn;
       // a user cancel wins over any steer that raced it.
       while (
@@ -367,7 +375,9 @@ class CursorSession implements HarnessSession {
         !turn.cancellationRequested
       ) {
         const steerText = turn.pendingSteer;
+        const steerFiles = turn.pendingSteerFiles;
         turn.pendingSteer = undefined;
+        turn.pendingSteerFiles = [];
         // The re-prompt is the user's steer landing in this Turn: surface it as
         // an in-turn user item before the continuation streams.
         const steerItem: HostUserMessageItem = {
@@ -387,11 +397,15 @@ class CursorSession implements HarnessSession {
             snapshot: { item: steerItem, outcome: { status: "succeeded" } },
           },
         });
-        response = await this.transport.runTurn(steerText, {
-          update: (update) => turn.update(update),
-          permission: (request) => this.#permission(turn, request),
-          extension: (method, params) => turn.interactions.extension(method, params),
-        });
+        response = await this.transport.runTurn(
+          steerText,
+          {
+            update: (update) => turn.update(update),
+            permission: (request) => this.#permission(turn, request),
+            extension: (method, params) => turn.interactions.extension(method, params),
+          },
+          steerFiles,
+        );
       }
       turn.acpTerminal = true;
       const reason = response.stopReason;

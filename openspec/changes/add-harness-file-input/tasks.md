@@ -18,7 +18,7 @@
 
 - [x] 3.1 grok：`acp-transport.ts` 的 `prompt: [{ type: "text", text }]` 扩为 ACP `ContentBlock[]`，文件部件走 `resource_link`（`pathToFileURL` 生成 URI，带 name / mimeType / size）。
 - [x] 3.1.1 grok 的 steer 例外：Grok 的 interjection 扩展只收文本，因此**被插队的**附件降级为路径行（`hostInputPromptText`），已启动轮次仍走原生 `resource_link`。这是操作级降级，不是 Session 级；不丢弃。
-- [ ] 3.2 cursor：同上形态，与 grok 复用同一套构造逻辑。
+- [x] 3.2 cursor：同上形态。构造逻辑**各自一份**而非跨包复用——Harness 协议按项目约束留在各自适配器内。cursor 的 steer 是 interrupt-then-re-prompt、走回 `runTurn`，因此被插队的附件保持原生 `resource_link`，不像 grok 那样被迫降级（`pendingSteerFiles` 随 `pendingSteer` 一起排队）。
 - [ ] 3.3 claude-code：`sdk-transport.ts` 的 `message: { role: "user", content: text }` 扩为内容块数组，图片与文档各走对应块。
 - [ ] 3.4 opencode：`session.promptAsync` 的 `parts` 追加文件部件；能力声明取自其模型目录已有的 `capabilities.input`。
 - [ ] 3.5 每个适配器各自的聚焦测试：结构化部件确实到达原生调用，且纯文本轮次不受影响。

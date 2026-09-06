@@ -123,5 +123,9 @@ export function cursorCapabilities(configuration: ReturnType<typeof cursorConfig
     // Cursor has no mid-prompt injection; steer is interrupt-then-re-prompt in
     // the same ACP session and the same Host Turn (see CursorAdapter #run).
     turns: { steer: true },
+    // The re-prompt goes back through `runTurn`, so a steered attachment keeps
+    // its native `resource_link` instead of degrading the way Grok's
+    // text-only interjection forces.
+    input: { attachFiles: true },
   };
 }

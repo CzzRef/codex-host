@@ -1,5 +1,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import path from "node:path";
 import { Readable, Writable } from "node:stream";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import {
@@ -7,6 +9,7 @@ import {
   PROTOCOL_VERSION,
   RequestError,
   ndJsonStream,
+  type ContentBlock,
   type InitializeResponse,
   type LoadSessionResponse,
   type NewSessionResponse,
@@ -16,6 +19,7 @@ import {
   type SessionUpdate,
   type SetSessionConfigOptionResponse,
 } from "@agentclientprotocol/sdk";
+import type { HostFileInput } from "@codexhost/harness-adapter";
 import { commandInvocation } from "@codexhost/harness-discovery";
 import type { HarnessError } from "@codexhost/harness-adapter";
 
@@ -48,7 +52,11 @@ export type CursorOpenInput = { kind: "create" } | { kind: "resume"; sessionId: 
 export interface CursorTransport {
   inspect(): Promise<InitializeResponse>;
   open(input?: CursorOpenInput): Promise<NewSessionResponse | LoadSessionResponse>;
-  runTurn(text: string, callbacks: CursorTurnCallbacks): Promise<PromptResponse>;
+  runTurn(
+    text: string,
+    callbacks: CursorTurnCallbacks,
+    files?: readonly HostFileInput[],
+  ): Promise<PromptResponse>;
   configure(id: "model" | "mode", value: string): Promise<SetSessionConfigOptionResponse>;
   cancel(): Promise<void>;
   close(): Promise<void>;
@@ -291,7 +299,11 @@ export class CursorAcpTransport implements CursorTransport {
     return response;
   }
 
-  async runTurn(text: string, callbacks: CursorTurnCallbacks): Promise<PromptResponse> {
+  async runTurn(
+    text: string,
+    callbacks: CursorTurnCallbacks,
+    files: readonly HostFileInput[] = [],
+  ): Promise<PromptResponse> {
     if (!this.#sessionId || !this.#connection || this.#closed)
       throw new CursorTransportError({
         code: "invalidState",
@@ -301,7 +313,10 @@ export class CursorAcpTransport implements CursorTransport {
     this.#callbacks = callbacks;
     try {
       return await this.#request(
-        this.#connection.prompt({ sessionId: this.#sessionId, prompt: [{ type: "text", text }] }),
+        this.#connection.prompt({
+          sessionId: this.#sessionId,
+          prompt: cursorPromptBlocks(text, files),
+        }),
         30 * 60_000,
       );
     } finally {
@@ -367,4 +382,27 @@ export class CursorAcpTransport implements CursorTransport {
     })();
     return this.#closing;
   }
+}
+
+/**
+ * ACP `ContentBlock[]` for one Cursor prompt. Same shape grok builds: a file
+ * part becomes a `resource_link`, because ACP already models a file by URI and
+ * the Host contract already carries an absolute path. Duplicated rather than
+ * shared with the Grok Adapter on purpose — Harness protocol stays inside its
+ * own Adapter package.
+ */
+function cursorPromptBlocks(text: string, files: readonly HostFileInput[]): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  if (text.length > 0) blocks.push({ type: "text", text });
+  for (const file of files) {
+    blocks.push({
+      type: "resource_link",
+      uri: pathToFileURL(file.path).href,
+      name: path.basename(file.path),
+      mimeType: file.mediaType,
+      size: file.bytes,
+    });
+  }
+  if (blocks.length === 0) blocks.push({ type: "text", text: "" });
+  return blocks;
 }

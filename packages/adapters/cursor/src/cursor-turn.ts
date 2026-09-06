@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createPatch } from "diff";
 
+import type { HostFileInput } from "@codexhost/harness-adapter";
 import type {
   SessionUpdate,
   ToolCall,
@@ -54,6 +55,8 @@ export class CursorTurn {
   acpTerminal = false;
   /** Steer text waiting for the interrupted prompt to settle before it is re-prompted. */
   pendingSteer: string | undefined;
+  /** File parts queued with `pendingSteer`; they ride the same re-prompt. */
+  pendingSteerFiles: HostFileInput[] = [];
 
   constructor(
     readonly turnId: HostTurnId,

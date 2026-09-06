@@ -414,3 +414,48 @@ describe("Cursor native-history Adapter", () => {
     });
   });
 });
+
+describe("Cursor file input", () => {
+  it("declares the file input capability", async () => {
+    const f = fixture();
+    const session = await open(f);
+    expect(session.capabilities.input).toEqual({ attachFiles: true });
+  });
+
+  it("passes file parts of a started Turn to the prompt", async () => {
+    const f = fixture();
+    const session = await open(f);
+    const turnId = hostTurnIdSchema.parse("cursor-file-turn");
+    await session.execute({
+      type: "turn.start",
+      turnId,
+      input: [
+        { type: "text", text: "look" },
+        { type: "file", path: "/synthetic/a.png", mediaType: "image/png", bytes: 3 },
+      ],
+    });
+    expect(vi.mocked(f.transport.runTurn).mock.calls[0]?.[2]).toEqual([
+      { type: "file", path: "/synthetic/a.png", mediaType: "image/png", bytes: 3 },
+    ]);
+  });
+
+  it("carries a steered attachment into the re-prompt instead of dropping it", async () => {
+    const f = fixture();
+    const session = await open(f);
+    const turnId = hostTurnIdSchema.parse("cursor-steer-file");
+    await session.execute({ type: "turn.start", turnId, input: [{ type: "text", text: "first" }] });
+    await session.execute({
+      type: "turn.steer",
+      turnId,
+      input: [
+        { type: "text", text: "second" },
+        { type: "file", path: "/synthetic/b.pdf", mediaType: "application/pdf", bytes: 9 },
+      ],
+    });
+    f.finish({ stopReason: "cancelled" });
+    await vi.waitFor(() => expect(f.transport.runTurn).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(f.transport.runTurn).mock.calls[1]?.[2]).toEqual([
+      { type: "file", path: "/synthetic/b.pdf", mediaType: "application/pdf", bytes: 9 },
+    ]);
+  });
+});
