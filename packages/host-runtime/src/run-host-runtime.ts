@@ -4,13 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { UPDATE_RUNTIME_ENV } from "@codexhost/update-manager";
 
-import {
-  createExternalHarnessAdapters,
-  prefetchAntigravityModelCatalog,
-  prefetchClaudeCodeModelCatalog,
-} from "./adapter-composition.js";
 import { AppServerHost, officialEnvironment } from "./app-server-host.js";
 import { DelegationControlRegistry } from "./delegation-control-registry.js";
+import { installedHarnessPluginOptions } from "./installed-harness-plugins.js";
 import { startDelegationControlServer } from "./delegation-control-server.js";
 import { installDelegationSkills } from "./delegation-skill.js";
 import type { DelegationControlRegistration } from "./delegation-types.js";
@@ -163,18 +159,15 @@ export async function runHostRuntime(input: {
       return prepareDelegationRuntime({
         environment,
         createHost: async (delegationEnvironment, onDelegationApi) => {
-          const externalAdapters = createExternalHarnessAdapters(delegationEnvironment);
           const host = new AppServerHost({
             stockCodexPath,
             arguments: input.arguments,
             defaultAgent,
             environment: delegationEnvironment,
-            externalAdapters,
+            ...installedHarnessPluginOptions(delegationEnvironment, false, input.hostRuntimeUrl),
             onDelegationApi,
             ...(updateCoordinator ? { updateCoordinator } : {}),
           });
-          void prefetchClaudeCodeModelCatalog(externalAdapters);
-          void prefetchAntigravityModelCatalog(externalAdapters);
           return host.run();
         },
       });
@@ -201,13 +194,12 @@ export async function runHostRuntime(input: {
         };
         const mappingStore = createProductionExternalThreadStore(delegationEnvironment);
         await mappingStore.initialize();
-        const externalAdapters = createExternalHarnessAdapters(delegationEnvironment);
         const host = new AppServerHost({
           stockCodexPath,
           arguments: input.arguments,
           defaultAgent,
           environment: delegationEnvironment,
-          externalAdapters,
+          ...installedHarnessPluginOptions(delegationEnvironment, false, input.hostRuntimeUrl),
           mappingStore,
           closeMappingStoreOnExit: false,
           createOfficialConnection,
@@ -218,9 +210,6 @@ export async function runHostRuntime(input: {
           socketPath: remoteControlPlan.pipePath,
           diagnosticOutput: process.stderr,
           createSession: ({ input: desktopInput, output: desktopOutput, diagnosticOutput }) => {
-            const sessionAdapters = createExternalHarnessAdapters(delegationEnvironment);
-            void prefetchClaudeCodeModelCatalog(sessionAdapters);
-            void prefetchAntigravityModelCatalog(sessionAdapters);
             return new AppServerHost({
               stockCodexPath,
               arguments: [],
@@ -229,7 +218,7 @@ export async function runHostRuntime(input: {
               desktopInput,
               desktopOutput,
               diagnosticOutput,
-              externalAdapters: sessionAdapters,
+              ...installedHarnessPluginOptions(delegationEnvironment, false, input.hostRuntimeUrl),
               mappingStore,
               closeMappingStoreOnExit: false,
               createOfficialConnection,
@@ -238,21 +227,13 @@ export async function runHostRuntime(input: {
             });
           },
         });
-        void prefetchClaudeCodeModelCatalog(externalAdapters);
-        void prefetchAntigravityModelCatalog(externalAdapters);
-        let hostStarted = false;
+
         try {
           officialEndpoint = await officialListener.listen();
           await listener.listen();
           await publishRemoteControlAppServerDescriptor(remoteControlPlan);
-          hostStarted = true;
           return await host.run();
         } finally {
-          if (!hostStarted) {
-            await Promise.allSettled(
-              [...new Set(externalAdapters.values())].map((adapter) => adapter.close()),
-            );
-          }
           try {
             await listener.close();
           } finally {
@@ -290,11 +271,6 @@ export async function runHostRuntime(input: {
         socketPath,
         diagnosticOutput: process.stderr,
         createSession: ({ input: desktopInput, output: desktopOutput, diagnosticOutput }) => {
-          const externalAdapters = createExternalHarnessAdapters(delegationEnvironment, {
-            managedRemoteHost: true,
-          });
-          void prefetchClaudeCodeModelCatalog(externalAdapters);
-          void prefetchAntigravityModelCatalog(externalAdapters);
           return new AppServerHost({
             stockCodexPath,
             arguments: [],
@@ -303,7 +279,7 @@ export async function runHostRuntime(input: {
             desktopInput,
             desktopOutput,
             diagnosticOutput,
-            externalAdapters,
+            ...installedHarnessPluginOptions(delegationEnvironment, true, input.hostRuntimeUrl),
             mappingStore,
             closeMappingStoreOnExit: false,
             createOfficialConnection: () =>

@@ -22,6 +22,11 @@ import {
   type RendererConnectionDiagnostics,
 } from "./connections-page.js";
 import { createModelsSettingsPage, type RendererModelCatalogClient } from "./models-page.js";
+import {
+  createSessionImportSettingsPage,
+  type RendererSessionImportClient,
+  type RendererImportedThreadOpener,
+} from "./session-import-page.js";
 import { createReleaseNotesElement } from "./release-notes.js";
 
 export type {
@@ -67,6 +72,7 @@ function windowsInstallerDownloadUrl(window: Window | null | undefined, version:
 export const DEFAULT_RENDERER_SETTINGS_PAGE_IDS = [
   "connections",
   "models",
+  "session-import",
   "updates",
   "about",
 ] as const;
@@ -574,11 +580,15 @@ export function createDefaultRendererSettingsPages(
   messages: RendererSettingsMessages = DEFAULT_RENDERER_SETTINGS_MESSAGES,
   getUpdateClient: () => RendererUpdateClient | null = () => null,
   getDiagnostics: () => RendererConnectionDiagnostics | null = () => null,
+  getSessionImportClient: () => RendererSessionImportClient | null = () => null,
+  openImportedThread: RendererImportedThreadOpener = () =>
+    Promise.reject(new Error("Imported Thread navigation is unavailable")),
   getModelCatalogClient: () => RendererModelCatalogClient | null = () => null,
 ): readonly RendererSettingsPageDefinition[] {
   return Object.freeze([
     createConnectionsSettingsPage(messages, getDiagnostics),
     createModelsSettingsPage(messages, getModelCatalogClient),
+    createSessionImportSettingsPage(messages, getSessionImportClient, openImportedThread),
     updatesPage(messages, getUpdateClient),
     aboutPage(messages),
   ]);
@@ -588,6 +598,8 @@ export function createDefaultRendererSettingsRegistry(
   messages: RendererSettingsMessages = DEFAULT_RENDERER_SETTINGS_MESSAGES,
   getUpdateClient: () => RendererUpdateClient | null = () => null,
   getDiagnostics: () => RendererConnectionDiagnostics | null = () => null,
+  getSessionImportClient: () => RendererSessionImportClient | null = () => null,
+  openImportedThread?: RendererImportedThreadOpener,
   getModelCatalogClient: () => RendererModelCatalogClient | null = () => null,
 ): RendererSettingsPageRegistry {
   return createRendererSettingsPageRegistry(
@@ -595,6 +607,8 @@ export function createDefaultRendererSettingsRegistry(
       messages,
       getUpdateClient,
       getDiagnostics,
+      getSessionImportClient,
+      openImportedThread,
       getModelCatalogClient,
     ),
   );

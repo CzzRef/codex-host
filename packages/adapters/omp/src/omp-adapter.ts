@@ -2169,6 +2169,7 @@ class OmpHarnessSession implements HarnessSession {
 }
 
 export class OmpAdapter implements HarnessAdapter {
+  readonly commandCatalog = ompCommandCatalog;
   readonly harnessId: HarnessId = ompHarnessId;
   readonly subagents: HarnessSubagentCapability = {
     readSnapshot: async (input) => {
