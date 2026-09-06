@@ -612,10 +612,10 @@ export function decodeCreateRoute(request: JsonRpcRequest): CreateRoute | null {
     };
   }
 
-  // Cursor's bespoke transport id predates the generic plugin route and is a
-  // strict subset of it ({model?, permissionModeId?}). Both decoders stay while
-  // the Renderer still encodes the old form; migrating those callers and
-  // deleting this branch is tracked as follow-up adaptation work.
+  // The generic plugin route above serves dynamically loaded plugins that have
+  // no compiled-in transport id. Every compiled Harness — the seven upstream
+  // ones as much as Cursor — still keeps its own bespoke decoder below, so this
+  // branch is the normal pattern rather than a leftover to migrate away.
   const cursorSelection = decodeCursorTransportSelection(request.params.model);
   if (cursorSelection !== null) {
     return {
@@ -625,8 +625,6 @@ export function decodeCreateRoute(request: JsonRpcRequest): CreateRoute | null {
       ...cursorSelection,
     };
   }
-
-
   const piSelection = decodePiTransportSelection(request.params.model);
   if (piSelection !== null) {
     return {

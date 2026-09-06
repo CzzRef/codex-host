@@ -9,10 +9,10 @@
 
 ## 2. Host 侧校验
 
-- [ ] 2.1 派发前校验：绝对路径、存在、可读、位于线程 cwd 内、不超 `maxBytes`、media type 命中 `mediaTypes`。
-- [ ] 2.2 任一项失败以 `invalidRequest` 拒绝整轮，不做部分投递。
-- [ ] 2.3 目标 Session 未声明能力却收到文件部件时拒绝，且不得剥掉附件后只投文本。
-- [ ] 2.4 测试覆盖：相对路径、不存在、越出 cwd、超限、media type 不匹配、能力未声明。
+- [x] 2.1 `validateHostFileInputs()` 落在 `packages/harness-adapter/src/file-input-validation.ts`：绝对路径（含 `..` 上溯拒绝）、位于线程 cwd 内（按分隔符边界比较，`/work/repo-2` 不算在 `/work/repo` 内）、media type 命中 `mediaTypes`、存在且可读、**按实际探测到的字节数**而非部件自称的 `bytes` 比对 `maxBytes`。文件系统访问由调用方以 `probe` 注入，模块本身不引 Node 内建，`harness-adapter` 保持无 Node 依赖。
+- [x] 2.2 首个不合格附件即拒绝整轮，返回 `invalidRequest`；有专门用例断言后面的附件不会被单独投出去。
+- [x] 2.3 未声明能力、或声明 `attachFiles: false`，携带文件部件的轮次一律整体拒绝；纯文本轮次不受影响。
+- [x] 2.4 `packages/harness-adapter/test/file-input-validation.test.ts` 十条用例覆盖上述全部分支，外加同前缀兄弟目录与「自称字节数与实际不符」两种。
 
 ## 3. native 级适配器
 
@@ -24,7 +24,7 @@
 - [x] 3.3.2 两处防御性降级：不在 `mediaTypes` 内的、以及校验通过后文件消失的，都降级为路径行而不是让整轮失败——Agent 报告文件缺失比传输层报错有用得多。
 - [x] 3.4 opencode：`session.promptAsync` 的 `parts` 追加 `FilePartInput`。该类型是 URL 形态（`mime` / `filename` / `url`），所以 Host 路径直接转 `file://`，不读盘也不重编码——与 claude-code 必须读字节形成对照，同一个路径契约在两种原生协议上各走各的最优路径。
 - [x] 3.4.1 能力只声明 `attachFiles: true`，不加 `mediaTypes` / `maxBytes`：OpenCode 侧不需要我们代它设限。原计划说取自模型目录的 `capabilities.input`，实测那是**每个模型**的能力而非 Session 能力，与本契约的 Session 级声明不同层，未采用。
-- [ ] 3.5 每个适配器各自的聚焦测试：结构化部件确实到达原生调用，且纯文本轮次不受影响。
+- [x] 3.5 四个 native 适配器各有聚焦用例（grok / cursor / claude-code 断言文件部件到达 Transport 或转成原生块，opencode 直测 `openCodeParts`），纯文本轮次形态不变。
 
 ## 4. path-text 级适配器
 
@@ -36,11 +36,13 @@
 
 ## 5. deepseek-harness
 
-- [ ] 5.1 探明其轮次提交口（`commands/execute` 只收 `line: string`，属斜杠命令口，非轮次口）。
-- [ ] 5.2 按探测结果归入 native 或 path-text；在此之前保持 `rejected`。
+- [x] 5.1 已由 upstream v0.5.0 合并解答：DSH 的轮次口是 `session/prompt`，`commands/execute` 确实只是斜杠命令口。上游把适配器拆成 `legacy/` 与 `modern/` 两代，两代都走 `session/prompt`。
+- [x] 5.2 归入 **path-text**：`session/prompt` 的 `content` 只接受文本部件，因此两代都声明 `attachFiles: true` 并把附件降级为路径行；modern 侧的 `promptContent()` 让每个 Host 文本部件仍是独立 wire part。
 
 ## 6. 验证与收尾
 
 - [ ] 6.1 全仓类型检查与各包测试。
 - [ ] 6.2 真机：至少在一个 native 适配器与一个 path-text 适配器上各跑一次带附件的轮次。
 - [ ] 6.3 文档影响：`docs/领域术语表.md` 补附件相关术语；枢纽登记本批次。
+- [x] 2.5 接线：`harness-broker` 的 `session.execute` 在 `turn.start` / `turn.steer` 派发前调用校验，`cwd` 取自会话记录、`capability` 取自 `session.capabilities.input`、`probe` 用 `statSync` 判定是文件并取真实大小。
+- [ ] 2.6 进程内路径（`app-server-host`）**暂未接线**：它今天只构造纯文本输入，没有任何生产者能产出文件部件，接上去会是一段无法被测试触发的死分支。等 Composer 或其它入口能产出附件时随该入口一起接。

@@ -6,6 +6,11 @@ export { HarnessOutputChannel } from "./output-channel.js";
 export { sanitizeDiagnosticTail } from "./diagnostics.js";
 export { validateHostQuestionResponse } from "./question.js";
 export { parseHostUsage } from "./usage.js";
+export { validateHostFileInputs } from "./file-input-validation.js";
+export type {
+  HostFileInputProbe,
+  HostFileInputValidationOptions,
+} from "./file-input-validation.js";
 export {
   HOST_FILE_INPUT_MARKER,
   hostFileInputLine,

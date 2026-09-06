@@ -1,8 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { statSync } from "node:fs";
 import { chmod, lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import net, { type Server, type Socket } from "node:net";
 import path from "node:path";
 
+import { validateHostFileInputs } from "@codexhost/harness-adapter";
 import type {
   HarnessAdapter,
   HarnessError,
@@ -211,6 +213,17 @@ async function prepareUnixSocketPath(socketPath: string): Promise<void> {
     await rm(socketPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+
+/** Attachment probe for the Host: existence, readability and the real size. */
+function hostFileProbe(target: string): { size: number } | undefined {
+  try {
+    const stats = statSync(target);
+    return stats.isFile() ? { size: stats.size } : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -619,6 +632,14 @@ export async function startHarnessBrokerServer(input: {
             };
           }
           if (command.type === "turn.start") record.bootstrapTurnId = command.turnId;
+        }
+        if (command.type === "turn.start" || command.type === "turn.steer") {
+          const rejected = validateHostFileInputs(command.input, {
+            cwd: record.cwd,
+            capability: record.session.capabilities.input,
+            probe: hostFileProbe,
+          });
+          if (rejected) return { ok: false, error: rejected };
         }
         let result;
         if (command.type === "turn.start") result = await record.session.execute(command);
