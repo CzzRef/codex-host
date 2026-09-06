@@ -22,7 +22,8 @@
 - [x] 3.3 claude-code：`sdk-transport.ts` 的 `message: { role: "user", content: text }` 扩为内容块数组，图片走 `image`、PDF 走 `document`，均为 base64 源。
 - [x] 3.3.1 claude-code 是第一个需要**字节**的适配器：Messages API 不收路径，所以适配器按契约给的路径读盘再编码。这正是决策 1「契约走路径、由适配器各自转换」的兑现点。能力据此声明 `mediaTypes`（jpeg/png/gif/webp/pdf，API 实际接受的全集）与 `maxBytes`（5 MB，取图片侧较紧的那条）。
 - [x] 3.3.2 两处防御性降级：不在 `mediaTypes` 内的、以及校验通过后文件消失的，都降级为路径行而不是让整轮失败——Agent 报告文件缺失比传输层报错有用得多。
-- [ ] 3.4 opencode：`session.promptAsync` 的 `parts` 追加文件部件；能力声明取自其模型目录已有的 `capabilities.input`。
+- [x] 3.4 opencode：`session.promptAsync` 的 `parts` 追加 `FilePartInput`。该类型是 URL 形态（`mime` / `filename` / `url`），所以 Host 路径直接转 `file://`，不读盘也不重编码——与 claude-code 必须读字节形成对照，同一个路径契约在两种原生协议上各走各的最优路径。
+- [x] 3.4.1 能力只声明 `attachFiles: true`，不加 `mediaTypes` / `maxBytes`：OpenCode 侧不需要我们代它设限。原计划说取自模型目录的 `capabilities.input`，实测那是**每个模型**的能力而非 Session 能力，与本契约的 Session 级声明不同层，未采用。
 - [ ] 3.5 每个适配器各自的聚焦测试：结构化部件确实到达原生调用，且纯文本轮次不受影响。
 
 ## 4. path-text 级适配器

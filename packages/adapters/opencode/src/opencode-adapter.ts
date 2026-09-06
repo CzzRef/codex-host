@@ -19,6 +19,7 @@ import {
   HarnessOutputChannel,
   validateHostApprovalResponse,
   validateHostQuestionResponse,
+  hostInputFiles,
   hostInputText,
   type HarnessAdapter,
   type HarnessCommandAccepted,
@@ -560,6 +561,9 @@ class OpenCodeHarnessSession implements HarnessSession, OpenCodeTransportListene
         permissionModeScope: "live",
       },
       history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
+      // OpenCode's `FilePartInput` is URL-based, so a Host path converts
+      // straight to `file://` with no ceiling of our own to declare.
+      input: { attachFiles: true },
     };
     this.commands = {
       list: async () => {
@@ -675,9 +679,11 @@ class OpenCodeHarnessSession implements HarnessSession, OpenCodeTransportListene
       sequence: active.admissionSequence++,
     });
     try {
+      const files = hostInputFiles(command.input);
       const prompt = this.#transport.promptAsync({
         sessionID: this.#session.id,
         text,
+        ...(files.length > 0 ? { files } : {}),
         ...(this.#model ? { model: this.#model } : {}),
         ...(this.#variant ? { variant: this.#variant } : {}),
       });
@@ -1837,6 +1843,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
             permissionModeScope: "live",
           },
           history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
+          input: { attachFiles: true },
         },
         permissionModes: OPENCODE_PERMISSION_MODE_CATALOG,
       };

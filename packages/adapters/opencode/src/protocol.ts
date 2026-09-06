@@ -1,3 +1,4 @@
+import type { HostFileInput } from "@codexhost/harness-adapter";
 import type {
   AssistantMessage,
   Command,
@@ -24,6 +25,7 @@ export interface OpenCodeProviderCatalogResponse {
 export interface OpenCodePromptInput {
   sessionID: string;
   text: string;
+  files?: readonly HostFileInput[];
   model?: OpenCodeNativeModelRef;
   variant?: string;
 }

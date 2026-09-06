@@ -744,6 +744,7 @@ describe("OpenCode HarnessAdapter", () => {
         permissionModeScope: "live",
       },
       history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
+      input: { attachFiles: true },
     });
     await expect(
       opened.value.execute({

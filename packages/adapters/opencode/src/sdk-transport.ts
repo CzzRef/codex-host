@@ -1,10 +1,15 @@
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import type {
   AssistantMessage,
+  FilePartInput,
   PermissionRuleset,
   QuestionAnswer,
   SessionStatus,
+  TextPartInput,
 } from "@opencode-ai/sdk/v2";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import type { HostFileInput } from "@codexhost/harness-adapter";
 
 import type { OpenCodeMessageWithParts } from "./history.js";
 import type { OpenCodeNativeModelRef } from "./model-catalog.js";
@@ -285,7 +290,7 @@ export class SdkOpenCodeTransport implements OpenCodeTransport {
           sessionID: input.sessionID,
           ...(input.model ? { model: input.model } : {}),
           ...(input.variant ? { variant: input.variant } : {}),
-          parts: [{ type: "text", text: input.text }],
+          parts: openCodeParts(input.text, input.files ?? []),
         }),
         this.#commandTimeoutMs,
         "OpenCode prompt admission",
@@ -474,4 +479,28 @@ export class SdkOpenCodeTransport implements OpenCodeTransport {
       }
     }
   }
+}
+
+/**
+ * OpenCode message parts for one prompt. `FilePartInput` is URL-based, so the
+ * Host contract's absolute path converts straight into a `file://` URL — no
+ * bytes are read or re-encoded here, unlike the Claude Adapter whose API only
+ * takes base64.
+ */
+export function openCodeParts(
+  text: string,
+  files: readonly HostFileInput[],
+): Array<TextPartInput | FilePartInput> {
+  const parts: Array<TextPartInput | FilePartInput> = [];
+  if (text.length > 0) parts.push({ type: "text", text });
+  for (const file of files) {
+    parts.push({
+      type: "file",
+      mime: file.mediaType,
+      filename: path.basename(file.path),
+      url: pathToFileURL(file.path).href,
+    });
+  }
+  if (parts.length === 0) parts.push({ type: "text", text: "" });
+  return parts;
 }
