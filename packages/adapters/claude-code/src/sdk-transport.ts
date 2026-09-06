@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import {
   query,
@@ -9,7 +10,9 @@ import {
   type SDKUserMessage,
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
-import { sanitizeDiagnosticTail } from "@codexhost/harness-adapter";
+import type { ContentBlockParam } from "@anthropic-ai/sdk/resources/messages";
+import { hostFileInputLine, sanitizeDiagnosticTail } from "@codexhost/harness-adapter";
+import type { HostFileInput } from "@codexhost/harness-adapter";
 import type { HarnessThinkingOptionId } from "@codexhost/shared-contracts";
 
 import { resolveClaudeCodeExecutable, withNodeRuntimeOnPath } from "./command.js";
@@ -548,6 +551,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     text: string,
     userMessageId: string,
     onEvent: (event: ClaudeTurnEvent) => void,
+    files: readonly HostFileInput[] = [],
   ): Promise<ClaudeTransportTurnResult> {
     if (!this.#started || !this.#query) {
       return Promise.reject(new Error("Claude SDK transport is not started"));
@@ -568,24 +572,24 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
         reject,
       };
     });
-    this.#pushUser(text, userMessageId);
+    this.#pushUser(text, userMessageId, files);
     return promise;
   }
 
-  steer(text: string, userMessageId: string): void {
+  steer(text: string, userMessageId: string, files: readonly HostFileInput[] = []): void {
     const active = this.#active;
     if (!this.#started || !this.#query || !active) {
       throw new Error("Claude SDK transport has no active Turn");
     }
     if (text.length === 0) throw new Error("Claude SDK steer text must not be empty");
     active.steers.set(userMessageId, "queued");
-    this.#pushUser(text, userMessageId);
+    this.#pushUser(text, userMessageId, files);
   }
 
-  #pushUser(text: string, userMessageId: string): void {
+  #pushUser(text: string, userMessageId: string, files: readonly HostFileInput[] = []): void {
     this.#input.push({
       type: "user",
-      message: { role: "user", content: text },
+      message: { role: "user", content: claudeUserContent(text, files) },
       parent_tool_use_id: null,
       session_id: this.sessionId,
       uuid: userMessageId as `${string}-${string}-${string}-${string}-${string}`,
@@ -1064,4 +1068,58 @@ export class ClaudeSdkModelInspector implements ClaudeModelInspector {
       child.once("error", () => resolve());
     });
   }
+}
+
+/**
+ * Media types the Anthropic Messages API accepts as a structured block. The
+ * Host contract hands this Adapter a path; the SDK needs bytes, so the file is
+ * read here — that conversion is exactly why the contract references a path
+ * instead of inlining bytes it would have to carry through every Harness.
+ */
+const CLAUDE_IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const CLAUDE_DOCUMENT_MEDIA_TYPE = "application/pdf";
+export const CLAUDE_FILE_INPUT_MEDIA_TYPES = [
+  ...CLAUDE_IMAGE_MEDIA_TYPES,
+  CLAUDE_DOCUMENT_MEDIA_TYPE,
+];
+/** Conservative single-file ceiling: the tighter of Anthropic's image limit. */
+export const CLAUDE_FILE_INPUT_MAX_BYTES = 5_000_000;
+
+export function claudeUserContent(
+  text: string,
+  files: readonly HostFileInput[],
+): string | ContentBlockParam[] {
+  if (files.length === 0) return text;
+  const blocks: ContentBlockParam[] = [];
+  const degraded: HostFileInput[] = [];
+  for (const file of files) {
+    let data: string;
+    try {
+      data = readFileSync(file.path).toString("base64");
+    } catch {
+      // A file that vanished between Host validation and dispatch degrades to
+      // its path line rather than failing the Turn: the Agent can report the
+      // missing file far better than a transport error can.
+      degraded.push(file);
+      continue;
+    }
+    if (CLAUDE_IMAGE_MEDIA_TYPES.has(file.mediaType)) {
+      blocks.push({
+        type: "image",
+        source: { type: "base64", media_type: file.mediaType as "image/png", data },
+      });
+    } else if (file.mediaType === CLAUDE_DOCUMENT_MEDIA_TYPE) {
+      blocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data },
+      });
+    } else {
+      degraded.push(file);
+    }
+  }
+  const lines = [text, ...degraded.map((file) => hostFileInputLine(file))].filter(
+    (line) => line.length > 0,
+  );
+  if (lines.length > 0) blocks.unshift({ type: "text", text: lines.join("\n") });
+  return blocks;
 }

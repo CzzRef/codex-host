@@ -1,3 +1,4 @@
+import type { HostFileInput } from "@codexhost/harness-adapter";
 import type { HarnessThinkingOptionId, JsonValue } from "@codexhost/shared-contracts";
 
 import type { ClaudeNativeFileChange } from "./file-change.js";
@@ -194,8 +195,9 @@ export interface ClaudeTurnTransport {
     text: string,
     userMessageId: string,
     onEvent: (event: ClaudeTurnEvent) => void,
+    files?: readonly HostFileInput[],
   ): Promise<ClaudeTransportTurnResult>;
-  steer(text: string, userMessageId: string): void;
+  steer(text: string, userMessageId: string, files?: readonly HostFileInput[]): void;
   respondToInteraction(response: ClaudeInteractionResponse): Promise<void>;
   abort(): Promise<void>;
   close(): Promise<void>;

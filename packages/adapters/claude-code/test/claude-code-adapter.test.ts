@@ -9,7 +9,7 @@ import {
   nativeSessionRefSchema,
 } from "@codexhost/shared-contracts";
 
-import type { HarnessOutput, HarnessSession } from "@codexhost/harness-adapter";
+import type { HarnessOutput, HarnessSession, HostFileInput } from "@codexhost/harness-adapter";
 import { ClaudeCodeAdapter, type ClaudeCodeAdapterOptions } from "../src/index.js";
 import { projectClaudePlanLimitToCredits } from "../src/claude-code-adapter.js";
 import { ClaudeCodeExecutableError } from "../src/command.js";
@@ -135,21 +135,27 @@ class FakeClaudeTransport implements ClaudeTurnTransport {
     });
   }
 
+  turnFiles: HostFileInput[][] = [];
+  steerFiles: HostFileInput[][] = [];
+
   runTurn(
     text: string,
     userMessageId: string,
     onEvent: (event: ClaudeTurnEvent) => void,
+    files: readonly HostFileInput[] = [],
   ): Promise<ClaudeTransportTurnResult> {
     this.turns.push({ text, userMessageId });
+    this.turnFiles.push([...files]);
     this.#assistantMessageId = null;
     return new Promise((resolve, reject) => {
       this.#active = { onEvent, resolve, reject };
     });
   }
 
-  steer(text: string, userMessageId: string): void {
+  steer(text: string, userMessageId: string, files: readonly HostFileInput[] = []): void {
     if (!this.#active) throw new Error("No active fake Claude Turn");
     this.steers.push({ text, userMessageId });
+    this.steerFiles.push([...files]);
   }
 
   event(event: ClaudeTurnEvent): void {
@@ -519,6 +525,11 @@ describe("Claude Code HarnessAdapter", () => {
         history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
         subagents: { observe: true, readTranscript: true },
         turns: { steer: true },
+        input: {
+          attachFiles: true,
+          mediaTypes: ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"],
+          maxBytes: 5_000_000,
+        },
       },
     });
     await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toEqual(first);
@@ -543,6 +554,11 @@ describe("Claude Code HarnessAdapter", () => {
       history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
       subagents: { observe: true, readTranscript: true },
       turns: { steer: true },
+      input: {
+        attachFiles: true,
+        mediaTypes: ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"],
+        maxBytes: 5_000_000,
+      },
     });
     const iterator = session.outputs[Symbol.asyncIterator]();
     await expect(
@@ -4745,5 +4761,36 @@ describe("Claude Code HarnessAdapter", () => {
       undefined,
       undefined,
     ]);
+  });
+});
+
+describe("Claude Code file input dispatch", () => {
+  it("forwards file parts of a started Turn and a steer to the Transport", async () => {
+    const { adapter, transports } = fixture();
+    const session = await openSession(adapter);
+    const turnId = hostTurnIdSchema.parse("claude-file-turn");
+    await session.execute({
+      type: "turn.start",
+      turnId,
+      input: [
+        { type: "text", text: "look" },
+        { type: "file", path: "/synthetic/a.png", mediaType: "image/png", bytes: 4 },
+      ],
+    });
+    expect(transports[0]?.turnFiles.at(-1)).toEqual([
+      { type: "file", path: "/synthetic/a.png", mediaType: "image/png", bytes: 4 },
+    ]);
+    await session.execute({
+      type: "turn.steer",
+      turnId,
+      input: [
+        { type: "text", text: "also" },
+        { type: "file", path: "/synthetic/b.pdf", mediaType: "application/pdf", bytes: 8 },
+      ],
+    });
+    expect(transports[0]?.steerFiles.at(-1)).toEqual([
+      { type: "file", path: "/synthetic/b.pdf", mediaType: "application/pdf", bytes: 8 },
+    ]);
+    await session.close();
   });
 });

@@ -9,6 +9,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   HarnessOutputChannel,
+  hostInputFiles,
   hostInputText,
   parseHostUsage,
   validateHostApprovalResponse,
@@ -73,6 +74,7 @@ import {
 } from "@codexhost/shared-contracts";
 
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
+import { CLAUDE_FILE_INPUT_MAX_BYTES, CLAUDE_FILE_INPUT_MEDIA_TYPES } from "./sdk-transport.js";
 import {
   ClaudeCodeExecutableError,
   resolveClaudeCodeExecutable,
@@ -510,6 +512,11 @@ class ClaudeHarnessSession implements HarnessSession {
     history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
     subagents: { observe: true, readTranscript: true },
     turns: { steer: true },
+    input: {
+      attachFiles: true,
+      mediaTypes: CLAUDE_FILE_INPUT_MEDIA_TYPES,
+      maxBytes: CLAUDE_FILE_INPUT_MAX_BYTES,
+    },
   };
   readonly commands: HarnessCommandCapability;
   readonly initialState: HarnessSessionState;
@@ -809,9 +816,15 @@ class ClaudeHarnessSession implements HarnessSession {
         nativeTurnKey,
         formatVersion: 1,
       });
-      const running = transport.runTurn(text, nativeTurnRef.nativeTurnKey, (event) => {
-        this.#handleTurnEvent(active, event);
-      });
+      const files = hostInputFiles(command.input);
+      const running = transport.runTurn(
+        text,
+        nativeTurnRef.nativeTurnKey,
+        (event) => {
+          this.#handleTurnEvent(active, event);
+        },
+        files,
+      );
       // Claude preserves caller-assigned User Message UUIDs in native history.
       active.nativeTurnRef = nativeTurnRef;
       void running.then(
@@ -1247,7 +1260,7 @@ class ClaudeHarnessSession implements HarnessSession {
     }
     try {
       const userMessageId = this.#randomUUID();
-      transport.steer(text, userMessageId);
+      transport.steer(text, userMessageId, hostInputFiles(command.input));
       // The steer is pushed into the running Turn; surface it as an in-turn
       // user item keyed by the transcript uuid so history folds to the same id.
       const item: HostUserMessageItem = {
@@ -2532,6 +2545,11 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
           history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
           subagents: { observe: true, readTranscript: true },
           turns: { steer: true },
+          input: {
+            attachFiles: true,
+            mediaTypes: CLAUDE_FILE_INPUT_MEDIA_TYPES,
+            maxBytes: CLAUDE_FILE_INPUT_MAX_BYTES,
+          },
         },
       };
     } catch (error) {

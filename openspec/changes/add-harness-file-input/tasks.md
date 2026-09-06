@@ -19,7 +19,9 @@
 - [x] 3.1 grok：`acp-transport.ts` 的 `prompt: [{ type: "text", text }]` 扩为 ACP `ContentBlock[]`，文件部件走 `resource_link`（`pathToFileURL` 生成 URI，带 name / mimeType / size）。
 - [x] 3.1.1 grok 的 steer 例外：Grok 的 interjection 扩展只收文本，因此**被插队的**附件降级为路径行（`hostInputPromptText`），已启动轮次仍走原生 `resource_link`。这是操作级降级，不是 Session 级；不丢弃。
 - [x] 3.2 cursor：同上形态。构造逻辑**各自一份**而非跨包复用——Harness 协议按项目约束留在各自适配器内。cursor 的 steer 是 interrupt-then-re-prompt、走回 `runTurn`，因此被插队的附件保持原生 `resource_link`，不像 grok 那样被迫降级（`pendingSteerFiles` 随 `pendingSteer` 一起排队）。
-- [ ] 3.3 claude-code：`sdk-transport.ts` 的 `message: { role: "user", content: text }` 扩为内容块数组，图片与文档各走对应块。
+- [x] 3.3 claude-code：`sdk-transport.ts` 的 `message: { role: "user", content: text }` 扩为内容块数组，图片走 `image`、PDF 走 `document`，均为 base64 源。
+- [x] 3.3.1 claude-code 是第一个需要**字节**的适配器：Messages API 不收路径，所以适配器按契约给的路径读盘再编码。这正是决策 1「契约走路径、由适配器各自转换」的兑现点。能力据此声明 `mediaTypes`（jpeg/png/gif/webp/pdf，API 实际接受的全集）与 `maxBytes`（5 MB，取图片侧较紧的那条）。
+- [x] 3.3.2 两处防御性降级：不在 `mediaTypes` 内的、以及校验通过后文件消失的，都降级为路径行而不是让整轮失败——Agent 报告文件缺失比传输层报错有用得多。
 - [ ] 3.4 opencode：`session.promptAsync` 的 `parts` 追加文件部件；能力声明取自其模型目录已有的 `capabilities.input`。
 - [ ] 3.5 每个适配器各自的聚焦测试：结构化部件确实到达原生调用，且纯文本轮次不受影响。
 
