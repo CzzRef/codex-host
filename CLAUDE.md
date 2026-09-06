@@ -41,3 +41,4 @@ Hard constraints:
 - Write Markdown links relative to the target document location.
 - Do not claim a check passed unless it was executed. Report skipped or blocked checks and the reason.
 - Final replies must include verification status and memory/process-document status.
+- Commit messages carry `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` when the host mandates it; this is the recorded host-mandated trailer exception in [CodeNote github/rules.md §2.4](../../CzzProj/CodeNote/AiRef/VibePractice/Vibe_Rules/github/rules.md), not a lapse. Author and committer fields still show only the human owner.
