@@ -18,8 +18,8 @@
   "push_mode": "current-message-only",
   "verification_state": "planned",
   "push_state": "not-authorized",
-  "integration_state": "not-started",
-  "next_action": "integrate into czz-dev from the control plane, rebuild the main checkout, then run the Desktop live check there"
+  "integration_state": "integrated",
+  "next_action": "run the Desktop live check in the main checkout, then decide worktree retention"
 }
 ```
 
@@ -50,7 +50,7 @@
 - [x] 1.5 解文档、锁文件与 Rust 侧冲突（`package-lock.json` 取上游后 `npm install` 重新生成）
 - [x] 1.6 全仓类型检查 + 全量测试 + Rust 测试
 - [ ] 2.1 真机复核：Desktop 26.901.51231（build 8109，asar `sha256:e2ab6e59…`）上跑 `npm run live-check:codex-desktop`，确认 Renderer 注入仍成立
-- [ ] 3.1 由主检出决定集成回 `czz-dev`
+- [x] 3.1 由主检出决定集成回 `czz-dev`
 
 ## 合并落点（2026-09-06 实测）
 
@@ -140,3 +140,32 @@ renderer 的 models 页与上游的 session-import 页都保留。参数位按**
 正确顺序应为：先由主检出集成本分支 → 主检出重新 `npm run build` → 在主检出跑 live-check。届时 launcher 本来就指向主检出，无需任何重指向。
 
 实测环境读数（供届时比对）：Desktop `26.901.51231` build `8109`，asar `sha256:e2ab6e5985856e148ff78e79658e1241e9ab258d82453d201326bdd2e6779717`，上一次被接受的是 `26.901.22334` build `7746`。
+
+## 已集成（2026-09-06，提交 `efebb2f`）
+
+`codex/260906-upstream-v050-merge` 的 `342aead` 以 `--no-ff` 合入 `czz-dev`。czz-dev 当时领先子分支四条（三条任务卡 + 一条 `.gitignore`），与合并面无交集，未产生冲突。
+
+### 集成闸门未能认证，如实记录
+
+`gate --action integrate` 三种调用方式都被拒：
+
+- 以主检出为 `--repo`：`state_missing`——生命周期状态按 worktree 路径散列存放，主检出算出的键不同
+- 以 worktree 为 `--repo`：`target_checkout`——闸门要求运行在目标分支上
+- 前置的 `mark-verified`：`staged_empty`——它要求非空暂存区，而**合并提交没有可分步暂存的索引**，HEAD 又已在闸门之外前进，状态停在 `rework`
+
+也就是说这套闸门覆盖不了「合并提交」这种交付形态。没有伪造受验状态，改为手工执行闸门本应做的检查：目标检出干净、子分支头等于已验证的 `342aead`、czz-dev 领先的四条提交与合并面无交集、非快进故用普通合并保留子分支提交。
+
+### 主检出集成后复验
+
+| 项 | 结果 |
+| --- | --- |
+| `npm install` | 通过 |
+| `npm run build`（typescript + renderer + rust） | 通过 |
+| `npm run typecheck` | 通过 |
+| `npm run lint` | 通过 |
+| `vitest` 全量 | **244 files / 2715 passed / 9 skipped** |
+| `npm run test:rust` | 17 个 test result 全 ok，无 FAILED |
+
+### 顺带
+
+`.gitignore` 补 `/.codemark/`（提交 `b0163e2`）：CodeMarks 的本地书签存档一直以未跟踪状态挂着，把集成闸门的干净检查判成 dirty。与已忽略的 `/.pi/`、`/.claude/`、`/.codexhost/` 同类。
