@@ -6,7 +6,7 @@ import {
   HarnessOutputChannel,
   validateHostApprovalResponse,
   validateHostQuestionResponse,
-  hostInputText,
+  hostInputPromptText,
   type HarnessAdapter,
   type HarnessCommandAccepted,
   type HarnessCommandCapability,
@@ -637,6 +637,9 @@ class OmpHarnessSession implements HarnessSession {
       history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
       subagents: { observe: true, readTranscript: true },
       turns: { steer: true },
+      // OMP's prompt RPC takes a plain string; attachments degrade to a path
+      // line rather than being refused, so OMP can still read them itself.
+      input: { attachFiles: true },
     };
     this.commands = {
       list: async () => ({ ok: true, value: ompCommandCatalog }),
@@ -907,7 +910,7 @@ class OmpHarnessSession implements HarnessSession {
         },
       };
     }
-    const text = hostInputText(command.input);
+    const text = hostInputPromptText(command.input);
     if (text.length === 0) {
       return {
         ok: false,
@@ -2015,7 +2018,7 @@ class OmpHarnessSession implements HarnessSession {
     if (!active || active.command.turnId !== command.turnId || !transport) {
       return { ok: false, error: invalidState("Omp Turn steer must reference the active Turn") };
     }
-    const text = hostInputText(command.input);
+    const text = hostInputPromptText(command.input);
     if (text.length === 0) {
       return {
         ok: false,

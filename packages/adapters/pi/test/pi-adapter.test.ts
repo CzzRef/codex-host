@@ -2514,3 +2514,23 @@ describe("Pi HarnessAdapter Session", () => {
     ]);
   });
 });
+
+describe("Pi file input degradation", () => {
+  it("declares the capability and sends attachments as a path line", async () => {
+    const { adapter, transports } = fixture();
+    const session = await openSession(adapter);
+    expect(session.capabilities.input).toEqual({ attachFiles: true });
+    await session.execute({
+      type: "turn.start",
+      turnId: hostTurnIdSchema.parse("pi-file-turn"),
+      input: [
+        { type: "text", text: "review" },
+        { type: "file", path: "/synthetic/a.png", mediaType: "image/png", bytes: 7 },
+      ],
+    });
+    expect(transports[0]?.runTurn.mock.calls[0]?.[0]).toBe(
+      "review\n[attachment] /synthetic/a.png (image/png, 7 bytes)",
+    );
+    await session.close();
+  });
+});

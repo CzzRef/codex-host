@@ -28,11 +28,11 @@
 
 ## 4. path-text 级适配器
 
-- [ ] 4.1 确定降级文本的固定格式与路径转义规则，使用户输入无法伪造成附件引用。
-- [ ] 4.2 pi：`#send("prompt", { message })` 前拼接降级文本。
-- [ ] 4.3 omp：同上。
-- [ ] 4.4 antigravity：stdin 的 `message.content` 前拼接降级文本。
-- [ ] 4.5 针对性测试：伪造尝试不被识别为附件引用；降级文本对用户可见。
+- [x] 4.1 降级格式定为 `[attachment] <path> (<mediaType>, <bytes> bytes)`，由 `hostFileInputLine` / `hostInputPromptText` 独家拥有（切片 1.6 已提前落地，供 Codex UI 投影共用）。原写的「使用户输入无法伪造」是过度承诺，已按实际能力改写：codexhost 只生成、从不解析回文件部件，没有可被骗的解析器；能保证的是路径不引入额外行。
+- [x] 4.2 pi：轮次与插队两处改用 `hostInputPromptText`。
+- [x] 4.3 omp：同上，两处。
+- [x] 4.4 antigravity：stdin 的 `message.content` 走 `hostInputPromptText`。
+- [x] 4.5 测试：`hostFileInputLine` 的换行折叠有独立单测；pi 与 omp 各有一条适配器级用例断言原生提示词确实收到路径行；antigravity 只断言能力声明——它的测试要拉起真实 shim 进程、捕获 stdin 成本过高，其降级路径由共享帮助函数的单测覆盖，此处如实记为较弱的一环。
 
 ## 5. deepseek-harness
 

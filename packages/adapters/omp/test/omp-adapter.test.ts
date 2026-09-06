@@ -220,6 +220,10 @@ class FakeOmpTransport implements OmpTurnTransport {
 class SteerableOmpTransport extends FakeOmpTransport {
   #resolveHeld: ((result: OmpTurnResult) => void) | null = null;
   #promptText = "";
+
+  get promptText(): string {
+    return this.#promptText;
+  }
   /** Persist steers the way live Pi-family agents do after a tool-less assistant turn. */
   steerAfterStop = false;
 
@@ -1218,5 +1222,26 @@ describe("OMP Adapter Subagents", () => {
     });
     await opened.value.close();
     await adapter.close();
+  });
+});
+
+describe("OMP file input degradation", () => {
+  it("declares the capability and sends attachments as a path line", async () => {
+    const transport = new SteerableOmpTransport();
+    const adapter = new OmpAdapter({}, { createTransport: () => transport });
+    const opened = await adapter.open({ kind: "create", cwd: "/synthetic" });
+    if (!opened.ok) throw new Error(opened.error.message);
+    const session = opened.value;
+    expect(session.capabilities.input).toEqual({ attachFiles: true });
+    await session.execute({
+      type: "turn.start",
+      turnId: "omp-file-turn" as HostTurnId,
+      input: [
+        { type: "text", text: "review" },
+        { type: "file", path: "/synthetic/a.png", mediaType: "image/png", bytes: 7 },
+      ],
+    });
+    expect(transport.promptText).toBe("review\n[attachment] /synthetic/a.png (image/png, 7 bytes)");
+    await session.close();
   });
 });

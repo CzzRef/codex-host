@@ -206,6 +206,21 @@ describe("Antigravity Adapter", () => {
     }
   });
 
+  it("declares the file input capability so attachments degrade instead of being refused", async () => {
+    const { command, cwd, cleanup } = await fakeAgy(FAKE_MODELS);
+    const adapter = new AntigravityAdapter({ command });
+    try {
+      const opened = await adapter.open({ kind: "create", cwd });
+      expect(opened.ok).toBe(true);
+      if (!opened.ok) return;
+      expect(opened.value.capabilities.input).toEqual({ attachFiles: true });
+      await opened.value.close();
+    } finally {
+      await adapter.close();
+      await cleanup();
+    }
+  });
+
   it("opens with an effort the Model accepts and reports it as effective", async () => {
     const { command, cwd, cleanup } = await fakeAgy(FAKE_MODELS);
     const adapter = new AntigravityAdapter({ command });

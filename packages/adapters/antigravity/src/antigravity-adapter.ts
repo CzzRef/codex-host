@@ -10,7 +10,7 @@ import type { Readable, Writable } from "node:stream";
 import {
   HarnessOutputChannel,
   sanitizeDiagnosticTail,
-  hostInputText,
+  hostInputPromptText,
   type HarnessAdapter,
   type HarnessError,
   type HarnessInspection,
@@ -136,6 +136,9 @@ const CAPABILITIES: HarnessSessionCapabilities = {
   },
   history: { fork: false, forkAcrossCwd: false, rollbackLastTurn: false },
   subagents: { observe: false, readTranscript: false },
+  // Antigravity's stdin protocol carries a plain `message.content` string;
+  // attachments degrade to a path line rather than being refused.
+  input: { attachFiles: true },
 };
 
 function errorMessage(error: unknown): string {
@@ -489,7 +492,7 @@ class AntigravitySession implements HarnessSession {
         },
       };
     }
-    const text = hostInputText(command.input).trim();
+    const text = hostInputPromptText(command.input).trim();
     if (!text) {
       return {
         ok: false,
