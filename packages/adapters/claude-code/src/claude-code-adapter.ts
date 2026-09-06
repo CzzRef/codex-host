@@ -102,6 +102,7 @@ import {
   CLAUDE_THINKING_OPTIONS,
   parseClaudeThinkingOptionId,
 } from "./thinking-options.js";
+import { claudePlanReviewResponse, createClaudePlanReview } from "./plan-review.js";
 import { ClaudeSubagentLifecycle } from "./subagent-lifecycle.js";
 import { ClaudeTaskTracker } from "./task-tracker.js";
 import { ClaudeToolLifecycle } from "./tool-lifecycle.js";
@@ -114,6 +115,7 @@ import type {
   ClaudeInteractionResponse,
   ClaudeLastRequestUsage,
   ClaudeModelInspector,
+  ClaudePlanApprovalRequest,
   ClaudePlanLimitEvent,
   ClaudeQuestionRequest,
   ClaudeTransportFailureKind,
@@ -143,6 +145,11 @@ type ActiveInteraction =
       type: "question";
       interaction: HostQuestionInteraction;
       request: ClaudeQuestionRequest;
+    }
+  | {
+      type: "planApproval";
+      interaction: HostQuestionInteraction;
+      request: ClaudePlanApprovalRequest;
     };
 
 interface ContextUsageRefreshRequest {
@@ -189,7 +196,7 @@ interface ActiveTurn {
 }
 
 const claudeCodeHarnessId = harnessIdSchema.parse("claude-code");
-const claudeCommandCatalog = harnessCommandCatalogSchema.parse({
+export const claudeCommandCatalog = harnessCommandCatalogSchema.parse({
   commands: [
     {
       id: "claude.compact",
@@ -1204,7 +1211,9 @@ class ClaudeHarnessSession implements HarnessSession {
       }
       const validationError = validateHostQuestionResponse(pending.interaction, command.response);
       if (validationError) return { ok: false, error: validationError };
-      if (command.response.cancelled) {
+      if (pending.type === "planApproval") {
+        response = claudePlanReviewResponse(pending.request, command.response);
+      } else if (command.response.cancelled) {
         response = {
           type: "question",
           requestId: pending.request.requestId,
@@ -1638,6 +1647,12 @@ class ClaudeHarnessSession implements HarnessSession {
         ],
       };
       pending = { type: "approval", interaction, request };
+    } else if (request.type === "planApproval") {
+      pending = {
+        type: "planApproval",
+        interaction: createClaudePlanReview(request, interactionId, active.command.turnId),
+        request,
+      };
     } else {
       const firstQuestion = request.questions[0];
       if (!firstQuestion) throw new Error("Claude Code Question request is empty");
@@ -2322,6 +2337,7 @@ class ClaudeHarnessSession implements HarnessSession {
 }
 
 export class ClaudeCodeAdapter implements HarnessAdapter {
+  readonly commandCatalog = claudeCommandCatalog;
   readonly harnessId: HarnessId = claudeCodeHarnessId;
   readonly subagents = {
     readSnapshot: async (input: {

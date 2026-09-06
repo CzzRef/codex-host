@@ -5,6 +5,7 @@
 /downloads/
 /.codemark/
 /.codexhost/
+/pr-triage/
 /.claude/
 
 # Environment and secrets

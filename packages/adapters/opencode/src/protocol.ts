@@ -1,7 +1,5 @@
 import type { HostFileInput } from "@codexhost/harness-adapter";
 import type {
-  AssistantMessage,
-  Command,
   Event,
   PermissionRequest,
   PermissionRuleset,
@@ -30,14 +28,6 @@ export interface OpenCodePromptInput {
   variant?: string;
 }
 
-export interface OpenCodeCommandInput {
-  sessionID: string;
-  command: string;
-  arguments: string;
-  model?: OpenCodeNativeModelRef;
-  variant?: string;
-}
-
 export interface OpenCodeTransportListener {
   onEvent(event: Event): void;
   onFault(error: OpenCodeTransportError): void;
@@ -49,7 +39,6 @@ export interface OpenCodeTransport {
 
   health(): Promise<{ healthy: true; version: string }>;
   providers(): Promise<OpenCodeProviderCatalogResponse>;
-  commands(): Promise<Command[]>;
   createSession(input?: {
     model?: OpenCodeNativeModelRef;
     variant?: string;
@@ -66,9 +55,6 @@ export interface OpenCodeTransport {
   revertSession(sessionID: string, messageID: string): Promise<Session>;
   unrevertSession(sessionID: string): Promise<Session>;
   promptAsync(input: OpenCodePromptInput): Promise<void>;
-  executeCommand(
-    input: OpenCodeCommandInput,
-  ): Promise<OpenCodeMessageWithParts & { info: AssistantMessage }>;
   summarize(sessionID: string, model?: OpenCodeNativeModelRef): Promise<void>;
   abort(sessionID: string): Promise<void>;
   listQuestions(): Promise<QuestionRequest[]>;

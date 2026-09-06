@@ -12,7 +12,6 @@ import type {
 import type { StoredDelegationRecordV1, StoredThreadRecordV1 } from "@codexhost/mapping-store";
 import {
   encodeExternalTransportSelection,
-  EXTERNAL_HARNESS_IDS,
   transportModelIdForHarness,
   type ExternalHarnessId,
   type JsonObject,
@@ -172,13 +171,6 @@ export class HarnessDelegationCoordinator {
 
   async inspect(input: HarnessInspectInput): Promise<HarnessInspectResult> {
     if (input.harnessId === "codex") return this.#inspectOfficial(input);
-    if (!EXTERNAL_HARNESS_IDS.includes(input.harnessId as ExternalHarnessId)) {
-      throw new DelegationControlError(
-        "HARNESS_NOT_FOUND",
-        `Harness '${input.harnessId}' is unavailable`,
-        { validHarnessIds: ["codex", ...EXTERNAL_HARNESS_IDS] },
-      );
-    }
     const adapter = this.#adapters.get(input.harnessId as ExternalHarnessId);
     if (!adapter) {
       throw new DelegationControlError(
@@ -208,13 +200,11 @@ export class HarnessDelegationCoordinator {
       }
       return this.#startOfficial({ ...input, parentThreadId });
     }
-    if (!EXTERNAL_HARNESS_IDS.includes(input.harnessId as ExternalHarnessId)) {
+    if (!this.#adapters.has(input.harnessId)) {
       throw new DelegationControlError(
         "HARNESS_NOT_FOUND",
         `Harness '${input.harnessId}' is unavailable`,
-        {
-          validHarnessIds: ["codex", ...EXTERNAL_HARNESS_IDS],
-        },
+        { validHarnessIds: ["codex", ...this.#adapters.keys()] },
       );
     }
     const targetHarnessId = input.harnessId as ExternalHarnessId;
