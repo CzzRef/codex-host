@@ -22,6 +22,7 @@ import {
   hostThreadIdSchema,
   hostTurnIdSchema,
   prefixHarnessModelCatalogLabels,
+  prefixHarnessModelLabel,
 } from "@codexhost/shared-contracts";
 
 import {
@@ -371,7 +372,12 @@ export class HarnessDelegationCoordinator {
             ? { effectiveModel: thread.stateObserver.state.effectiveModel }
             : {}),
           ...(thread.stateObserver.state.resolvedModelLabel
-            ? { resolvedModelLabel: thread.stateObserver.state.resolvedModelLabel }
+            ? {
+                resolvedModelLabel: prefixHarnessModelLabel(
+                  input.harnessId,
+                  thread.stateObserver.state.resolvedModelLabel,
+                ),
+              }
             : {}),
           ...(thread.stateObserver.state.effectiveThinkingOptionId
             ? { effectiveThinkingOptionId: thread.stateObserver.state.effectiveThinkingOptionId }

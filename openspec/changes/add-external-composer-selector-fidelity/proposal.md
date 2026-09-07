@@ -20,7 +20,6 @@ Composer 上给外部 Harness Thread 用的两个选择器都在展示错的东�
 - 不改 Harness 权限模式的线上 id 与传输语义（那是权限模式统一词表的范围）。
 - 不改模型目录的 `ref` 编码，只改 `label`；模型身份与恢复仍全走 `ref`。
 - 不新增 Provider 的独立展示位。多 Provider 路由型 Harness 因此可能出现文案相同的多行，靠 `ref` 区分——这与 Pi 目录既有的取舍一致（`pi-model-catalog.test.ts` 明确断言同名跨 Provider 产出 `["same", "same"]`）。
-- 不改会话状态上的 `resolvedModelLabel`：它走的是另一条投影链，本轮保持未加前缀（见现状偏差）。
 
 ## Capabilities
 
@@ -35,7 +34,7 @@ Composer 上给外部 Harness Thread 用的两个选择器都在展示错的东�
 
 上游 `635a890`（2026-09-03，`refactor(deepseek): 共享跨代模型与命令语义`）曾把 DeepSeek 标签写回 `${group.name} / ${model.name}`，覆盖本地 `f5550d9`。本变更以 Harness 缩写前缀取代原先「只标识 Model」的表述，该冲突随之消解：Provider 段在两家路由型 Harness 上一并去掉，缩写前缀由 Host 统一补上。
 
-仍未闭合：会话状态上的 `resolvedModelLabel`（`modern/configuration.ts` 由 `catalogModel.label` 派生）走的是会话投影链而非目录投影链，本轮**未加前缀**，因此委派输出里的 `configuration.effective.resolvedModelLabel` 会是裸模型名。要不要一并对齐是独立取舍，未在本包内解决。
+会话状态上的 `resolvedModelLabel` 走的是会话投影链而非目录投影链，起初漏在外面；已用同一 `prefixHarnessModelLabel()` 补齐五处投影点（`thread/inspect`、Model / Thinking / Permission 三处选择应答、委派 `configuration.effective`），现在委派输出与选择器对同一个模型的称呼一致。
 
 ## Impact
 

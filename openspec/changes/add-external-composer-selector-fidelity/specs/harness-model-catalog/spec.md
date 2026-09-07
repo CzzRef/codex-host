@@ -36,3 +36,18 @@ Host 投影给消费者的模型目录，其每条 `label` SHALL 形如 `<abbr>�
 #### Scenario: 未登记的 Harness 仍可用
 - **WHEN** 一个尚未登记的 Harness 投影目录
 - **THEN** 实现 SHALL 按派生规则给出可用前缀，MUST NOT 使目录失败
+
+### Requirement: 会话状态的已解析模型标签同样带前缀
+Host 投影的会话状态字段 `resolvedModelLabel` SHALL 与目录标签用同一前缀规则，使同一个模型在选择器与委派输出里的称呼一致。施加同样 SHALL 幂等。
+
+#### Scenario: 线程检查应答
+- **WHEN** 消费者对一条外部 Thread 请求 `thread/inspect`，其会话状态的 `resolvedModelLabel` 为 `Fake Secondary`，Harness 为 `pi`
+- **THEN** 投影结果 SHALL 为 `pi·Fake Secondary`
+
+#### Scenario: 选择应答
+- **WHEN** Model、Thinking 或 Permission Mode 选择成功后 Host 投影新的会话状态
+- **THEN** 其中的 `resolvedModelLabel` SHALL 带同一前缀
+
+#### Scenario: 委派输出
+- **WHEN** 委派控制平面返回 `configuration.effective`
+- **THEN** 其 `resolvedModelLabel` SHALL 带同一前缀

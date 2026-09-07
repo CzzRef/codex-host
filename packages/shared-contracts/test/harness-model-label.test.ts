@@ -10,6 +10,7 @@ import {
   harnessModelLabelPrefix,
   isHarnessModelLabelPrefixed,
   prefixHarnessModelCatalogLabels,
+  prefixHarnessModelLabel,
 } from "../src/harness-model-label.js";
 import { harnessModelCatalogSchema, harnessModelRefSchema } from "../src/harness-models.js";
 
@@ -74,6 +75,21 @@ describe("Harness Model label abbreviations", () => {
     expect(harnessModelLabelPrefix("deepseek-harness")).toBe("ds·");
     expect(isHarnessModelLabelPrefixed("pi", "pi·gpt-5.6-sol")).toBe(true);
     expect(isHarnessModelLabelPrefixed("pi", "gpt-5.6-sol")).toBe(false);
+  });
+});
+
+describe("Session state Model label", () => {
+  it("prefixes the resolved label the same way the catalog is prefixed", () => {
+    expect(prefixHarnessModelLabel("deepseek-harness", "Model One")).toBe("ds·Model One");
+  });
+
+  it("is idempotent so a projected label does not compound", () => {
+    expect(prefixHarnessModelLabel("pi", "pi·gpt-5.6-sol")).toBe("pi·gpt-5.6-sol");
+  });
+
+  it("agrees with the catalog projection for the same Harness and name", () => {
+    const [model] = prefixHarnessModelCatalogLabels("grok", catalog(["grok-4.6"])).models;
+    expect(model?.label).toBe(prefixHarnessModelLabel("grok", "grok-4.6"));
   });
 });
 

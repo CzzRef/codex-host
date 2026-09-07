@@ -46,6 +46,7 @@ import {
   harnessConfigurationStateSchema,
   harnessInspectionSchema,
   prefixHarnessModelCatalogLabels,
+  prefixHarnessModelLabel,
   harnessWebUiOpenParamsSchema,
   harnessWebUiOpenResultSchema,
   harnessModelSelectionStateSchema,
@@ -2738,7 +2739,12 @@ export class AppServerHost {
               ? { effectiveModel: resolution.thread.stateObserver.state.effectiveModel }
               : {}),
             ...(resolution.thread.stateObserver.state.resolvedModelLabel
-              ? { resolvedModelLabel: resolution.thread.stateObserver.state.resolvedModelLabel }
+              ? {
+                  resolvedModelLabel: prefixHarnessModelLabel(
+                    resolution.thread.harnessId,
+                    resolution.thread.stateObserver.state.resolvedModelLabel,
+                  ),
+                }
               : {}),
             ...(resolution.thread.stateObserver.state.effectiveThinkingOptionId
               ? {
@@ -3187,7 +3193,14 @@ export class AppServerHost {
       const state = await thread.stateObserver.waitForChange(beforeRevision);
       const projected = harnessModelSelectionStateSchema.parse({
         ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
-        ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
+        ...(state.resolvedModelLabel
+          ? {
+              resolvedModelLabel: prefixHarnessModelLabel(
+                thread.harnessId,
+                state.resolvedModelLabel,
+              ),
+            }
+          : {}),
         ...(state.effectiveThinkingOptionId
           ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
           : {}),
@@ -3248,7 +3261,14 @@ export class AppServerHost {
       const state = await thread.stateObserver.waitForChange(beforeRevision);
       const projected = harnessModelSelectionStateSchema.parse({
         ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
-        ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
+        ...(state.resolvedModelLabel
+          ? {
+              resolvedModelLabel: prefixHarnessModelLabel(
+                thread.harnessId,
+                state.resolvedModelLabel,
+              ),
+            }
+          : {}),
         ...(state.effectiveThinkingOptionId
           ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
           : {}),
@@ -3349,7 +3369,14 @@ export class AppServerHost {
       const state = await thread.stateObserver.waitForChange(beforeRevision);
       const projected = harnessConfigurationStateSchema.parse({
         ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
-        ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
+        ...(state.resolvedModelLabel
+          ? {
+              resolvedModelLabel: prefixHarnessModelLabel(
+                thread.harnessId,
+                state.resolvedModelLabel,
+              ),
+            }
+          : {}),
         ...(state.effectiveThinkingOptionId
           ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
           : {}),

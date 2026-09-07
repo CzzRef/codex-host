@@ -196,6 +196,7 @@ export {
   harnessModelLabelPrefix,
   isHarnessModelLabelPrefixed,
   prefixHarnessModelCatalogLabels,
+  prefixHarnessModelLabel,
 } from "./harness-model-label.js";
 export {
   harnessCommandCatalogSchema,

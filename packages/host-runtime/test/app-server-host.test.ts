@@ -7222,7 +7222,9 @@ describe("AppServerHost HarnessAdapter projection", () => {
       result: {
         owner: "external",
         effectiveModel: restoredModel,
-        resolvedModelLabel: "Fake Secondary",
+        // The Host stamps the Harness abbreviation onto the Session-state label
+        // too, so the delegation output and the picker name the same Model alike.
+        resolvedModelLabel: "pi·Fake Secondary",
       },
     });
 
@@ -8447,7 +8449,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     ).resolves.toMatchObject({
       result: {
         effectiveModel: firstModel,
-        resolvedModelLabel: "fake-runtime-primary",
+        resolvedModelLabel: "cc·fake-runtime-primary",
       },
     });
 
@@ -8463,7 +8465,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
         harnessId: "claude-code",
         transportModelId: encodeClaudeTransportModel(secondModel),
         effectiveModel: firstModel,
-        resolvedModelLabel: "fake-runtime-primary",
+        resolvedModelLabel: "cc·fake-runtime-primary",
       },
     });
 

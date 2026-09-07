@@ -71,6 +71,21 @@ export function isHarnessModelLabelPrefixed(harnessId: string, label: string): b
 }
 
 /**
+ * Apply the Harness prefix to a single Model label.
+ *
+ * The catalog is not the only place a Model name reaches a reader: Session
+ * state carries `resolvedModelLabel`, which Desktop and the delegation CLI
+ * project on inspect and after every Model / Thinking / Permission selection.
+ * Leaving that one unprefixed would show the same Model as `ds·Model One` in
+ * the picker and `Model One` in the delegation output. Same idempotence rule
+ * as the catalog projection.
+ */
+export function prefixHarnessModelLabel(harnessId: string, label: string): string {
+  const prefix = harnessModelLabelPrefix(harnessId);
+  return label.startsWith(prefix) ? label : `${prefix}${label}`;
+}
+
+/**
  * Apply the Harness prefix to every Model label in a catalog.
  *
  * Idempotent on purpose: the Host projects a catalog on `harness/inspect` and

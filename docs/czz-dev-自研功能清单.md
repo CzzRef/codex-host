@@ -81,7 +81,7 @@ comm -23 <(ls openspec/changes/ | sort) \
 | D-4 | **新建 worktree 自动取名**：从草稿提示词生成 `yyMMdd-core`，八家 Harness 共用 | `packages/shared-contracts/src/workspace-worktree.ts` | 提交 `b3cd6ef` | `local-only`：`suggestWorkspaceWorktreeName` 上游 0 处 | 低风险 |
 | D-5 | **Tab 复用上一条隐式提示词**（不抢 mention） | `renderer-composer-prompt-reuse.ts` | [add-composer-workspace-bar](../openspec/changes/add-composer-workspace-bar/proposal.md) | `local-only`：`promptReuse` 上游 0 处 | 与官方 Tab 补全的键位竞争，Desktop 升级需复测 |
 | D-6 | **按 Harness 隐藏模型的设置页**与本地偏好 | `settings/models-page.ts`、`renderer-model-visibility-preference.ts` | 提交 `8e7605b` | `local-only`：`models-page` 上游 0 处 | 上游本轮正在改 Settings 页（多账号积分），合并时设置页注册表冲突 |
-| D-7 | **外部权限选择器不依赖原生核验**（首轮后仍可见、隐藏多余原生按钮）+ **模型标签统一为 `<Harness 缩写>·<Model 名>`**（前缀由 Host 在两处投影点统一施加，缩写表为唯一权威） | `renderer-composer-dom.ts`、`shared-contracts/harness-model-label.ts`、`app-server-host.ts`、`harness-delegation-coordinator.ts` | [add-external-composer-selector-fidelity](../openspec/changes/add-external-composer-selector-fidelity/proposal.md)、提交 `5961fe1` / `f5550d9` | `local-only`：`harness-model-label` 与缩写前缀上游 0 处 | 缩写前缀是用户的常驻默认偏好，新增 Harness 必须登记一条（回归测试对预装清单逐个断言）。上游 `635a890` 曾把 DeepSeek 标签写回 `provider / model`，本轮以缩写规则取代该处，冲突已消解 |
+| D-7 | **外部权限选择器不依赖原生核验**（首轮后仍可见、隐藏多余原生按钮）+ **模型标签统一为 `<Harness 缩写>·<Model 名>`**（前缀由 Host 在两处投影点统一施加，缩写表为唯一权威） | `renderer-composer-dom.ts`、`shared-contracts/harness-model-label.ts`、`app-server-host.ts`、`harness-delegation-coordinator.ts`（目录链 2 处 + 会话状态 `resolvedModelLabel` 5 处） | [add-external-composer-selector-fidelity](../openspec/changes/add-external-composer-selector-fidelity/proposal.md)、提交 `5961fe1` / `f5550d9` | `local-only`：`harness-model-label` 与缩写前缀上游 0 处 | 缩写前缀是用户的常驻默认偏好，新增 Harness 必须登记一条（回归测试对预装清单逐个断言）。上游 `635a890` 曾把 DeepSeek 标签写回 `provider / model`，本轮以缩写规则取代该处，冲突已消解 |
 | D-8 | **Cursor 空模型目录按原生默认模型发送**：`empty` 目录 = Harness 原生默认（仅 Cursor，Claude Code 的空目录仍是终态阻断），载体 `codexhost/cursor-native@@<mode>` | `renderer-composer-model-ready`、`cursor-transport-selection.ts` | [260903 任务卡](../vibe/specs/260903/1025-cursor-native-default-draft/task-card.md) | `local-only` | 冷启动空目录分支尚未真机覆盖（见第 4 节） |
 
 ### E. Host↔Harness 输入契约
@@ -147,7 +147,6 @@ comm -23 <(ls openspec/changes/ | sort) \
 
 ### 4.3 已知结构性缺口
 
-- **`resolvedModelLabel` 未带缩写前缀**：D-7 的前缀施加在目录投影链，而会话状态上的 `resolvedModelLabel`（`modern/configuration.ts` 由 `catalogModel.label` 派生）走的是会话投影链，本轮未处理。委派输出里的 `configuration.effective.resolvedModelLabel` 因此仍是裸模型名，与菜单文案不一致。
 - **D 组整体依赖 Desktop DOM 与 props 键**（`data-user-message-bubble`、`executionTargetOverride.cwd`、`gitRootForStartingState`、原生权限按钮选择器）。Desktop 每次升级都可能让这些行「代码还在但界面上没效果」——这是最容易表现为「功能没达到预期」的一类。
 
 ## 5. 已知未闭合项（不影响清单成立，但合并前应知情）
@@ -169,4 +168,5 @@ comm -23 <(ls openspec/changes/ | sort) \
 | 日期 | 基线 | 结论 |
 | --- | --- | --- |
 | 2026-09-07 成表 | `upstream/main` `de24f83` 对 `czz-dev` `e1c0cb5`，merge base `1d021a6`，上游领先 41 | 7 组 36 项建表（A1 / B5 / C10 / D8 / E1 / F2 / G9）。**成表时正文误记为 30 项，2026-09-07 复核时按逐行清点更正** |
+| 2026-09-07 补齐 | 同上 | 会话状态 `resolvedModelLabel` 补上同一缩写前缀，第 4.3 节该条缺口关闭；全仓 `tsc -b` / `lint` / `vitest` 266 文件 2887 例全过 |
 | 2026-09-07 复核 | `upstream/main` `de24f83` 对 `czz-dev` `24b9464`，**merge base = `de24f83`**，上游领先 0、本地领先 158 | 36 行逐个重测符号：全部仍成立，无一行消失。两行改判为更准确的 `upstream-partial`（C-4 归档、G-9 `text_elements`）。openspec 差集 14→16。新增第 4 节真机验证状态 |
