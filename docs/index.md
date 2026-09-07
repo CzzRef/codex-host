@@ -4,6 +4,8 @@
 
 本地 `czz-dev` fork 的安装、Cursor 受限接入、进程保护和本机核验结论见 [czz-dev 本机说明](czz-dev.md)。该说明优先描述本分支与上游发行版的差异。
 
+本 fork 相对上游 `BytePioneer-AI/codex-host` 的全部功能补充，按项列在 [czz-dev 自研功能清单](czz-dev-自研功能清单.md)；每次合并 `upstream/main` 之前先按该表逐项判定保留、适配还是让位给上游。
+
 ## 项目与语言版本
 
 | 文档 | 作用 |
