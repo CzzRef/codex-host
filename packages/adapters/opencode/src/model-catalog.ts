@@ -134,7 +134,7 @@ export function normalizeOpenCodeModelCatalog(
   const models = nativeModels
     .map(({ provider, model }) => ({
       ref: encodeOpenCodeModelRef({ providerID: provider.id, modelID: model.id }),
-      label: `${provider.name} / ${model.name}`,
+      label: model.name,
       resolvedModelLabel: `${provider.id}/${model.id}`,
       supportedThinkingOptionIds: [
         DEFAULT_VARIANT_ID,

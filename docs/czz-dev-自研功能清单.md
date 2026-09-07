@@ -76,7 +76,7 @@ git fetch upstream && git diff --diff-filter=A --name-only "$(git merge-base czz
 | D-4 | **新建 worktree 自动取名**：从草稿提示词生成 `yyMMdd-core`，八家 Harness 共用 | `packages/shared-contracts/src/workspace-worktree.ts` | 提交 `b3cd6ef` | `local-only`：`suggestWorkspaceWorktreeName` 上游 0 处 | 低风险 |
 | D-5 | **Tab 复用上一条隐式提示词**（不抢 mention） | `renderer-composer-prompt-reuse.ts` | [add-composer-workspace-bar](../openspec/changes/add-composer-workspace-bar/proposal.md) | `local-only`：`promptReuse` 上游 0 处 | 与官方 Tab 补全的键位竞争，Desktop 升级需复测 |
 | D-6 | **按 Harness 隐藏模型的设置页**与本地偏好 | `settings/models-page.ts`、`renderer-model-visibility-preference.ts` | 提交 `8e7605b` | `local-only`：`models-page` 上游 0 处 | 上游本轮正在改 Settings 页（多账号积分），合并时设置页注册表冲突 |
-| D-7 | **外部权限选择器不依赖原生核验**（首轮后仍可见、隐藏多余原生按钮）+ 模型目录标签只显示模型名（不拼 Provider） | `renderer-composer-dom.ts`、各 adapter 目录 | [add-external-composer-selector-fidelity](../openspec/changes/add-external-composer-selector-fidelity/proposal.md)、提交 `5961fe1` / `f5550d9` | **权限选择器 `local-only`（现行代码完好）；模型标签仅 Pi/OMP 成立——DeepSeek 那一半已被上游 `635a890` 回退** | **本表第一例实测到的上游回退**。上游 2026-09-03 重构 DSH 跨代模型语义时把标签写回 `provider / model`，本地 `f5550d9` 对 DeepSeek 的改动被覆盖。待裁决：按本要求补回，还是接受上游形态并撤下该要求 |
+| D-7 | **外部权限选择器不依赖原生核验**（首轮后仍可见、隐藏多余原生按钮）+ **模型标签统一为 `<Harness 缩写>·<Model 名>`**（前缀由 Host 在两处投影点统一施加，缩写表为唯一权威） | `renderer-composer-dom.ts`、`shared-contracts/harness-model-label.ts`、`app-server-host.ts`、`harness-delegation-coordinator.ts` | [add-external-composer-selector-fidelity](../openspec/changes/add-external-composer-selector-fidelity/proposal.md)、提交 `5961fe1` / `f5550d9` | `local-only`：`harness-model-label` 与缩写前缀上游 0 处 | 缩写前缀是用户的常驻默认偏好，新增 Harness 必须登记一条（回归测试对预装清单逐个断言）。上游 `635a890` 曾把 DeepSeek 标签写回 `provider / model`，本轮以缩写规则取代该处，冲突已消解 |
 | D-8 | **Cursor 空模型目录按原生默认模型发送**：`empty` 目录 = Harness 原生默认（仅 Cursor，Claude Code 的空目录仍是终态阻断），载体 `codexhost/cursor-native@@<mode>` | `renderer-composer-model-ready`、`cursor-transport-selection.ts` | [260903 任务卡](../vibe/specs/260903/1025-cursor-native-default-draft/task-card.md) | `local-only` | 冷启动空目录分支尚未真机覆盖（见第 4 节） |
 
 ### E. Host↔Harness 输入契约
@@ -110,7 +110,7 @@ git fetch upstream && git diff --diff-filter=A --name-only "$(git merge-base czz
 
 - **上游债务已结清（本表成表当天）**：`upstream/main` 的 41 条提交经隔离 worktree 解 13 处冲突后，以合并提交 `9d49f3a` 快进进 `czz-dev`，任务卡见 [260907 tasks](../vibe/specs/260907/upstream-main-merge/tasks.md)。上游本轮主线为 Codex 多账号额度、外部 Thread 方向变更、PR triage 行为化、Antigravity slash commands/fork/rollback、DeepSeek Modern 消息修订、`scripts/install-local.sh`。该轮已按本表交叉核验：B-1 逐 adapter 复核八家 steer 全部完好（含 v0.5.0 曾被抹掉的 DSH `mode:"steer"` 与 `session/title`），D-6 预警的 Settings 页注册表冲突如期出现并按两侧都留解开，与 B/C 组相邻的「外部 Thread 方向变更」按本地实现保留。**真机 Renderer 复核仍未跑。**
 - 真机未覆盖：D-8 的冷启动空目录分支、E-1 的带附件真机轮次、D-1 的分页 `thread/reverted` 再读。
-- **D-7 的 DeepSeek 半边已被上游回退**（上游 `635a890`，2026-09-03，`refactor(deepseek): 共享跨代模型与命令语义`）：模型目录标签重新拼回 `provider / model`，Pi / OMP 两家完好。这是本表建立后第一例实测到的上游覆盖，待按第 2 节口径裁决补回还是让位。
+- **D-7 的模型标签规则已重定**：上游 `635a890`（2026-09-03）曾把 DeepSeek 标签写回 `provider / model`，覆盖本地 `f5550d9`——这是本表建立后第一例实测到的上游覆盖。2026-09-07 裁决不是「补回」也不是「让位」，而是换一条更强的规则：标签统一为 `<Harness 缩写>·<Model 名>`，Provider 段在 DeepSeek 与 OpenCode 一并去掉，前缀由 Host 统一补。未闭合：会话状态 `resolvedModelLabel` 走另一条投影链，本轮未加前缀。
 
 ## 5. 维护规则
 

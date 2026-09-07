@@ -45,6 +45,7 @@ import {
   harnessInspectParamsSchema,
   harnessConfigurationStateSchema,
   harnessInspectionSchema,
+  prefixHarnessModelCatalogLabels,
   harnessWebUiOpenParamsSchema,
   harnessWebUiOpenResultSchema,
   harnessModelSelectionStateSchema,
@@ -2656,9 +2657,18 @@ export class AppServerHost {
       );
       return;
     }
-    await this.#writer.json(
-      rpcEnvelope(request, { result: jsonValueSchema.parse(validated.data) }),
-    );
+    // Model labels carry the Harness abbreviation, and this is the one seam
+    // that knows which Harness produced the catalog. Doing it here rather than
+    // in each Adapter keeps the naming convention in a single owner and gives
+    // a newly added Harness the prefix without touching its code.
+    const projected =
+      validated.data.status === "ready"
+        ? {
+            ...validated.data,
+            catalog: prefixHarnessModelCatalogLabels(params.data.harnessId, validated.data.catalog),
+          }
+        : validated.data;
+    await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(projected) }));
   }
 
   async #openHarnessWebUi(request: JsonRpcRequest): Promise<void> {

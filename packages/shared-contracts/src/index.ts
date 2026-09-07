@@ -190,6 +190,14 @@ export type {
   ThreadOwnershipListResult,
 } from "./harness-models.js";
 export {
+  HARNESS_MODEL_LABEL_ABBREVIATIONS,
+  HARNESS_MODEL_LABEL_SEPARATOR,
+  harnessModelLabelAbbreviation,
+  harnessModelLabelPrefix,
+  isHarnessModelLabelPrefixed,
+  prefixHarnessModelCatalogLabels,
+} from "./harness-model-label.js";
+export {
   harnessCommandCatalogSchema,
   harnessCommandDescriptorSchema,
   harnessCommandsInspectParamsSchema,

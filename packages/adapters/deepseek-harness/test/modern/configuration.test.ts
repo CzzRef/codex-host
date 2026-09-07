@@ -247,7 +247,7 @@ describe("DeepSeek Harness Modern configuration projection", () => {
         nativeSessionId: SESSION_ID,
       },
       effectiveModel: catalog.catalog.models[0]?.ref,
-      resolvedModelLabel: "Provider One / Model One",
+      resolvedModelLabel: "Model One",
       effectiveThinkingOptionId: "high",
       availableThinkingOptions: [
         { id: "off", label: "Off" },

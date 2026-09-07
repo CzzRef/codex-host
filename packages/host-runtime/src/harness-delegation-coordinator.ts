@@ -17,7 +17,12 @@ import {
   type JsonObject,
   type RoutedHarnessId,
 } from "@codexhost/protocol-core";
-import { harnessIdSchema, hostThreadIdSchema, hostTurnIdSchema } from "@codexhost/shared-contracts";
+import {
+  harnessIdSchema,
+  hostThreadIdSchema,
+  hostTurnIdSchema,
+  prefixHarnessModelCatalogLabels,
+} from "@codexhost/shared-contracts";
 
 import {
   DELEGATION_THREAD_ID_ENV,
@@ -179,12 +184,21 @@ export class HarnessDelegationCoordinator {
         { validHarnessIds: ["codex", ...this.#adapters.keys()] },
       );
     }
+    const inspection = await adapter.inspect({
+      ...(input.cwd ? { cwd: path.resolve(input.cwd) } : {}),
+      ...(input.refresh !== undefined ? { refresh: input.refresh } : {}),
+    });
     return {
       harnessId: input.harnessId,
-      inspection: await adapter.inspect({
-        ...(input.cwd ? { cwd: path.resolve(input.cwd) } : {}),
-        ...(input.refresh !== undefined ? { refresh: input.refresh } : {}),
-      }),
+      // Same Harness-abbreviation prefix the Desktop seam applies, so a CLI
+      // caller reading `harness inspect` sees the labels the picker shows.
+      inspection:
+        inspection.status === "ready"
+          ? {
+              ...inspection,
+              catalog: prefixHarnessModelCatalogLabels(input.harnessId, inspection.catalog),
+            }
+          : inspection,
     };
   }
 

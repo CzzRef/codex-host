@@ -2098,7 +2098,10 @@ describe("AppServerHost HarnessAdapter projection", () => {
     ).resolves.toMatchObject({
       result: {
         status: "ready",
-        catalog: { models: [{ label: "Fake Primary" }, { label: "Fake Secondary" }] },
+        // The Host stamps the Harness abbreviation onto every Model label at
+        // this seam, so the picker and the Composer trigger say which Agent
+        // the Thread runs on without opening the Agent picker.
+        catalog: { models: [{ label: "pi·Fake Primary" }, { label: "pi·Fake Secondary" }] },
         capabilities: {
           configuration: { selectModel: true, selectThinkingOption: true },
           history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: false },

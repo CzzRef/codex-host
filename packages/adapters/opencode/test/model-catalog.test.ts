@@ -71,7 +71,7 @@ describe("OpenCode Model catalog", () => {
     const normalized = normalizeOpenCodeModelCatalog(catalog);
 
     expect(normalized.models).toHaveLength(1);
-    expect(normalized.models[0]?.label).toBe("ALPHA / reasoner");
+    expect(normalized.models[0]?.label).toBe("reasoner");
     expect(normalized.models[0]?.supportedThinkingOptionIds).toEqual([
       encodeOpenCodeVariant(undefined),
       encodeOpenCodeVariant("high"),

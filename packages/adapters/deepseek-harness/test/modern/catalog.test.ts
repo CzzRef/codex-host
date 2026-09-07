@@ -79,8 +79,8 @@ describe("DeepSeek Harness Modern Model catalog", () => {
     expect(snapshot.routableProviders).toEqual(["provider-2", "provider-1", "empty-provider"]);
     expect(snapshot.groups.map(({ id }) => id)).toEqual(["provider-2", "provider-1"]);
     expect(snapshot.catalog.models.map(({ label }) => label)).toEqual([
-      "Second / Model Two",
-      "First / Model One",
+      "Model Two",
+      "Model One",
     ]);
     expect(snapshot.catalog.models[1]).not.toHaveProperty("description");
     expect(snapshot.catalog.thinkingOptions).toEqual([
@@ -114,8 +114,8 @@ describe("DeepSeek Harness Modern Model catalog", () => {
     });
     expect(snapshot.catalog.defaultModel).toBeUndefined();
     expect(snapshot.catalog.models.map(({ label }) => label)).toEqual([
-      "Second / Model Two",
-      "First / Model One",
+      "Model Two",
+      "Model One",
     ]);
   });
 

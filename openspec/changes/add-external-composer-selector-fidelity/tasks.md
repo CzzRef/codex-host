@@ -11,16 +11,21 @@
 - [x] 2.2 锚点之外的原生权限按钮按捕获状态隐藏；不再属于该集合时还原。
 - [x] 2.3 还原走既有 `restoreNativeControl`，不改写原生 DOM 结构。
 
-## 3. 模型目录标签
+## 3. 模型标签的 Harness 缩写前缀
 
-- [x] 3.1 Pi 标签改为 `native.id`。
-- [x] 3.2 OMP 标签改为 `native.id`。
-- [ ] 3.3 DeepSeek 标签改为 `model.name`，默认模型行改为 `selection.model`。**已被上游回退**：上游 `635a890`（2026-09-03，`refactor(deepseek): 共享跨代模型与命令语义`）把 `packages/adapters/deepseek-harness/src/model-catalog.ts` 的标签重新写回 `${group.name} / ${model.name}` 与 `${selection.provider} / ${selection.model}`，本地 `f5550d9` 对 DeepSeek 的那一半被覆盖。Pi / OMP 两项完好。需重新判定：按本要求补回，还是接受上游形态并撤下该要求。
-- [x] 3.4 `ref` 编码不变。
+- [x] 3.1 新增 `shared-contracts/src/harness-model-label.ts`：缩写表、分隔符 `·`、`harnessModelLabelAbbreviation()`、`harnessModelLabelPrefix()`、`isHarnessModelLabelPrefixed()`、幂等的 `prefixHarnessModelCatalogLabels()`；从包入口导出。
+- [x] 3.2 缩写表登记八家：`ag/cc/cs/ds/gk/omp/oc/pi`；未登记的 Harness 走确定性派生（复合名取各段首字母，单段名取前两字母，上限 3），不抛错。
+- [x] 3.3 Host 在 `app-server-host` 的 `harness/inspect` 应答处施加前缀，仅对 `status: "ready"` 生效。
+- [x] 3.4 Host 在 `harness-delegation-coordinator.inspect` 处施加同一前缀，使 CLI 与 Desktop 形态一致。
+- [x] 3.5 各 Adapter 只产出 Model 名：DeepSeek（`model.name` / `selection.model`）与 OpenCode（`model.name`）去掉 Provider 段；Pi / OMP / Grok / Cursor / Claude Code 本就如此。
+- [x] 3.6 `ref` 编码不变，模型选择与恢复不受影响。
 
 ## 4. 验证
 
 - [x] 4.1 `renderer-permission-mode-picker.test.ts`：首轮对话后仍可见、多余原生按钮被隐藏。
-- [x] 4.2 `pi-model-catalog.test.ts` / `pi-adapter.test.ts`：标签不含 Provider 前缀。
-- [ ] 4.3 `deepseek-harness-adapter.test.ts`：标签为 `model.name`。随 3.3 一并失效。
-- [ ] 4.4 真机：Desktop 正常退出 + `codexhost launch` 后，在一条外部 Thread 上完成首轮对话，确认权限选择器仍在且原生按钮不并排出现（用户执行）。
+- [x] 4.2 `harness-model-label.test.ts`（新增 8 例）：八家缩写取值、预装清单逐个已登记、缩写短小唯一、派生回退、分隔符与前缀、目录投影、幂等、`ref` 不受影响。
+- [x] 4.3 `harness-delegation-coordinator.test.ts`：CLI 侧 `inspect` 标签带 `pi·` 前缀且二次投影不叠加；`app-server-host.test.ts` 断言 Desktop 侧同款前缀。
+- [x] 4.4 DeepSeek 两代与 OpenCode 的目录用例改断裸 Model 名。
+- [x] 4.5 全仓：`tsc -b` pass、`npm run lint`（eslint + boundaries）pass、`vitest run` 266 文件 2884 例全过。
+- [ ] 4.6 真机：Desktop 正常退出 + `codexhost launch` 后，在一条外部 Thread 上完成首轮对话，确认权限选择器仍在且原生按钮不并排出现，模型芯片与菜单显示 `<缩写>·<模型名>`，且在菜单搜索框打缩写能筛出该 Harness 的模型（用户执行）。
+- [ ] 4.7 待裁决：会话状态 `resolvedModelLabel` 是否一并加前缀（见 proposal 现状偏差）。

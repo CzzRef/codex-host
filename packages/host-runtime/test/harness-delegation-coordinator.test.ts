@@ -168,6 +168,26 @@ describe("HarnessDelegationCoordinator", () => {
     }
   });
 
+  it("stamps the Harness abbreviation onto Model labels and does not compound", async () => {
+    const adapter = new RecordingAdapter(harnessIdSchema.parse("pi"));
+    const value = await fixture(adapter);
+    try {
+      const first = await value.coordinator.inspect({ harnessId: "pi", cwd: "/synthetic" });
+      if (first.inspection.status !== "ready") throw new Error("Harness is unavailable");
+      for (const model of first.inspection.catalog.models) {
+        expect(model.label.startsWith("pi\u00b7")).toBe(true);
+      }
+      // A cached inspection can reach this seam twice; the prefix must not stack.
+      const second = await value.coordinator.inspect({ harnessId: "pi", cwd: "/synthetic" });
+      if (second.inspection.status !== "ready") throw new Error("Harness is unavailable");
+      for (const model of second.inspection.catalog.models) {
+        expect(model.label.startsWith("pi\u00b7pi\u00b7")).toBe(false);
+      }
+    } finally {
+      await value.close();
+    }
+  });
+
   it("inspects and applies an explicit Permission Mode without a Model", async () => {
     const permissionModes = harnessPermissionModeCatalogSchema.parse({
       modes: [
