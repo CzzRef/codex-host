@@ -2,6 +2,7 @@
 
 日期：2026-09-07。
 对照基线：`upstream/main` = `de24f83`（BytePioneer-AI/codex-host，2026-09-06）；本地 `czz-dev` = `e1c0cb5`；两者 merge base = `1d021a6`。
+本表成表当天（2026-09-07）该批上游提交已由另一会话合并进 `czz-dev`（合并提交 `9d49f3a`），此后 `upstream/main` 相对 `czz-dev` `ahead=0`；各行的「上游现状」列仍以 `de24f83` 为准，下次上游推进后按第 2 节命令重算。
 
 这份文件是 **常驻对照台账**，不是任务卡。它回答一个问题：`czz-dev` 上有哪些功能是本 fork 自己加的、上游至今没有的。每次合并 `upstream/main` 之前先读这里，逐项判定去留。
 
@@ -107,7 +108,7 @@ git fetch upstream && git diff --diff-filter=A --name-only "$(git merge-base czz
 
 ## 4. 已知未闭合项（不影响清单成立，但合并前应知情）
 
-- **待合并的上游债务**：`upstream/main` 相对 `czz-dev` 领先 41 条提交，预演 13 处冲突，任务卡见 [260907 tasks](../vibe/specs/260907/upstream-main-merge/tasks.md)。上游本轮主线为 Codex 多账号额度、外部 Thread 方向变更、PR triage 行为化、Antigravity slash commands/fork/rollback、DeepSeek Modern 消息修订、`scripts/install-local.sh`。其中 **外部 Thread 方向变更** 与 B/C 组直接相邻，合并时重点比对。
+- **上游债务已结清（本表成表当天）**：`upstream/main` 的 41 条提交经隔离 worktree 解 13 处冲突后，以合并提交 `9d49f3a` 快进进 `czz-dev`，任务卡见 [260907 tasks](../vibe/specs/260907/upstream-main-merge/tasks.md)。上游本轮主线为 Codex 多账号额度、外部 Thread 方向变更、PR triage 行为化、Antigravity slash commands/fork/rollback、DeepSeek Modern 消息修订、`scripts/install-local.sh`。该轮已按本表交叉核验：B-1 逐 adapter 复核八家 steer 全部完好（含 v0.5.0 曾被抹掉的 DSH `mode:"steer"` 与 `session/title`），D-6 预警的 Settings 页注册表冲突如期出现并按两侧都留解开，与 B/C 组相邻的「外部 Thread 方向变更」按本地实现保留。**真机 Renderer 复核仍未跑。**
 - 真机未覆盖：D-8 的冷启动空目录分支、E-1 的带附件真机轮次、D-1 的分页 `thread/reverted` 再读。
 - C-5、D-7 没有 openspec 变更包，只有提交与 czz-dev 说明。
 
