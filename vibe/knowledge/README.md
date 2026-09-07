@@ -10,6 +10,7 @@ Tool: tool-neutral (codex, claude, grok, dsh, and any CodeNote-routed agent)
 ## Authoritative Locations
 
 - Architecture: [architecture.md](architecture.md)
+- Sibling Desktop tools (Codex++ / OpenCodex): [sibling-codex-desktop-tools.md](sibling-codex-desktop-tools.md)
 - Error memory: [error-memory/README.md](error-memory/README.md)
 - ADR: [adr/README.md](adr/README.md)
 - Active specs: [../specs/README.md](../specs/README.md)
