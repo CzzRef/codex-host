@@ -19,7 +19,7 @@
   "verification_state": "verified-index",
   "push_state": "not-authorized",
   "integration_state": "integrated",
-  "next_action": "live-check the Renderer on a relaunched Desktop and settle decision 3"
+  "next_action": "settle decision 3 (rewire the Renderer steering or drop it) with a composer-driven live check"
 }
 ```
 
@@ -59,7 +59,7 @@
 - [x] 1.2 解 13 处冲突，逐个判定本地改动在上游新形态下是否仍成立
 - [x] 1.3 `package-lock.json` 未进冲突面，`npm install` 后无改动
 - [x] 1.4 全仓类型检查 + lint/boundaries + 全量 vitest + Rust 测试
-- [ ] 1.5 真机复核（Desktop Renderer 注入），并对 §决策 3 做出取舍
+- [x] 1.5 真机复核（Desktop Renderer 注入）判定 ok；§决策 3 仍未取舍，见下
 - [x] 2.1 由主检出决定集成回 `czz-dev`（快进到 `9d49f3a`）
 
 ## 冲突决策（2026-09-07 实测）
@@ -126,3 +126,22 @@
 - **B-1 外部线程插队走各 Harness 原生原语**，判定 `local-only` 且标注为**最高风险项**，要求「每次合并按 adapter 逐个核对」。决策 2 保留本地实现即该表的规定动作。清单第 110 行还点名「**外部 Thread 方向变更** 与 B/C 组直接相邻，合并时重点比对」——正是本轮拒收的那个上游特性。
 - 合并后按该表要求做了逐 adapter 核对：claude-code / cursor / grok / omp / pi / deepseek-harness(modern) 六家仍声明 `turns: { steer: true }` 并保有 `turn.steer` 重载；DSH 的 `mode: "steer"` 注入与 `session/title` 原生标题（v0.5.0 那次被上游抹掉、当时移植回来的两项）均完好；antigravity / opencode 无原生 steer，antigravity 的显式拒绝分支保留。
 - **D-6 按 Harness 隐藏模型的设置页** 判定 `local-only`，并预警「上游本轮正在改 Settings 页（多账号积分），合并时设置页注册表冲突」。实际冲突正在 `settings/pages.ts` 与本地化、外壳测试，按两侧都留解开，导航合成 `连接 / 模型 / 账号 / 会话导入 / 更新 / 关于`。
+
+## 真机复核（2026-09-07，Desktop 26.901.51231 build 8109）
+
+Desktop 版本与 asar `sha256:e2ab6e59…` 与 260906 记下的基线一致，未再升级；上游本轮不动 `crates/`，故沿用既有 launcher 二进制（`strings` 命中 `remote-debugging-port`）。主检出重建 `build:typescript` + `build:renderer` 后，`osascript quit` 优雅退出（Desktop 与 launcher 3 秒内全部退出），再 `codexhost launch` 起新实例：launcher 21578 / Desktop 21580（`--remote-debugging-port=58659`）/ shim 21718 / host-runtime 21720。
+
+### 判定 ok 的项
+
+- `live-check:codex-desktop --open official`：`probe route: workspace`（非 `error-boundary`），turns 4，Turn 头 `{"x":437,"y":47,"w":736,"h":41}`。
+- `live-check:codex-desktop --open external`：同为 `workspace` 路由，Turn 头几何完全一致。**外部 Thread 不进 Desktop 错误边界**——这正是 26.901 上 `text_elements` 那次的故障形态，本轮合并后未复现。
+- 设置页注册表（CDP 只读 `__codexhostSettingsShellV1.registry()`）实测为六项，本地 `models` 与上游 `accounts` 并存、顺序与图标都对：`connections/connections`、`models/model-pool`、`accounts/accounts`、`session-import/session-import`、`updates/updates`、`about/about`，`defaultPageId=connections`。决策里「设置页两侧都留」的解法在真机上成立。
+- **决策 2 端到端验证**：scratch grok 子 Thread `4b974007…`，`delegate start` 得 Turn `48dfb8ad…`，运行中 `thread send --steer true` 插入「改成数到 12 就停，并在最后一行写 STEER-OK」。结果：返回**同一个 `turnId`** 且 `status: running`；终态 `latestTurnId` 仍是 `48dfb8ad…`、`turnStatus: completed`（**不是 `interrupted`**）；messages 视图共 5 条，插入的用户消息作为**轮内 user item** 落在两条 agent 消息之间；Grok 真的改了行为——数到 12 即停并写出 `STEER-OK`，没有继续到 40。若换成上游的停-等-起，这里应当是原 Turn 被取消、换一个新 `turnId`。scratch Thread 已 `thread archive`。
+
+### 未判定为问题的项
+
+三轮 live-check 都稳定报出同样 5 条 `renderer-exception`，形如 `Could not find the language '1093:1101:preload/codex/float-bridge.cjs'`，工具一律归为 `unattributed` 并按固定规则记 `impact`，`verdict` 因此是 `impact`。实测这些**不是本次合并引入、也不属于 codexhost**：该报错串在 Desktop 自带 `app.asar` 中出现 4 次，在本仓源码与 `renderer-extension/dist` 中 0 次；那些「语言名」其实是 `行:行:文件路径` 形态的代码引用围栏信息串（内容还来自 EyPc 等无关仓库的历史会话），是 Desktop 自身高亮器对历史会话文本的解析噪声；在 `turns: 0` 的空 Thread 上同样出现，说明发生在探针之前。三轮中**没有任何一条异常被归到 `codexhost` 或 `app-initial`**。
+
+### 决策 3 仍未取舍
+
+本轮验的是 CLI 侧 `turn/steer`，没有驱动 Desktop 输入框的原生 Steer 控件。新证据对判断有利：Host 侧 `turn/steer` 现在确实交付原生插入，因此上游那半 Renderer 改写（把运行中的 `turn/start` 改写成 `turn/steer`）接回来后，输入框跟进消息也会变成插入而非排队。但它的 `preserveQueuedFollowUps` 是按「会发生一次 interrupt」来暂停/恢复 Desktop 队列的，而原生插入不产生 interrupt，那套簿记是否空转或误判必须单独验。维持摘线现状，留待一次由输入框驱动的真机检查。
