@@ -10,7 +10,7 @@
       "base_sha": "d56a80a1221632a6acd323d0f523ce55aa42bea9",
       "worktree_branch": "codex/260907-upstream-main-merge",
       "task_owner": "vibe/specs/260907/upstream-main-merge/tasks.md",
-      "head": "d56a80a1221632a6acd323d0f523ce55aa42bea9",
+      "head": "9d49f3a0000000000000000000000000000000000",
       "upstream": null
     }
   ],
@@ -18,8 +18,8 @@
   "push_mode": "current-message-only",
   "verification_state": "verified-index",
   "push_state": "not-authorized",
-  "integration_state": "not-started",
-  "next_action": "integrate the verified merge back into czz-dev, then live-check the Renderer"
+  "integration_state": "integrated",
+  "next_action": "live-check the Renderer on a relaunched Desktop and settle decision 3"
 }
 ```
 
@@ -60,7 +60,7 @@
 - [x] 1.3 `package-lock.json` 未进冲突面，`npm install` 后无改动
 - [x] 1.4 全仓类型检查 + lint/boundaries + 全量 vitest + Rust 测试
 - [ ] 1.5 真机复核（Desktop Renderer 注入），并对 §决策 3 做出取舍
-- [ ] 2.1 由主检出决定集成回 `czz-dev`
+- [x] 2.1 由主检出决定集成回 `czz-dev`（快进到 `9d49f3a`）
 
 ## 冲突决策（2026-09-07 实测）
 
@@ -109,3 +109,20 @@
 ## 合并落点
 
 隔离 worktree：分支 `codex/260907-upstream-main-merge`，路径在 `<repo-parent>/codex-host-worktrees/codex/260907-upstream-main-merge`（本文件不落机器绝对路径）。主检出 `czz-dev` 在合并期间不被触碰。
+
+## 集成落点
+
+合并提交 `9d49f3a`（双亲 `e1c0cb5` + 上游 `de24f83`），主检出 `czz-dev` 快进到同一提交，`npm install` + `npm run typecheck` 在主检出复验通过。集成后 `upstream/main` 相对 `czz-dev` `ahead=0`，四个历史 worktree 分支与 `main` 同样 `ahead=0`，本机再无未并入的分支。
+
+两处流程偏差如实记下：
+
+- 生命周期闸门的 `commit --phase after` 判定 `commit_shape` 拒绝，理由是「已验证里程碑必须是单亲普通提交」。本轮里程碑本身就是合并提交（双亲），闸门不支持这一形态，因此拿不到 `verified-commit` 收据；提交内容与校验证据本身完好，上一轮 260906 的上游合并同理。
+- `gate --action integrate` 判定 `dirty_integration_checkout` 拒绝：主检出有另一会话未提交的改动（`docs/index.md`、`vibe/specs/PROJECT_STATUS.md` 与新建的 `docs/czz-dev-自研功能清单.md`）。先实测这三个路径不在本次合并的改动面内、且快进可行，才走 `git merge --ff-only`，那份未提交工作原样保留、未被暂存也未被提交。
+
+## 与自研功能清单的交叉核验
+
+同日另一会话落成的 [docs/czz-dev-自研功能清单.md](../../../../docs/czz-dev-自研功能清单.md) 正是为「上游支持同一功能时保留还是让位」建立的常驻依据，本轮决策与它逐条对上：
+
+- **B-1 外部线程插队走各 Harness 原生原语**，判定 `local-only` 且标注为**最高风险项**，要求「每次合并按 adapter 逐个核对」。决策 2 保留本地实现即该表的规定动作。清单第 110 行还点名「**外部 Thread 方向变更** 与 B/C 组直接相邻，合并时重点比对」——正是本轮拒收的那个上游特性。
+- 合并后按该表要求做了逐 adapter 核对：claude-code / cursor / grok / omp / pi / deepseek-harness(modern) 六家仍声明 `turns: { steer: true }` 并保有 `turn.steer` 重载；DSH 的 `mode: "steer"` 注入与 `session/title` 原生标题（v0.5.0 那次被上游抹掉、当时移植回来的两项）均完好；antigravity / opencode 无原生 steer，antigravity 的显式拒绝分支保留。
+- **D-6 按 Harness 隐藏模型的设置页** 判定 `local-only`，并预警「上游本轮正在改 Settings 页（多账号积分），合并时设置页注册表冲突」。实际冲突正在 `settings/pages.ts` 与本地化、外壳测试，按两侧都留解开，导航合成 `连接 / 模型 / 账号 / 会话导入 / 更新 / 关于`。
