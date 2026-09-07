@@ -130,6 +130,7 @@ export interface RendererDraftPrewarmPolicy {
   selectWorkspace?(selection: { cwd: string } | null): boolean;
   /** Last cwd Desktop itself sent on a draft `thread/start`, or `null`. */
   draftCwd?(): string | null;
+  readonly selectAccount?: (accountId: string | null) => boolean;
   clear(): Promise<void>;
 }
 
@@ -1076,6 +1077,41 @@ export function installCurrentRendererAdapter(): {
     checkUpdate: () => currentModelClient().checkUpdate(),
     startUpdate: () => currentModelClient().startUpdate(),
     readUpdateStatus: () => currentModelClient().readUpdateStatus(),
+    inspectCodexAccountUsage: (
+      input: Parameters<NonNullable<RendererModelClient["inspectCodexAccountUsage"]>>[0],
+    ) => {
+      const client = currentModelClient();
+      if (!client.inspectCodexAccountUsage) throw new Error("Codex Account Usage is unavailable");
+      return client.inspectCodexAccountUsage(input);
+    },
+    consumeCodexAccountResetCredit: (
+      input: Parameters<NonNullable<RendererModelClient["consumeCodexAccountResetCredit"]>>[0],
+    ) => {
+      const client = currentModelClient();
+      if (!client.consumeCodexAccountResetCredit) {
+        throw new Error("Codex Account reset-credit consume is unavailable");
+      }
+      return client.consumeCodexAccountResetCredit(input);
+    },
+    listCodexAccounts: () => currentModelClient().listCodexAccounts(),
+    refreshCodexAccounts: () => {
+      const client = currentModelClient();
+      return client.refreshCodexAccounts?.() ?? client.listCodexAccounts();
+    },
+    createCodexAccount: (input: Parameters<RendererModelClient["createCodexAccount"]>[0]) =>
+      currentModelClient().createCodexAccount(input),
+    deleteCodexAccount: (input: Parameters<RendererModelClient["deleteCodexAccount"]>[0]) =>
+      currentModelClient().deleteCodexAccount(input),
+    activateCodexAccount: (input: Parameters<RendererModelClient["activateCodexAccount"]>[0]) =>
+      currentModelClient().activateCodexAccount(input),
+    startCodexAccountLogin: (input: Parameters<RendererModelClient["startCodexAccountLogin"]>[0]) =>
+      currentModelClient().startCodexAccountLogin(input),
+    cancelCodexAccountLogin: (
+      input: Parameters<RendererModelClient["cancelCodexAccountLogin"]>[0],
+    ) => currentModelClient().cancelCodexAccountLogin(input),
+    subscribeCodexAccountLogin: (
+      listener: Parameters<RendererModelClient["subscribeCodexAccountLogin"]>[0],
+    ) => currentModelClient().subscribeCodexAccountLogin(listener),
   });
   const forkControl = installRendererForkControl({
     getClient: () => modelControl,

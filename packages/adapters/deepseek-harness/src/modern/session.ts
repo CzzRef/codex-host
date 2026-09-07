@@ -134,7 +134,7 @@ export function modernSessionCapabilities(
       selectPermissionMode: permissionModes !== null,
       permissionModeScope: "live",
     },
-    history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: false },
+    history: { fork: true, forkAcrossCwd: false, rollbackLastTurn: true },
     autonomousTurns: { observe: true },
     turns: { steer: true },
     // DSH's prompt content is text-only, so an attachment degrades to its path

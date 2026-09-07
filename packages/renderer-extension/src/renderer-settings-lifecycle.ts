@@ -8,6 +8,7 @@ import {
   createDefaultRendererSettingsPages,
   type RendererConnectionDiagnostics,
   type RendererModelCatalogClient,
+  type RendererCodexAccountClient,
   type RendererUpdateClient,
 } from "./settings/pages.js";
 import type {
@@ -27,6 +28,7 @@ export interface RendererSettingsLifecycleOptions {
   getUpdateClient?(): RendererUpdateClient | null;
   getConnectionDiagnostics?(): RendererConnectionDiagnostics | null;
   getModelCatalogClient?(): RendererModelCatalogClient | null;
+  getAccountClient?(): RendererCodexAccountClient | null;
   getSessionImportClient?(): RendererSessionImportClient | null;
   openImportedThread?: RendererImportedThreadOpener;
   onLocaleChange?(locale: RendererSettingsLocale): void;
@@ -65,6 +67,7 @@ export function installRendererSettingsLifecycle(
       messages,
       options.getUpdateClient ?? (() => null),
       options.getConnectionDiagnostics ?? (() => null),
+      options.getAccountClient ?? (() => null),
       options.getSessionImportClient ?? (() => null),
       async (threadId, signal) => {
         if (!options.openImportedThread) {

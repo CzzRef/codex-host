@@ -28,6 +28,7 @@ import {
   type RendererImportedThreadOpener,
 } from "./session-import-page.js";
 import { createReleaseNotesElement } from "./release-notes.js";
+import { createAccountsSettingsPage, type RendererCodexAccountClient } from "./accounts-page.js";
 
 export type {
   RendererConnectionAgentSnapshot,
@@ -72,6 +73,7 @@ function windowsInstallerDownloadUrl(window: Window | null | undefined, version:
 export const DEFAULT_RENDERER_SETTINGS_PAGE_IDS = [
   "connections",
   "models",
+  "accounts",
   "session-import",
   "updates",
   "about",
@@ -580,6 +582,7 @@ export function createDefaultRendererSettingsPages(
   messages: RendererSettingsMessages = DEFAULT_RENDERER_SETTINGS_MESSAGES,
   getUpdateClient: () => RendererUpdateClient | null = () => null,
   getDiagnostics: () => RendererConnectionDiagnostics | null = () => null,
+  getAccountClient: () => RendererCodexAccountClient | null = () => null,
   getSessionImportClient: () => RendererSessionImportClient | null = () => null,
   openImportedThread: RendererImportedThreadOpener = () =>
     Promise.reject(new Error("Imported Thread navigation is unavailable")),
@@ -588,6 +591,7 @@ export function createDefaultRendererSettingsPages(
   return Object.freeze([
     createConnectionsSettingsPage(messages, getDiagnostics),
     createModelsSettingsPage(messages, getModelCatalogClient),
+    createAccountsSettingsPage(messages, getAccountClient),
     createSessionImportSettingsPage(messages, getSessionImportClient, openImportedThread),
     updatesPage(messages, getUpdateClient),
     aboutPage(messages),
@@ -598,6 +602,7 @@ export function createDefaultRendererSettingsRegistry(
   messages: RendererSettingsMessages = DEFAULT_RENDERER_SETTINGS_MESSAGES,
   getUpdateClient: () => RendererUpdateClient | null = () => null,
   getDiagnostics: () => RendererConnectionDiagnostics | null = () => null,
+  getAccountClient: () => RendererCodexAccountClient | null = () => null,
   getSessionImportClient: () => RendererSessionImportClient | null = () => null,
   openImportedThread?: RendererImportedThreadOpener,
   getModelCatalogClient: () => RendererModelCatalogClient | null = () => null,
@@ -607,9 +612,12 @@ export function createDefaultRendererSettingsRegistry(
       messages,
       getUpdateClient,
       getDiagnostics,
+      getAccountClient,
       getSessionImportClient,
       openImportedThread,
       getModelCatalogClient,
     ),
   );
 }
+
+export type { RendererCodexAccountClient } from "./accounts-page.js";

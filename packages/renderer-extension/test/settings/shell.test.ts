@@ -5,9 +5,16 @@ import {
   createDefaultRendererSettingsPages,
   createDefaultRendererSettingsRegistry,
 } from "../../src/settings/pages.js";
-import { isRendererSettingsDialogSupported } from "../../src/settings/shell.js";
+import {
+  RENDERER_SETTINGS_COLOR_SCHEME,
+  isRendererSettingsDialogSupported,
+} from "../../src/settings/shell.js";
 
 describe("Renderer settings foundation", () => {
+  it("inherits the Codex theme instead of forcing a dark settings surface", () => {
+    expect(RENDERER_SETTINGS_COLOR_SCHEME).toBe("inherit");
+  });
+
   it("publishes deterministic product sections with Connections as the default", () => {
     const pages = createDefaultRendererSettingsPages();
     const registry = createDefaultRendererSettingsRegistry();
@@ -16,6 +23,7 @@ describe("Renderer settings foundation", () => {
     expect(pages.map(({ label }) => label)).toEqual([
       "Connections",
       "Models",
+      "Accounts",
       "Session Import",
       "Updates",
       "About",
@@ -23,7 +31,8 @@ describe("Renderer settings foundation", () => {
     expect(pages.map(({ icon }) => icon)).toEqual([
       "connections",
       "model-pool",
-      "download",
+      "accounts",
+      "session-import",
       "updates",
       "about",
     ]);
@@ -56,6 +65,7 @@ describe("Renderer settings foundation", () => {
     expect(pages.map(({ id }) => id)).toEqual([
       "connections",
       "models",
+      "accounts",
       "session-import",
       "updates",
       "about",

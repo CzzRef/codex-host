@@ -78,6 +78,7 @@ export function installDraftPrewarmPolicyBridge(
   // Last cwd Desktop itself put on a `thread/start` (prewarm included): the
   // draft's project root, which the Renderer cannot read from Desktop state.
   let observedDraftCwd: string | null = null;
+  let selectedCodexAccountId: string | null = null;
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
   const isRemoteControlHost = hostId.startsWith("remote-control:");
@@ -493,8 +494,8 @@ export function installDraftPrewarmPolicyBridge(
     if (method === "thread/start") {
       return (
         isRecord(parameters) &&
-        typeof parameters.model === "string" &&
-        parameters.model.startsWith("codexhost/")
+        ((typeof parameters.model === "string" && parameters.model.startsWith("codexhost/")) ||
+          typeof parameters.__codexhostAccountId === "string")
       );
     }
     const threadId = threadIdFromParameters(parameters);
@@ -530,6 +531,10 @@ export function installDraftPrewarmPolicyBridge(
       }
     }
     if (selectedModel !== null) routed = { ...routed, model: selectedModel };
+    if (selectedCodexAccountId !== null) {
+      routed = { ...routed, __codexhostAccountId: selectedCodexAccountId };
+    }
+    selectedCodexAccountId = null;
     return routed;
   };
   const routedSend = (method: string, parameters: unknown, options?: unknown): unknown => {
@@ -644,6 +649,14 @@ export function installDraftPrewarmPolicyBridge(
     draftCwd(): string | null {
       return observedDraftCwd;
     },
+    selectAccount(accountId: string | null): boolean {
+      if (accountId !== null && !/^[A-Za-z0-9._~-]+$/u.test(accountId)) {
+        throw new Error("Draft Codex Account ID must be filename-safe");
+      }
+      if (selectedCodexAccountId === accountId) return false;
+      selectedCodexAccountId = accountId;
+      return true;
+    },
     clear(): Promise<void> {
       prewarmedThreadManager.discardAllPrewarmedThreads();
       return Promise.resolve();
@@ -680,6 +693,7 @@ export function installDraftPrewarmPolicyBridge(
       selectedModel = null;
       selectedWorkspaceCwd = null;
       observedDraftCwd = null;
+      selectedCodexAccountId = null;
     },
   });
   Object.defineProperty(target, "__codexhostDraftPrewarmPolicyV1", {
