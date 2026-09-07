@@ -43,7 +43,7 @@ Hard constraints:
 - Do not run `gate:a` / `gate:c` / `gate:claude` unless asked.
 - Write Markdown links relative to the target document location.
 - Do not claim a check passed unless it was executed. Report skipped or blocked checks and the reason.
-- Commit messages carry `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` when the host mandates it; this is the recorded host-mandated trailer exception in [CodeNote github/rules.md §2.4](<../../../../CzzProj/CodeNote/AiRef/VibePractice/Vibe_Rules/github/rules.md>), not a lapse. Author and committer fields still show only the human owner.
+- Commit messages carry `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` when the host mandates it; this is the recorded host-mandated trailer exception in [CodeNote github/rules.md §2.4](<../../../../../../CzzProj/CodeNote/AiRef/VibePractice/Vibe_Rules/github/rules.md>), not a lapse. Author and committer fields still show only the human owner.
 
 ## Project context from CLAUDE.md
 
@@ -69,7 +69,7 @@ Hard constraints:
 - Documentation routing: [documentation.md](<documentation.md>), for Standard/Controlled, documentation-governance, or template-propagation work.
 - Process hub: [PROJECT_STATUS.md](<../specs/PROJECT_STATUS.md>), for ongoing or overlapping work, Controlled tasks, or cross-repo work.
 - Matching error memory: [project error-memory index](<../knowledge/error-memory/README.md>), only before repeating a known failed route or when the current symptom/fingerprint matches; load only the matching record.
-- Error capture: [error-memory-capture](<../../../../CzzProj/CodeNote/AiRef/VibePractice/Skills/global/error-memory-capture/SKILL.md>), only after a verified reusable failure, user correction, repeated failed approach, or tool/runtime trap.
+- Error capture: [error-memory-capture](<../../../../../../CzzProj/CodeNote/AiRef/VibePractice/Skills/global/error-memory-capture/SKILL.md>), only after a verified reusable failure, user correction, repeated failed approach, or tool/runtime trap.
 
 ## Rule Boundary
 
