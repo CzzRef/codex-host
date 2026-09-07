@@ -1,44 +1,10 @@
-# codexhost AI Adapter
+<!-- codenote-agent-ecosystem:start -->
+# codex-host AI entry
 
-Tool: tool-neutral (codex, claude, grok, dsh, and any CodeNote-routed agent)
+Source: CodeNote compact core sha256:935bd00f7f626c43a5accac9a71618af64ea59d8561b443a4f6838f43af7fdbe.
 
-Initialize once:
-- Reuse the injected [CodeNote master](../../CzzProj/CodeNote/AiRef/VibePractice/Vibe_Rules/VibeAi.md), or read it once if it was not injected.
-- Read the [project rule index](vibe/rules/README.md) as the project entry.
-- Parallel host adapter: [CLAUDE.md](CLAUDE.md). Keep the two files equivalent routers.
+If ../../CzzProj/CodeNote/AiRef/VibePractice/Vibe_Rules/VibeAi.md exists, load that core, its short routing/README.md and the applicable short host adapter once; apply both baseline guards selected by that router. Otherwise load [vibe/rules/global-core.generated.md](vibe/rules/global-core.generated.md); it is a deterministic portable projection. Reuse unchanged context during the task.
 
-Load by task signal:
-- Read [documentation rules](vibe/rules/documentation.md) for Standard/Controlled, documentation-governance, or template-propagation work.
-- Read the [process hub](vibe/specs/PROJECT_STATUS.md) for ongoing or overlapping work, Controlled tasks, or cross-repo work.
-- From the project index, load only the smallest applicable owner; do not preload route targets or error memory without a matching task, retry, or failure signal.
-
-## Product Intent
-
-`codexhost` runs external Agent Harnesses as independent Threads inside Codex Desktop, preserving the official shell and native Codex path. Integrate each Harness through its native interface; preserve its actual capabilities and semantics rather than inventing equivalent-looking Host behavior.
-
-## Code Layout
-
-- `crates/`: `launcher/` native application launch, `shim/` process proxying, `updater/` update installation, `platform/` cross-platform native integration.
-- `packages/`: `protocol-core/` Host protocol routing and projection, `mapping-store/` external Thread metadata persistence, `harness-adapter/` public Harness session and plugin contracts, `harness-discovery/` executable discovery, `harness-broker/` native Broker communication, `adapters/` Harness-specific implementations and plugin entry points, `desktop-control/` CDP / Electron Inspector-driven Desktop interaction, `host-runtime/` Host composition and installed plugin loading, `update-manager/` background update preparation, `shared-contracts/` browser-safe types and runtime schemas, `renderer-extension/` browser JavaScript extension.
-- `scripts/release/`: release preparation, packaging, and publishing. `tools/`: development utilities and technical Gates.
-
-## Boundary Rules
-
-- Rust owns native launch, process management, update installation, and platform integration. It must not own Host protocol or Harness semantics.
-- `shared-contracts` must remain browser-safe and independent of other Workspace packages.
-- `renderer-extension` must not import Node.js built-ins, Electron private APIs, or Harness SDKs.
-- Harness-specific protocol details must remain inside the corresponding Adapter.
-- Host Runtime loads installed plugins through public contracts, not direct imports of concrete Adapter packages. The preinstalled set belongs to `scripts/release/harness-plugins.json`, not Host registration code.
-- Use package public exports for cross-package dependencies. Read `tools/check-boundaries.mjs` before changing dependency directions; it is the executable boundary check run by `npm run lint`.
-
-Project facts:
-- Brand is lowercase `codexhost`. Domain terms: [docs/领域术语表.md](docs/领域术语表.md); in particular, do not conflate Harness, Model, Provider, Account, or Billing Source.
-
-Hard constraints:
-- Keep project-specific rules in `vibe/rules/`; do not copy the CodeNote master into this repository.
-- Preserve existing behavior and unrelated dirty work.
-- Do not run `gate:a` / `gate:c` / `gate:claude` unless asked.
-- Write Markdown links relative to the target document location.
-- Do not claim a check passed unless it was executed. Report skipped or blocked checks and the reason.
-- Final replies must include verification status and memory/process-document status.
-- Commit identity routes to [CodeNote github/rules.md §2.4](../../CzzProj/CodeNote/AiRef/VibePractice/Vibe_Rules/github/rules.md#24-commit-identity), which withdrew the host-mandated trailer exception on 2026-09-07: no `Co-Authored-By` or equivalent assistant/host trailer may remain in recorded history. Follow the host for the `git commit` invocation if it injects the line, then strip it with the post-commit `git commit-tree` rebuild that owner defines; do not `--amend`, and do not rewrite shared or pushed history for it. Author and committer fields show only the human owner.
+Load [project rules](vibe/rules/README.md). Detailed project procedures are conditional on the affected code, UI, data or runtime surface. Routine replies use concise numbered points; omit empty modules. Other tool entries route to this file.
+<!-- projection-sha256: 102ae5f9e8eb6665ad0e5982f56ca35ab9ac44d76ea8c05dcca10f3bc4e35a00 -->
+<!-- codenote-agent-ecosystem:end -->
