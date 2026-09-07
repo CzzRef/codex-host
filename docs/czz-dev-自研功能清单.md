@@ -1,8 +1,8 @@
 # czz-dev 自研功能清单（fork 相对上游的功能补充）
 
-日期：2026-09-07。
-对照基线：`upstream/main` = `de24f83`（BytePioneer-AI/codex-host，2026-09-06）；本地 `czz-dev` = `e1c0cb5`；两者 merge base = `1d021a6`。
-本表成表当天（2026-09-07）该批上游提交已由另一会话合并进 `czz-dev`（合并提交 `9d49f3a`），此后 `upstream/main` 相对 `czz-dev` `ahead=0`；各行的「上游现状」列仍以 `de24f83` 为准，下次上游推进后按第 2 节命令重算。
+成表 2026-09-07，末次复核 2026-09-07（见第 6 节）。
+
+对照基线：`upstream/main` = `de24f83`（BytePioneer-AI/codex-host，2026-09-06）；本地 `czz-dev` = `24b9464`；**merge base 就是 `de24f83` 本身**——上游 41 条提交已由合并提交 `9d49f3a` 并入，`upstream/main` 相对 `czz-dev` `ahead=0`，本地领先 158 条。也就是说本表此刻**没有未消化的上游债务**，全部 36 行都是相对当前上游 tip 的净增量。
 
 这份文件是 **常驻对照台账**，不是任务卡。它回答一个问题：`czz-dev` 上有哪些功能是本 fork 自己加的、上游至今没有的。每次合并 `upstream/main` 之前先读这里，逐项判定去留。
 
@@ -23,7 +23,7 @@ fork 与上游会持续双向演进。上游后来做了同一件事时，只有
 | `upstream-partial` | 上游有相近能力但不覆盖本地语义 | 保留差量，公共部分让给上游 |
 | `superseded-by-upstream` | 上游实现更完整 | 删除本地实现，只留必要的本地接线 |
 
-判定必须**实测**：以 `git grep` / `git ls-tree` 在 `upstream/main` 上核符号与文件，不凭 changelog 与印象。本表第 3 节全部 30 行的「上游现状」列都是本轮按这个方式测出来的。
+判定必须**实测**：以 `git grep` / `git ls-tree` 在 `upstream/main` 上核符号与文件，不凭 changelog 与印象。本表第 3 节全部 36 行的「上游现状」列都是按这个方式测出来的。
 
 复核命令（更新基线时重跑）：
 
@@ -31,7 +31,12 @@ fork 与上游会持续双向演进。上游后来做了同一件事时，只有
 git fetch upstream && git diff --diff-filter=A --name-only "$(git merge-base czz-dev upstream/main)" czz-dev
 ```
 
-需求侧还有一条快速信号：`openspec/changes/` 下**本地独有**的变更包就是自研需求的归档面。本轮实测本地 27 个、上游 13 个（各含一个 `archive/`），差集 14 个变更包，全部对应下表 B–E 组的自研行。
+需求侧还有一条快速信号：`openspec/changes/` 下**本地独有**的变更包就是自研需求的归档面。2026-09-07 复核：本地 29 个、上游 13 个（各含一个 `archive/`），差集 **16 个**变更包（较成表时 +2，即补写的 `add-delegation-thread-pin` 与 `add-external-composer-selector-fidelity`）。差集口径：
+
+```bash
+comm -23 <(ls openspec/changes/ | sort) \
+  <(git ls-tree --name-only upstream/main openspec/changes/ | sed 's|openspec/changes/||' | sort)
+```
 
 ## 3. 功能清单
 
@@ -58,7 +63,7 @@ git fetch upstream && git diff --diff-filter=A --name-only "$(git merge-base czz
 | C-1 | `codexhost thread rename`：持久化标题 + 广播 `thread/name/updated`；区分 Desktop 手改名与首条消息兜底名 | `packages/host-runtime/src/delegation-cli.ts` | [add-external-thread-rename](../openspec/changes/add-external-thread-rename/proposal.md) | `local-only` | 兜底名判别依赖 `titleSource` / preview 形状，上游改标题来源即需重测 |
 | C-2 | `thread list --all`：省略 cwd 过滤列出全部额外进程 | 同上 | [add-delegation-thread-list-all](../openspec/changes/add-delegation-thread-list-all/proposal.md) | `local-only` | 低风险 |
 | C-3 | `thread list --archived` + 行上 `archived` 字段 | 同上 | [add-delegation-thread-list-archived](../openspec/changes/add-delegation-thread-list-archived/proposal.md) | `local-only`：`archived` 上游 12 处（Desktop 侧），CLI 视图为本地新增 | EyPc 靠它感知线程被归档，缺了任务会永远停在「已完成未读」 |
-| C-4 | `thread archive|unarchive`：与 Desktop 共用归档持久化与 `thread/archived` 广播；级联 ephemeral side chat；`thread list` 把运行中 side chat 汇总到来源行 | 同上 | [add-delegation-thread-archive](../openspec/changes/add-delegation-thread-archive/proposal.md) | `local-only` | 官方 app-server 不认识外部 id，此入口无替代 |
+| C-4 | `thread archive|unarchive`：与 Desktop 共用归档持久化与 `thread/archived` 广播；级联 ephemeral side chat；`thread list` 把运行中 side chat 汇总到来源行 | 同上 | [add-delegation-thread-archive](../openspec/changes/add-delegation-thread-archive/proposal.md) | `upstream-partial`：上游 `app-server-host.ts` 已有 Desktop 侧 `thread/archive` / `thread/unarchive` RPC 与 `thread/archived` 广播；**委派 CLI 入口上游 0 处**（`delegation-cli.ts` 无 `unarchive`） | 差量是 CLI 入口 + side chat 级联 + 列表汇总，不是归档本身。官方 app-server 不认识外部 id，CLI 这条通路无替代 |
 | C-5 | `thread pin|unpin` + 外部线程按 Desktop 分区置顶（持久化 section 成员与 pinned，不改 recency） | `delegation-cli.ts`、`external-thread-repository.ts` | [add-delegation-thread-pin](../openspec/changes/add-delegation-thread-pin/proposal.md)、提交 `c852197` / `f21d2b7` | `local-only`：`thread/pin` 上游 0 处、`sectionId` 上游 0 处 | 与 C-1 / C-4 同形态（Host 持久化 + 同款通知 + 列表字段）；上游若补外部线程置顶，先比对是否同样不改 recency |
 | C-6 | **外部线程未读建模**：Host 内存态未读集合 + `thread list` 行上 `hasUnreadTurn` | `packages/host-runtime/src/app-server-host.ts` | [add-external-thread-unread](../openspec/changes/add-external-thread-unread/proposal.md) | `local-only`：`hasUnreadTurn` 上游 0 处 | Desktop 只为原生 Thread 持久化未读，外部线程未读点只存在渲染层 |
 | C-7 | **Desktop bypass 跟随进外部会话** + 行上 `attention: "approval"` | `app-server-host.ts` | [add-desktop-bypass-follow](../openspec/changes/add-desktop-bypass-follow/proposal.md) | `local-only`：`attention` 上游 1 处（无关用法） | Adapter 以 `unsupported` 拒绝时须回退原生默认而非创建失败 |
@@ -104,17 +109,64 @@ git fetch upstream && git diff --diff-filter=A --name-only "$(git merge-base czz
 | G-6 | **Claude 模型目录缓存跟随安装身份刷新**：command/transport 暴露 `ClaudeInstallationIdentity`（版本链接 + 指纹），身份变化即重新 inspect；未知身份保留缓存，可执行文件缺失报 `notInstalled` | `packages/adapters/claude-code/src/command.ts` | [260902 任务卡](../vibe/specs/260902/1352-claude-catalog-refresh/task-card.md) | `local-only`：`claudeInstallationIdentity` 上游 0 处 | Claude.app 自带独立 CLI 安装线，与 PATH 那份版本不同，缺此项会读到陈旧目录 |
 | G-7 | **Grok 标题 sidecar overlay** 与外部线程标题 overlay：优先读会话目录 sidecar 避免 summary 被活进程覆写，打开 Session 时 watch 原生标题变化 | `adapters/grok/src/grok-title-overlay.ts`、`host-runtime/src/external-thread-title-overlay.ts` | 提交 `32b7700` / `05bfed7` | `local-only`：两处文件上游均不存在 | 与 C-1 改名判别联动 |
 | G-8 | **OMP 默认工具审批权限收紧** | `packages/adapters/omp/` | 提交 `c8edadc` | `local-only` | 本机已卸载 OMP，源码保留 |
-| G-9 | **Desktop 26.901 兼容**：轮内 steer 用户消息补 `text_elements`，否则打开外部线程进 Desktop 错误边界 | `packages/protocol-core/src/codex-ui-projector.ts` | 提交 `2d8a381` | `local-only` | 由 B-2 引入的字段缺口；Desktop 升级后须复测投影字段完整性 |
+| G-9 | **Desktop 26.901 兼容**：轮内 steer 用户消息补 `text_elements`，否则打开外部线程进 Desktop 错误边界 | `packages/protocol-core/src/codex-ui-projector.ts` | 提交 `2d8a381` | `upstream-partial`：`codex-ui-projector.ts` 上游 2 处（其自有文本部件），本地 4 处——多出的是轮内 steer `userMessage` 那条（`#L469`） | 由 B-2 引入的字段缺口，随 B-2 存亡；Desktop 升级后须复测投影字段完整性 |
 
-## 4. 已知未闭合项（不影响清单成立，但合并前应知情）
+## 4. 真机验证状态（下一轮排查从这里起手）
+
+「上游有没有」与「本机跑起来对不对」是两件事。本表第 3 节只回答前者——**一行判定 `local-only` 只说明代码在本地存在，不保证它在真机上达到预期**。用户反馈某项没达到预期时，先查这一节它属于哪一档，能省掉一轮重复排查。
+
+### 4.1 有真机证据
+
+| 行 | 证据 |
+| --- | --- |
+| B-1 插队 | 2026-09-07 Desktop 26.901.51231 build 8109：scratch grok Turn `48dfb8ad…` 运行中 `--steer true` 插入后仍是同一 `turnId`、终态 `completed` 而非 `interrupted`，插入消息作为轮内 user item 落在两条 agent 消息之间，Grok 真的改行为。此前 2026-09-02 另有 Grok / Pi / OMP / DSH / Claude 的 scratch 探针 |
+| D-1 置顶轮次头 | 2026-09-07 同次：官方与外部 Thread 的 `live-check` 都走 `workspace` 路由、不进错误边界，Turn 头 `{x:437,y:47,w:736,h:41}` 两侧一致。2026-09-04 另有 26.901.22334 上的八个滚动位几何、提示词钉住、箭头、`Turn N/M` 计数复核 |
+| D-6 模型可见性设置页 | 2026-09-07 同次：CDP 只读回读设置页注册表为六项，`models`(model-pool) 与 `accounts`(accounts) 并存 |
+| A-1 Cursor | 2026-09-05：一条 Cursor 消息路由到 `harnessId: cursor`，`@agent` 端到端带过，零异常 |
+| C-1 / C-3 / C-4 改名·归档·列表 | 2026-09-02 15:22 源码重启后生效并回读 |
+| C-8 委派权限模式 | 2026-09-02：Grok `always-approve` 探针 `4cd13fa2` 跑完且 Host 标未读 |
+| G-6 Claude 目录跟随安装身份 | 2026-09-02 18:50 重启后 Host 5909 回读 `claude-fable-5-1` |
+| G-2 控制器随父进程回收 | 2026-09-02 19:15：SIGTERM 端到端，launcher 82835 → controller/Desktop/descriptor 2 秒内消失 |
+| D-2 / D-3 工作区面与工作树选择器 | 2026-09-03 11:28 部分验证：状态栏左缘与 Composer 对齐 0px，hover `⋯` 落在轮次右上 |
+
+### 4.2 只有单测，无真机证据
+
+这些行的实现有聚焦用例覆盖，但**没跑过真机**。用户反馈的「没达到预期」最可能落在这里。
+
+- **B-3 Host Redo**：过程枢纽明写「live rollback→Redo on a real external Thread (covered by Host tests only)」。
+- **B-4 多轮回滚**：分页线程 `thread/reverted` 再读、各 Harness 自 checkpoint fork 均标 `[待真机]`。
+- **B-5 编辑=先回滚再重发**：依赖 B-3 / B-4，同样未验。
+- **C-5 `thread pin|unpin`**：侧栏是否真进 Pinned 分区、重启后是否保持，均未验。
+- **C-6 外部线程未读**：Host 内存态，重启后从已读起始，真机未回读。
+- **C-7 Desktop bypass 跟随**：`attention: "approval"` 的出现与消失未在真机观察。
+- **D-4 worktree 自动取名 / D-5 Tab 复用提示词**：只有单测。
+- **D-7 权限选择器 + 模型标签缩写**：标签缩写规则是 2026-09-07 本轮刚落，模型芯片文案、菜单搜索打缩写筛选、`·` 在 Composer 宽度下的截断表现**全部未验**。
+- **D-8 Cursor 空目录按原生默认**：2026-09-05 真机那次标签读到 `Auto`，说明目录已填充，**空目录分支未被覆盖**，仍需冷启动复现。
+- **E-1 附件输入契约**：带附件的真机轮次未跑；进程内路径待有附件生产者时才接线。
+- **G-4 live-check 工具 / G-5 过期 bundle 拒绝 / G-7 标题 overlay / G-8 OMP 审批收紧**：无真机记录。
+
+### 4.3 已知结构性缺口
+
+- **`resolvedModelLabel` 未带缩写前缀**：D-7 的前缀施加在目录投影链，而会话状态上的 `resolvedModelLabel`（`modern/configuration.ts` 由 `catalogModel.label` 派生）走的是会话投影链，本轮未处理。委派输出里的 `configuration.effective.resolvedModelLabel` 因此仍是裸模型名，与菜单文案不一致。
+- **D 组整体依赖 Desktop DOM 与 props 键**（`data-user-message-bubble`、`executionTargetOverride.cwd`、`gitRootForStartingState`、原生权限按钮选择器）。Desktop 每次升级都可能让这些行「代码还在但界面上没效果」——这是最容易表现为「功能没达到预期」的一类。
+
+## 5. 已知未闭合项（不影响清单成立，但合并前应知情）
 
 - **上游债务已结清（本表成表当天）**：`upstream/main` 的 41 条提交经隔离 worktree 解 13 处冲突后，以合并提交 `9d49f3a` 快进进 `czz-dev`，任务卡见 [260907 tasks](../vibe/specs/260907/upstream-main-merge/tasks.md)。上游本轮主线为 Codex 多账号额度、外部 Thread 方向变更、PR triage 行为化、Antigravity slash commands/fork/rollback、DeepSeek Modern 消息修订、`scripts/install-local.sh`。该轮已按本表交叉核验：B-1 逐 adapter 复核八家 steer 全部完好（含 v0.5.0 曾被抹掉的 DSH `mode:"steer"` 与 `session/title`），D-6 预警的 Settings 页注册表冲突如期出现并按两侧都留解开，与 B/C 组相邻的「外部 Thread 方向变更」按本地实现保留。**真机 Renderer 复核仍未跑。**
 - 真机未覆盖：D-8 的冷启动空目录分支、E-1 的带附件真机轮次、D-1 的分页 `thread/reverted` 再读。
 - **D-7 的模型标签规则已重定**：上游 `635a890`（2026-09-03）曾把 DeepSeek 标签写回 `provider / model`，覆盖本地 `f5550d9`——这是本表建立后第一例实测到的上游覆盖。2026-09-07 裁决不是「补回」也不是「让位」，而是换一条更强的规则：标签统一为 `<Harness 缩写>·<Model 名>`，Provider 段在 DeepSeek 与 OpenCode 一并去掉，前缀由 Host 统一补。未闭合：会话状态 `resolvedModelLabel` 走另一条投影链，本轮未加前缀。
 
-## 5. 维护规则
+## 6. 维护规则
 
 1. 新增一项自研功能时，同一批提交里往本表加一行；能立 openspec 变更包的优先立。截至 2026-09-07，表内每一行都已有 openspec 变更包或任务卡归档。
 2. 每次合并 `upstream/main` **之前**，按第 2 节命令重算差集，逐行更新「上游现状」列。
 3. 判定为 `superseded-by-upstream` 的行不要删除，改状态并写明上游落点与删除提交——这条历史正是下次判断的依据。
-4. 本文件是产品事实层，归 `docs/`；过程状态归 [过程枢纽](../vibe/specs/PROJECT_STATUS.md)，需求增量归 [openspec](../openspec/changes/)。三者不互相复述。
+4. 拿到真机结论后，把该行从第 4.2 挪进 4.1 并附证据；真机推翻了某行的实现时，先改第 4 节的档位，再决定第 3 节是否改判——「上游有没有」与「本机对不对」不要互相污染。
+5. 本文件是产品事实层，归 `docs/`；过程状态归 [过程枢纽](../vibe/specs/PROJECT_STATUS.md)，需求增量归 [openspec](../openspec/changes/)。三者不互相复述。
+
+## 7. 复核记录
+
+| 日期 | 基线 | 结论 |
+| --- | --- | --- |
+| 2026-09-07 成表 | `upstream/main` `de24f83` 对 `czz-dev` `e1c0cb5`，merge base `1d021a6`，上游领先 41 | 7 组 36 项建表（A1 / B5 / C10 / D8 / E1 / F2 / G9）。**成表时正文误记为 30 项，2026-09-07 复核时按逐行清点更正** |
+| 2026-09-07 复核 | `upstream/main` `de24f83` 对 `czz-dev` `24b9464`，**merge base = `de24f83`**，上游领先 0、本地领先 158 | 36 行逐个重测符号：全部仍成立，无一行消失。两行改判为更准确的 `upstream-partial`（C-4 归档、G-9 `text_elements`）。openspec 差集 14→16。新增第 4 节真机验证状态 |
