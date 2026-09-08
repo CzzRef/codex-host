@@ -28,7 +28,6 @@ export const WORKSPACE_TURN_FILE_ATTRIBUTE = "data-codexhost-workspace-turn-file
 export const WORKSPACE_PREVIEW_ATTRIBUTE = "data-codexhost-workspace-preview";
 
 const STYLE_ATTRIBUTE = "data-codexhost-workspace-surface-style";
-const PREVIEW_HIDE_GRACE_MS = 120;
 
 export function ensureWorkspaceSurfaceStyle(ownerDocument: Document): void {
   if (ownerDocument.querySelector(`style[${STYLE_ATTRIBUTE}]`)) return;
@@ -64,6 +63,7 @@ export function renderRow(
   const { repository } = group;
   const row = ownerDocument.createElement("div");
   row.setAttribute(WORKSPACE_ROW_ATTRIBUTE, repository.kind);
+  row.setAttribute("data-codexhost-workspace-root", repository.root);
   if (group.core) row.setAttribute(WORKSPACE_CORE_ATTRIBUTE, "true");
   // Bold: where the files live (worktree directory or checkout folder).
   // Muted: the checkout a worktree belongs to, then the branch.
@@ -108,14 +108,11 @@ export function renderRow(
       : chinese
         ? "涉及的仓库"
         : "Repository touched";
-  // No native `title`: the OS tooltip only appears after about a second and is
-  // unstyled, which reads as the chip being slow. The overlay tooltip below
-  // opens in 120ms instead; `aria-label` keeps the same text for assistive tech.
+  // Keep the complete identity available to assistive tech and on activation.
   row.setAttribute("aria-label", `${roleLabel} ${repository.root} ${branchText}`);
-  // The chip is clipped to keep the header one line, so hovering has to be able
-  // to show the full root path, worktree owner and branch.
+  // Rich details open on activation, so paths remain selectable.
   const detail = ownerDocument.createElement("span");
-  detail.className = "codexhost-overlay-tooltip codexhost-workspace-detail";
+  detail.className = "codexhost-workspace-detail";
   detail.setAttribute("aria-hidden", "true");
   const lines: string[] = [roleLabel, repository.root];
   if (repository.isWorktree && owner !== display) {
@@ -123,6 +120,28 @@ export function renderRow(
   }
   lines.push(chinese ? `分支 ${branchText}` : `Branch ${branchText}`);
   detail.textContent = lines.join("\n");
+  row.setAttribute("role", "button");
+  row.tabIndex = 0;
+  row.setAttribute("aria-expanded", "false");
+  const toggle = (): void => {
+    const expanded = row.getAttribute("aria-expanded") !== "true";
+    row.setAttribute("aria-expanded", String(expanded));
+    detail.setAttribute("aria-hidden", String(!expanded));
+  };
+  row.addEventListener("click", toggle);
+  detail.addEventListener("click", (event) => event.stopPropagation());
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggle();
+    }
+    if (event.key === "Escape") {
+      row.setAttribute("aria-expanded", "false");
+      detail.setAttribute("aria-hidden", "true");
+      row.focus();
+      event.preventDefault();
+    }
+  });
   row.append(detail);
   return row;
 }
@@ -156,6 +175,13 @@ export function fitWorkspaceChips(chips: HTMLElement): number {
     for (const row of rows.slice(rows.length - hidden)) {
       const clone = row.cloneNode(true) as HTMLElement;
       clone.hidden = false;
+      clone.removeAttribute("role");
+      clone.removeAttribute("tabindex");
+      clone.removeAttribute("aria-expanded");
+      clone.querySelector(".codexhost-workspace-detail")?.remove();
+      const directory = chips.ownerDocument.createElement("small");
+      directory.textContent = row.getAttribute("data-codexhost-workspace-root");
+      clone.append(directory);
       // Clones are presentation only; they must not read as extra rows.
       clone.removeAttribute(WORKSPACE_ROW_ATTRIBUTE);
       clone.setAttribute(
@@ -210,8 +236,6 @@ export interface FileDisclosureInput {
   chinese: boolean;
   onToggle(): void;
   onPreview(file: ThreadConversationFile, row: HTMLElement, list: HTMLElement): void;
-  onPreviewLeave(): void;
-  onOpen(file: ThreadConversationFile): void;
 }
 
 /** The right-edge file disclosure whose list opens downward under the header. */
@@ -312,14 +336,10 @@ export function renderFileDisclosure(input: FileDisclosureInput): HTMLDivElement
         formatStats(ownerDocument, file.addedLines, file.deletedLines, "codexhost-workspace-stats"),
       );
       const previewFile = (): void => input.onPreview(file, row, rows);
-      row.addEventListener("mouseenter", previewFile);
-      row.addEventListener("mouseleave", input.onPreviewLeave);
-      row.addEventListener("focus", previewFile);
-      row.addEventListener("blur", input.onPreviewLeave);
       row.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        input.onOpen(file);
+        previewFile();
       });
       rows.append(row);
     }
@@ -382,111 +402,186 @@ export function previewOrigin(input: {
   return { left: box.left, top: Math.max(box.top, input.minTop ?? 8) };
 }
 
+interface DiffPreviewInput {
+  threadId: string;
+  owner: Element;
+  file: ThreadConversationFile;
+  row: HTMLElement;
+  bounds(): { composerTop: number; minTop: number };
+  chinese: boolean;
+  onOpen(): void;
+  restoreFocus(): void;
+}
+
 export interface DiffPreviewOverlay {
   element: HTMLElement;
-  show(input: {
-    file: ThreadConversationFile;
-    row: HTMLElement;
-    list: HTMLElement | null;
-    composerTop: number;
-    minTop: number;
-    chinese: boolean;
-  }): void;
-  scheduleHide(): void;
-  hide(): void;
+  show(input: DiffPreviewInput): void;
+  sync(owner: Element, threadId: string, files: readonly ThreadConversationFile[]): void;
+  reposition(): void;
+  hide(restoreFocus?: boolean): void;
+  hideFor(owner: Element): void;
   dispose(): void;
 }
 
-/** One body-level diff preview shared by every header on the page. */
+/** A single explicitly opened detail, independent of transcript scroll/hover. */
 export function createDiffPreviewOverlay(ownerDocument: Document): DiffPreviewOverlay {
-  const preview = ownerDocument.createElement("div");
+  const preview = ownerDocument.createElement("section");
   preview.setAttribute(WORKSPACE_PREVIEW_ATTRIBUTE, "true");
   preview.setAttribute(OVERLAY_ROOT_ATTRIBUTE, "true");
+  preview.setAttribute("role", "region");
   preview.hidden = true;
+  const grip = ownerDocument.createElement("div");
+  grip.className = "codexhost-workspace-preview-grip";
+  grip.setAttribute("role", "separator");
+  grip.setAttribute("aria-orientation", "vertical");
+  grip.tabIndex = 0;
   const head = ownerDocument.createElement("div");
   head.className = "codexhost-workspace-preview-head";
   const body = ownerDocument.createElement("div");
   body.className = "codexhost-workspace-preview-body";
-  preview.append(head, body);
+  body.tabIndex = 0;
+  preview.append(grip, head, body);
   (ownerDocument.body ?? ownerDocument.documentElement).append(preview);
-  let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let previewingRow: HTMLElement | null = null;
-
-  const clearTimer = (): void => {
-    if (hideTimer === null) return;
-    clearTimeout(hideTimer);
-    hideTimer = null;
+  const view = ownerDocument.defaultView;
+  let active: DiffPreviewInput | null = null;
+  let preferredWidth = 480;
+  const widthKey = "codexhost.workspace-detail.width.v1";
+  try {
+    const stored = Number(view?.localStorage.getItem(widthKey));
+    if (Number.isFinite(stored) && stored >= 280) preferredWidth = Math.min(800, stored);
+  } catch {
+    /* Storage may be unavailable in embedded windows. */
+  }
+  const reposition = (): void => {
+    if (!active || preview.hidden) return;
+    const bounds = active.bounds();
+    const width = Math.min(preferredWidth, (view?.innerWidth ?? 800) - 16);
+    const top = Math.max(8, bounds.minTop);
+    preview.style.width = `${width}px`;
+    preview.style.right = "8px";
+    preview.style.top = `${top}px`;
+    preview.style.height = `${Math.max(0, Math.min((view?.innerHeight ?? 600) - 8, bounds.composerTop - 8) - top)}px`;
+    grip.setAttribute("aria-valuenow", String(Math.round(width)));
   };
-  const hide = (): void => {
-    clearTimer();
+  const hide = (restoreFocus = false): void => {
+    const previous = active;
+    active = null;
     preview.hidden = true;
-    body.replaceChildren();
+    previous?.row.removeAttribute("data-previewing");
     head.replaceChildren();
-    previewingRow?.removeAttribute("data-previewing");
-    previewingRow = null;
+    body.replaceChildren();
+    if (restoreFocus) previous?.restoreFocus();
   };
-  const scheduleHide = (): void => {
-    clearTimer();
-    hideTimer = setTimeout(() => {
-      hideTimer = null;
+  const paint = (): void => {
+    if (!active) return;
+    const input = active;
+    const scrollTop = body.scrollTop;
+    head.replaceChildren();
+    const path = ownerDocument.createElement("code");
+    path.textContent = input.file.path;
+    path.title = input.file.path;
+    const open = ownerDocument.createElement("button");
+    open.type = "button";
+    open.textContent = input.chinese ? "打开文件" : "Open file";
+    open.addEventListener("click", () => {
       hide();
-    }, PREVIEW_HIDE_GRACE_MS);
+      input.onOpen();
+    });
+    const close = ownerDocument.createElement("button");
+    close.type = "button";
+    close.textContent = "×";
+    close.setAttribute("aria-label", input.chinese ? "关闭文件详情" : "Close file detail");
+    close.addEventListener("click", () => hide(true));
+    head.append(
+      path,
+      formatStats(
+        ownerDocument,
+        input.file.addedLines,
+        input.file.deletedLines,
+        "codexhost-workspace-stats",
+      ),
+      open,
+      close,
+    );
+    preview.setAttribute(
+      "aria-label",
+      `${input.chinese ? "文件详情" : "File detail"}: ${input.file.path}`,
+    );
+    grip.setAttribute("aria-label", input.chinese ? "调整详情宽度" : "Resize file detail");
+    fillDiffPreview(body, input.file.preview, input.chinese);
+    body.scrollTop = scrollTop;
   };
-  preview.addEventListener("mouseenter", clearTimer);
-  preview.addEventListener("mouseleave", scheduleHide);
-
+  const setWidth = (width: number): void => {
+    preferredWidth = Math.max(280, Math.min(800, width));
+    reposition();
+    try {
+      view?.localStorage.setItem(widthKey, String(preferredWidth));
+    } catch {
+      /* Optional preference. */
+    }
+  };
+  const drag = (event: PointerEvent): void =>
+    setWidth((view?.innerWidth ?? 800) - event.clientX - 8);
+  const stopDrag = (): void => {
+    ownerDocument.removeEventListener("pointermove", drag);
+    ownerDocument.removeEventListener("pointerup", stopDrag);
+    ownerDocument.removeEventListener("pointercancel", stopDrag);
+  };
+  grip.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    ownerDocument.addEventListener("pointermove", drag);
+    ownerDocument.addEventListener("pointerup", stopDrag);
+    ownerDocument.addEventListener("pointercancel", stopDrag);
+  });
+  grip.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    setWidth(preferredWidth + (event.key === "ArrowLeft" ? 24 : -24));
+  });
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape" || !active) return;
+    event.preventDefault();
+    hide(true);
+  };
+  ownerDocument.addEventListener("keydown", onKeyDown);
+  view?.addEventListener("resize", reposition);
   return {
     element: preview,
     show(input) {
-      clearTimer();
-      previewingRow?.removeAttribute("data-previewing");
-      previewingRow = input.row;
+      active?.row.removeAttribute("data-previewing");
+      active = input;
       input.row.setAttribute("data-previewing", "true");
-      head.replaceChildren();
-      const path = ownerDocument.createElement("code");
-      path.textContent = input.file.path;
-      path.title = input.file.path;
-      head.append(
-        path,
-        formatStats(
-          ownerDocument,
-          input.file.addedLines,
-          input.file.deletedLines,
-          "codexhost-workspace-stats",
-        ),
-      );
-      fillDiffPreview(body, input.file.preview, input.chinese);
+      paint();
       preview.hidden = false;
-      const view = ownerDocument.defaultView;
-      const viewportWidth = view?.innerWidth ?? 800;
-      const width = Math.min(
-        560,
-        Math.max(280, Math.floor(viewportWidth * 0.6)),
-        viewportWidth - 24,
-      );
-      preview.style.width = `${width}px`;
-      // Never taller than the band between the header and the Composer.
-      preview.style.maxHeight = `min(420px, 50vh, ${Math.max(80, input.composerTop - input.minTop - 8)}px)`;
-      const height = preview.offsetHeight || 200;
-      const anchor = input.row.getBoundingClientRect();
-      const list = input.list?.getBoundingClientRect() ?? null;
-      const origin = previewOrigin({
-        anchor: { top: anchor.top },
-        list: list
-          ? { left: list.left, right: list.right }
-          : { left: anchor.left, right: anchor.right },
-        size: { width, height },
-        viewportWidth,
-        composerTop: input.composerTop,
-        minTop: input.minTop,
-      });
-      preview.style.left = `${origin.left}px`;
-      preview.style.top = `${origin.top}px`;
+      reposition();
+      body.focus({ preventScroll: true });
     },
-    scheduleHide,
+    sync(owner, threadId, files) {
+      if (!active || active.owner !== owner || active.threadId !== threadId) return;
+      const file = files.find((entry) => entry.path === active?.file.path);
+      if (!file) {
+        hide();
+        return;
+      }
+      if (
+        file.preview === active.file.preview &&
+        file.addedLines === active.file.addedLines &&
+        file.deletedLines === active.file.deletedLines
+      )
+        return;
+      active = { ...active, file };
+      paint();
+    },
+    reposition,
     hide,
+    hideFor(owner) {
+      if (active?.owner === owner) hide();
+    },
     dispose() {
+      stopDrag();
       hide();
+      view?.removeEventListener("resize", reposition);
+      ownerDocument.removeEventListener("keydown", onKeyDown);
       preview.remove();
     },
   };

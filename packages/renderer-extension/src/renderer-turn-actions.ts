@@ -21,9 +21,9 @@ export type RollbackSupport = "full" | "lastTurnOnly" | "none";
  * - `native`: Desktop's own edit-message control owns the Turn.
  * - `replace`: roll the Thread back to *before* this Turn, then refill the
  *   Composer, so sending replaces the Turn instead of appending a duplicate.
- * - `append`: the Turn cannot be dropped, so Edit only refills the Composer.
+ * - `unavailable`: the Turn cannot be replaced with the available capabilities.
  */
-export type EditMode = "native" | "replace" | "append";
+export type EditMode = "native" | "replace" | "unavailable";
 
 /** Why every action is unavailable for the moment, independent of the Turn. */
 export type TurnActionBlock = "nativeEdit" | "busy" | "noTurns";
@@ -83,6 +83,7 @@ export interface TurnActionCopy {
   redoConfirmAction: string;
   redoDisabled: boolean;
   editNeedsConfirm: boolean;
+  editDisabled: boolean;
   cancelLabel: string;
   editNotice: string;
   editFallbackNotice: string;
@@ -109,11 +110,11 @@ export function turnActionCopy(input: {
    * What Edit will actually do. `native` hands the Turn to Desktop's own pencil
    * (today's behaviour). `replace` rolls the Thread back to *before* this Turn
    * and refills the Composer, so resending replaces the Turn instead of
-   * appending a duplicate. `append` cannot drop the Turn and only refills.
+   * appending a duplicate. `unavailable` cannot replace the Turn.
    */
   editMode?: EditMode;
-  /** Why `append` cannot replace the Turn. */
-  editAppendReason?: "firstTurn" | "unsupported";
+  /** Why the Turn cannot be replaced. */
+  editUnavailableReason?: "firstTurn" | "unsupported";
 }): TurnActionCopy {
   const redoAvailable = input.redoAvailable === true;
   const support = input.rollbackSupport ?? "full";
@@ -126,7 +127,7 @@ export function turnActionCopy(input: {
   // A replacing Edit always drops a Turn, including the last one, so it always
   // asks first; the native pencil keeps the old rule.
   const editNeedsConfirm = replaces || (editMode === "native" && rollbackPossible);
-  const firstTurn = input.editAppendReason === "firstTurn";
+  const firstTurn = input.editUnavailableReason === "firstTurn";
   if (input.chinese) {
     const unsupportedReason =
       support === "none"
@@ -136,10 +137,10 @@ export function turnActionCopy(input: {
       editLabel: "编辑",
       editTitle: replaces
         ? "回滚到本轮之前——本轮及之后的对话都会取消，再把提示回填到输入框改写重发；文件不会自动回退"
-        : editMode === "append"
+        : editMode === "unavailable"
           ? firstTurn
-            ? "这是第一轮，无法取消；编辑会把提示回填到输入框追加发送"
-            : `${unsupportedReason}；编辑会把本轮提示回填到输入框追加发送`
+            ? "此会话必须保留第一轮，无法替换该轮"
+            : `${unsupportedReason}；无法替换本轮`
           : rollbackUnsupported
             ? `${unsupportedReason}；编辑会把本轮提示回填到输入框重新发送`
             : editNeedsConfirm
@@ -168,6 +169,7 @@ export function turnActionCopy(input: {
       redoConfirmAction: "确认 Redo",
       redoDisabled: !redoAvailable,
       editNeedsConfirm,
+      editDisabled: editMode === "unavailable",
       cancelLabel: "取消",
       editNotice: replaces
         ? "已回滚到本轮之前，本轮及之后的对话已取消；改好提示直接发送即可"
@@ -194,10 +196,10 @@ export function turnActionCopy(input: {
     editLabel: "Edit",
     editTitle: replaces
       ? "Roll back to before this turn — this turn and the later ones are dropped — then edit the prompt and resend; files are not rewritten"
-      : editMode === "append"
+      : editMode === "unavailable"
         ? firstTurn
-          ? "The first turn cannot be dropped; Edit places its prompt in the Composer to append"
-          : `${unsupportedReason}; Edit places this turn's prompt in the Composer to append`
+          ? "The first turn cannot be dropped, so it cannot be replaced"
+          : `${unsupportedReason}; this turn cannot be replaced`
         : rollbackUnsupported
           ? `${unsupportedReason}; Edit places this turn's prompt in the Composer to resend`
           : editNeedsConfirm
@@ -228,6 +230,7 @@ export function turnActionCopy(input: {
     redoConfirmAction: "Confirm redo",
     redoDisabled: !redoAvailable,
     editNeedsConfirm,
+    editDisabled: editMode === "unavailable",
     cancelLabel: "Cancel",
     editNotice: replaces
       ? "Rolled back to before this turn. This turn and the later ones were dropped; edit the prompt and send."
@@ -299,6 +302,7 @@ export interface TurnActionView {
   copy: TurnActionCopy;
   confirming: TurnActionId | null;
   blocked: TurnActionBlock | null;
+  prompt?: string;
 }
 
 export interface TurnActionHandlers {
@@ -397,7 +401,9 @@ export function renderTurnActionCluster(
       appendConfirm(
         wrap,
         copy,
-        input.confirmText,
+        view.prompt && input.id !== "redo"
+          ? `${input.confirmText}\n\n${view.prompt}`
+          : input.confirmText,
         input.confirmAction,
         input.tone === "danger",
         handlers,
@@ -409,7 +415,7 @@ export function renderTurnActionCluster(
     id: "edit",
     label: copy.editLabel,
     title: copy.editTitle,
-    disabled: false,
+    disabled: copy.editDisabled,
     ...(copy.editNeedsConfirm ? { tone: "danger", confirmText: copy.editConfirm } : {}),
     confirmAction: copy.editConfirmAction,
   });

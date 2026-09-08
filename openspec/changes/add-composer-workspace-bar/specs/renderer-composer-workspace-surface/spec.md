@@ -1,43 +1,28 @@
 ## ADDED Requirements
 
-### Requirement: Renderer mounts the workspace surface as the Turn header's second row
+### Requirement: Workspace identity stays beside the Composer
 
-The Renderer SHALL render the codexhost-owned workspace surface as the second, single-line row of the pinned Turn header (a `document.body` child positioned `fixed` at the top of the transcript, horizontally aligned to the verified `[data-codex-composer-root]` box, opaque) instead of a bar above the Composer. Nothing codexhost-owned SHALL float above the Composer or pad the transcript's bottom for it. It SHALL NOT insert into the Composer's parent, `data-above-composer-portal`, or React-owned transcript nodes, so that transformed or filtered ancestors cannot offset it. Unsupported or ambiguous Composer identities SHALL render nothing. Expanding anything in the row SHALL NOT change the header's height.
-
-The second row SHALL exist only while the conversation has changed files. With no changed files the core workspace chip SHALL ride in the Turn row instead and the second row SHALL be removed from layout, so a resting Thread costs the transcript one row rather than two; while the Turn row carries a pinned prompt the core chip SHALL step aside for it, since repeating the prompt is why the header exists.
-
-#### Scenario: A chip is too narrow for its own text
-
-- **WHEN** the user hovers or focuses a workspace chip clipped by the single-line row
-- **THEN** the Renderer SHALL show the full role, repository root, worktree owner and branch in its own overlay tooltip
-- **AND** SHALL NOT set a native `title`, whose delay reads as the chip being slow
+The Renderer SHALL mount a compact workspace surface as the previous sibling of each verified Thread Composer. Its height SHALL participate in the Composer container layout, and the transcript column SHALL reserve its additional height at the bottom, restoring the original bottom padding on unmount. The pinned Turn header SHALL contain only turn navigation, a short task subtitle and actions. Workspace identity SHALL NOT disappear when the prompt scrolls out or when no files changed.
 
 #### Scenario: Thread cwd is known
 
-- **WHEN** a connected Thread Composer root is unique and visible
-- **AND** workspace inspection returns a primary repository
-- **THEN** the Renderer SHALL show the core workspace chip (the Thread cwd root) with its Worktree identity and branch, marked as core
-- **AND** the core chip SHALL remain available while the conversation has no file changes
+- **WHEN** a unique visible Thread Composer has a workspace snapshot
+- **THEN** its core workspace, worktree name and branch SHALL remain visible near the input
+- **AND** clicking or keyboard-activating the identity SHALL open selectable full-path details, with Escape to close
+- **AND** other roots SHALL appear only when they own conversation changes
 
-#### Scenario: Thread has no changed files
+#### Scenario: Narrow Composer
 
-- **WHEN** workspace inspection returns a primary repository and no conversation file changes exist
-- **THEN** the header SHALL be a single row carrying the index, the prompt slot, the core chip and the actions
-- **AND** the second row SHALL take no vertical space
-- **WHEN** the header then pins the current Turn's prompt
-- **THEN** the core chip SHALL yield its width to the prompt without changing the header's height
+- **WHEN** the Composer width changes independently of the transcript width
+- **THEN** workspace chips SHALL be refitted using the workspace surface's own width
+- **AND** secondary line counts MAY be hidden so the core chip, file count and `+N` control stay usable
+- **AND** popovers SHALL NOT change the Turn header height or cover the Composer
 
-#### Scenario: Conversation file changes are available
+#### Scenario: Unsupported ownership
 
-- **WHEN** conversation file-change data is present for the Composer Thread
-- **THEN** the Renderer SHALL show the second row with the repository chips and add the right-side file disclosure to it
-- **AND** SHALL show per-repository conversation additions/deletions on each chip that has any, never repository diff totals
-- **AND** MAY show conversation-file aggregate additions/deletions beside the right-side file disclosure
-
-#### Scenario: Composer identity is unsupported
-
-- **WHEN** Composer roots are missing, hidden, or ambiguous
-- **THEN** the Renderer SHALL not render a Turn header or a workspace row
+- **WHEN** Composer roots are missing, hidden, or share an ambiguous transcript
+- **THEN** the Renderer SHALL not expose actions for an unverified owner
+- **AND** unavailable workspace information SHALL be identified without inventing a cwd
 
 ### Requirement: Changed-file ownership filters repository locations
 
@@ -66,7 +51,8 @@ The Host SHALL continue inspecting the complete repository array, including prim
 
 - **WHEN** the repository chips do not fit the header width
 - **THEN** the row SHALL stay one line and trailing chips SHALL collapse behind one `+N` chip, never the core chip
-- **AND** hovering `+N` SHALL preview the hidden chips in a list below the row, activating `+N` SHALL pin that list open, and neither SHALL change the header's height
+- **AND** activating `+N` SHALL open a list above the workspace row; pointer hover SHALL NOT open rich content
+- **AND** entries cloned for presentation SHALL NOT retain button roles or tab stops
 
 ### Requirement: Conversation files follow File Change Item change sets
 
@@ -86,47 +72,48 @@ The Renderer SHALL subscribe to `codexhost/thread/workspace/updated` through the
 - **WHEN** a workspace-updated notification arrives for the Composer Thread
 - **THEN** the visible rows SHALL match the next successful inspection
 
-### Requirement: File changes expand downward from the right and replace duplicate native summaries
+### Requirement: Files open a stable detail surface
 
-The codexhost file-change disclosure SHALL occupy the right edge of the workspace row after the repository chips. It SHALL show the current file count and conversation-file aggregate additions/deletions. It SHALL open only on activation; its file list SHALL align to the right edge and open downward below the header, bounded by the Composer's top edge, grouped by owning repository when more than one is involved, with the files the current Turn touched tagged and listed first in their group. Hovering or focusing a file SHALL show a diff preview. The preview SHALL be an interactive `document.body` overlay sized for reading (up to `min(560px, 60vw)` by `min(420px, 50vh)`), placed beside the file list (left first, right as fallback) so it never covers the list, kept below the header and above the Composer. It SHALL stay open while the pointer moves from the file row into the preview, hide after a short grace when the pointer leaves both, and hide on `Escape`. Scrolling the transcript SHALL close the list and the preview. While this replacement is available, the Renderer SHALL hide Desktop's duplicate top Changes summary and bottom Review/diff control without removing their event handlers. It SHALL restore native controls when the replacement is unavailable or disposed, and SHALL NOT hide them while only the core chip is shown.
+The right-side file disclosure SHALL show the conversation file count and additions/deletions, grouped by owning repository, with current-turn files tagged. Its list SHALL open upward from the Composer workspace surface only on activation. Clicking a file SHALL open a right-side, resizable detail surface between the Turn header and workspace dock. Hover and focus alone SHALL NOT open or close it. The body SHALL allow text selection and internal scrolling. Width MAY persist locally.
 
-#### Scenario: User expands changed files
+#### Scenario: User reads a diff while navigating
 
-- **WHEN** the user opens the right-side codexhost file-change disclosure
-- **THEN** the file list SHALL align to the right edge and open below the header without changing the header's height or the transcript's reserved space
-- **AND** hovering a file SHALL show its diff preview beside the list, with the file path and its additions/deletions in the header
-- **AND** moving the pointer into the preview SHALL keep it open and scrollable
-- **AND** selecting a file SHALL hide the preview and enter that file's native change display
+- **WHEN** a file detail is open and the user scrolls the transcript or selects another turn
+- **THEN** the detail SHALL stay open with its selected file
+- **AND** file updates SHALL refresh that detail only for its owning Composer and Thread
+- **AND** explicit close or Escape SHALL return focus to the file row, preserving focus across a row repaint
 
-#### Scenario: Replacement surface is available
+#### Scenario: Ownership or source disappears
 
-- **WHEN** the codexhost file-change disclosure is mounted for the active Thread
-- **THEN** duplicate native Changes and Review/diff controls SHALL be hidden
-- **AND** selecting a codexhost file SHALL still route through the retained native Review behavior
+- **WHEN** the owning Composer unmounts, changes Thread, or the file is removed from its change set
+- **THEN** its detail SHALL close
+- **AND** a different Composer's lifecycle SHALL NOT close the active detail
+- **AND** old-thread events SHALL NOT populate the newly selected Thread's workspace
 
-#### Scenario: Replacement surface is unavailable
+#### Scenario: User opens the native file surface
 
-- **WHEN** no codexhost file-change disclosure is mounted or the extension is disposed
-- **THEN** native Changes and Review/diff controls SHALL remain visible
+- **WHEN** the user activates the explicit Open file action inside the detail
+- **THEN** the detail SHALL close and invoke the retained native file/Review behavior
+- **AND** duplicate native Changes/Review summaries SHALL remain hidden only while the replacement file disclosure exists, and restore when it is absent or disposed
 
 ### Requirement: Turn actions live in the Turn header and act on the current Turn
 
-The Renderer SHALL mount one pinned Turn header per verified Thread Composer as a `document.body` child positioned `fixed` at the top edge of the transcript scroller, below Desktop's own title chrome (`header[data-pip-obstacle="app-shell-header"]`), horizontally aligned to the Composer box, with an opaque surface. It SHALL reserve the header's height as extra `padding-top` on the transcript content column so the first Turn is never covered at scroll-top, and SHALL restore the column's own padding on unmount. The header SHALL describe the current Turn — the last `[data-turn-key]` (Desktop's `history-gap:` placeholders excluded) whose top edge sits at or above a probe line a fixed distance below the header's bottom edge, the last Turn while the transcript end is in view, the first Turn otherwise — with a few pixels of hysteresis, recomputed on scroll, resize, DOM mutation and column resize coalesced into one animation frame. That probe distance SHALL exceed the gap the header itself scrolls a Turn to, so a Turn reached through the prompt button or a step arrow resolves as the current Turn instead of falling back to its predecessor. It SHALL show `第 N/M 轮` / `Turn N/M` from the Host's `turnIds` when inspect publishes them and from the transcript window only otherwise, because Desktop virtualises long transcripts and a DOM-only count labels a 22-Turn Thread `Turn 1/3`. The index SHALL sit between previous / next arrows that step the current Turn explicitly (the stepped Turn stays current until the user scrolls, so a transcript that cannot scroll can still target an earlier Turn) and that SHALL be hidden when the Thread has a single Turn. The header SHALL repeat the current Turn's user prompt only once that Turn's user bubble (`[data-user-message-bubble]`; a Turn without one shows no prompt) has left the transcript viewport — the boundary is the scroller's own top edge, not the header's bottom edge, because Desktop's app-shell chrome is transparent and a bubble between the two still reads at full contrast, so an earlier boundary would show the same prompt twice. Activating the prompt SHALL scroll the transcript back to the Turn, and a chevron SHALL open the full prompt flush below the header, offered only when the single line actually clipped the prompt. It SHALL show Edit / Rollback / Redo for the current Turn inside the header and SHALL NOT paint any floating chip, rail dot or cluster over the transcript. The actions SHALL be hidden while Desktop's own edit-message mode (Cancel / Send) is open on the current Turn and disabled with a reason while a Turn is running. Rollback SHALL count the Turns it drops from the Host's `turnIds` when inspect publishes them (Desktop virtualises long transcripts, so the DOM window under-counts) and from the transcript only otherwise; it SHALL be disabled with a reason when the Host's `rollback` bits say the request would be refused; Edit SHALL prefer Desktop's native pencil, which owns the Turn it is offered on. Without one, Edit SHALL mean "edit and resend": it SHALL roll the Thread back to *before* the current Turn — dropping that Turn as well as the later ones — and then refill the Composer with its prompt, so sending replaces the Turn instead of appending a second copy of the same question. That Edit SHALL always confirm first, because it always drops a Turn. When the Turn cannot be dropped — it is the Thread's first Turn, which the Host always keeps, or the Harness can only roll back its last Turn and others follow — Edit SHALL fall back to refilling the Composer without any rollback and SHALL say in its tooltip that the resend will be appended. Copy SHALL NOT promise to rewrite project files, the Renderer SHALL NOT click Desktop's Undo implicitly, and lookups for native controls SHALL skip codexhost's own overlays. The header SHALL apply to official Codex and external Threads alike and SHALL render nothing for drafts.
+The Renderer SHALL mount one fixed Turn header per verified Thread Composer below the app-shell header, preserve its transcript top reservation, and resolve the current turn using real transcript nodes and Host turn IDs when available. It SHALL expose previous/next controls, a numbered menu of loaded turns, a locally extracted task subtitle, and Edit / Rollback / Redo. The subtitle SHALL be present while the original user bubble is visible and after it scrolls out; it SHALL not replace the full prompt stored for editing or shown in confirmations. Activating it SHALL return to the original request.
 
-#### Scenario: Scrolling changes the current Turn
+#### Scenario: Numbered navigation with virtualised history
 
-- **WHEN** the user scrolls so a later Turn's top edge passes under the header
-- **THEN** the index SHALL advance to that Turn and the actions SHALL target it
-- **AND** the header's own box SHALL not move
+- **WHEN** the Host reports five turns but only three are currently in the transcript
+- **THEN** the index SHALL use the Host position, the menu SHALL contain only the three addressable turns, and its loaded-count hint SHALL describe that distinction
+- **AND** selection SHALL resolve a stable turn key before scrolling; it SHALL not guess unseen prompts or offer unavailable jumps
 
-#### Scenario: Prompt appears only after its bubble scrolls out
+#### Scenario: Edit and rollback use full prompts and real capabilities
 
-- **WHEN** the current Turn's prompt bubble is still visible below the header
-- **THEN** the header SHALL show only the index
-- **WHEN** that bubble sits above the header but is still inside the transcript viewport
-- **THEN** the header SHALL still show only the index, so the prompt is never displayed twice at once
-- **WHEN** that bubble has left the transcript viewport
-- **THEN** the header SHALL repeat the prompt on one line
+- **WHEN** a native pencil exists
+- **THEN** Desktop SHALL continue owning that edit behavior
+- **WHEN** replacement requires Host rollback
+- **THEN** Edit SHALL confirm against the complete original prompt, roll back to before that turn, and refill the Composer without sending
+- **AND** if the first turn must be retained or the Harness cannot remove the required extent, Edit SHALL be disabled with a reason instead of appending a duplicate
+- **AND** Rollback SHALL retain the selected turn, Redo SHALL use the existing single-slot external history contract, and busy/native-edit constraints SHALL remain enforced
 
 #### Scenario: Header scrolls to a Turn it names
 
@@ -151,13 +138,13 @@ The Renderer SHALL mount one pinned Turn header per verified Thread Composer as 
 #### Scenario: Edit on a Turn that cannot be dropped
 
 - **WHEN** the current Turn is the Thread's first Turn, or the Harness can only roll back its last Turn and others follow it
-- **THEN** Edit SHALL run without a rollback, refill the Composer, and say in its tooltip that the resend is appended
+- **THEN** Edit SHALL be disabled with a reason explaining that this turn cannot be replaced
 
 #### Scenario: Host reports last-turn-only rollback
 
 - **WHEN** inspect reports `rollback: { lastTurn: true, multiTurn: false }` and the current Turn has more than one later Turn
 - **THEN** Rollback SHALL be disabled with a tooltip explaining only the last Turn can be rolled back
-- **AND** Edit SHALL run without a rollback confirmation and refill the Composer
+- **AND** Edit SHALL be disabled if replacing the selected turn exceeds that capability
 
 #### Scenario: Native edit mode on the current Turn
 
@@ -171,7 +158,7 @@ The Renderer SHALL mount one pinned Turn header per verified Thread Composer as 
 
 ### Requirement: Draft worktree picker selects where a new Thread starts
 
-For a new-chat draft with one verified official run-location control and one official branch control, the Renderer SHALL render a `Worktree ▾` chip beside the branch control instead of a checkbox. Its menu SHALL offer `Local` (Desktop's project directory), `Temporary worktree` (Desktop's own anonymous worktree via `setComposerMode("worktree")`), every Host-managed linked worktree of the draft's project (`codexhost/workspace/worktree/list`, name · branch · dirty marker, primary checkout excluded), and `New worktree…` (created through `codexhost/workspace/worktree/create` on lane `codex`). The new-worktree name SHALL be prefilled complete, not just with the `yyMMdd-` date: the functional core comes from what the user has already typed in the Composer, slugified and truncated, falling back to the GMT+8 time when the prompt yields no ASCII word, and disambiguated against the worktree names that already exist. The suggestion SHALL always satisfy the Host's name pattern, and the user SHALL still be able to edit it. Picking a Host-managed worktree SHALL keep Desktop's Composer mode on `local` and SHALL hand the worktree root to the desktop-control draft policy (`selectWorkspace({ cwd })`), which rewrites `cwd` (and matching `runtimeWorkspaceRoots`) on the draft's non-ephemeral `thread/start` for official Codex and external Threads alike. While a Host-managed worktree is picked, Desktop's own run-location drifting back to `worktree` SHALL re-request `local` rather than discard the pick, since discarding it silently started the Thread in the project root. Every new draft SHALL start on `Local`; the last pick SHALL be persisted only to mark that entry as last used. The Renderer SHALL NOT invoke Git itself.
+For a new-chat draft with a verified official run-location control, the Renderer SHALL render a `Worktree ▾` chip beside the branch control, or beside the unique draft Composer when the branch anchor is absent. If the draft owner binding itself is missing, the entry SHALL explain that workspace selection is unavailable and SHALL not change the draft policy. Its menu SHALL offer `Local` (Desktop's project directory), `Temporary worktree` (Desktop's own anonymous worktree via `setComposerMode("worktree")`), every Host-managed linked worktree of the draft's project (`codexhost/workspace/worktree/list`, name · branch · dirty marker, primary checkout excluded), and `New worktree…` (created through `codexhost/workspace/worktree/create` on lane `codex`). The new-worktree name SHALL be prefilled complete, not just with the `yyMMdd-` date: the functional core comes from what the user has already typed in the Composer, slugified and truncated, falling back to the GMT+8 time when the prompt yields no ASCII word, and disambiguated against the worktree names that already exist. The suggestion SHALL always satisfy the Host's name pattern, and the user SHALL still be able to edit it. Picking a Host-managed worktree SHALL keep Desktop's Composer mode on `local` and SHALL hand the worktree root to the desktop-control draft policy (`selectWorkspace({ cwd })`), which rewrites `cwd` (and matching `runtimeWorkspaceRoots`) on the draft's non-ephemeral `thread/start` for official Codex and external Threads alike. While a Host-managed worktree is picked, Desktop's own run-location drifting back to `worktree` SHALL re-request `local` rather than discard the pick, since discarding it silently started the Thread in the project root. Every new draft SHALL start on `Local`; the last pick SHALL be persisted only to mark that entry as last used. The Renderer SHALL NOT invoke Git itself.
 
 #### Scenario: New draft starts Local and lists Host-managed worktrees
 
@@ -211,3 +198,22 @@ For a new-chat draft with one verified official run-location control and one off
 - **WHEN** the run-location React ownership chain is missing, ambiguous, unsupported, or carries a non-null conversation id
 - **THEN** the Renderer SHALL render no picker
 - **AND** SHALL NOT change Composer mode, Thread cwd, branch state, or Git Worktrees
+
+#### Scenario: Worktree menu exposes the send directory
+
+- **WHEN** the user opens the worktree picker
+- **THEN** the menu SHALL show the current send directory, full paths for existing worktrees, and an explicit refresh action
+- **AND** a new-worktree form SHALL identify its starting directory and planned branch
+- **AND** the Renderer SHALL not report a selection as successful if the draft policy rejects it
+
+### Requirement: Current conversation worktrees start a separate native draft
+
+The Composer workspace's Worktrees action SHALL reuse the same inventory and creation menu. Choosing an existing or newly created worktree SHALL leave the current Thread cwd untouched. The Renderer SHALL invoke only a unique visible native new-conversation control, then wait until the source Composer has left that Thread and exactly one verified draft exists before applying the cwd policy. If that control is unavailable, it SHALL show an explicit reason; an unverified or timed-out draft SHALL not receive a deferred selection. Closing a creation menu SHALL prevent its asynchronous result from selecting a different draft.
+
+#### Scenario: Native navigation is delayed
+
+- **WHEN** the user chooses a worktree from an existing Thread and native navigation is still in progress
+- **THEN** no workspace selection SHALL be applied to the existing Thread
+- **WHEN** a unique verified new draft appears and the original Composer has left its Thread
+- **THEN** the pending choice SHALL be consumed once, with the final cwd visible in the draft picker
+- **AND** an absent branch anchor SHALL use the verified draft Composer fallback

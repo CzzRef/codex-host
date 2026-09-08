@@ -7,6 +7,7 @@ export const OVERLAY_ROOT_SELECTOR = `[${OVERLAY_ROOT_ATTRIBUTE}]`;
 
 /** Marks the transcript content column whose `padding-top` codexhost reserves. */
 export const TRANSCRIPT_RESERVE_ATTRIBUTE = "data-codexhost-transcript-reserve";
+const bottomReservations = new WeakMap<HTMLElement, { inline: string; base: number }>();
 const RESERVE_BASE_ATTRIBUTE = "data-codexhost-transcript-reserve-base";
 
 const CHROME_STYLE_ATTRIBUTE = "data-codexhost-overlay-chrome-style";
@@ -430,9 +431,31 @@ export function reserveTranscriptTop(column: HTMLElement, px: number): void {
   if (column.style.paddingTop !== value) column.style.paddingTop = value;
 }
 
+/** Extra space for the Composer sibling added by codexhost. */
+export function reserveTranscriptBottom(column: HTMLElement, extra: number): void {
+  let saved = bottomReservations.get(column);
+  if (!saved) {
+    saved = {
+      inline: column.style.paddingBottom,
+      base:
+        Number.parseFloat(
+          column.ownerDocument.defaultView?.getComputedStyle(column).paddingBottom ?? "0",
+        ) || 0,
+    };
+    bottomReservations.set(column, saved);
+  }
+  const value = `${saved.base + Math.max(0, Math.round(extra))}px`;
+  if (column.style.paddingBottom !== value) column.style.paddingBottom = value;
+}
+
 export function releaseTranscriptColumn(column: HTMLElement): void {
   if (!column.hasAttribute(TRANSCRIPT_RESERVE_ATTRIBUTE)) return;
   column.style.paddingTop = "";
+  const bottom = bottomReservations.get(column);
+  if (bottom) {
+    column.style.paddingBottom = bottom.inline;
+    bottomReservations.delete(column);
+  }
   column.removeAttribute(TRANSCRIPT_RESERVE_ATTRIBUTE);
   column.removeAttribute(RESERVE_BASE_ATTRIBUTE);
 }

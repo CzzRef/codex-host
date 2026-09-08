@@ -261,9 +261,7 @@ describe("Turn action controller", () => {
       method: "rollback",
       params: { threadId: "thread-1", numTurns: 2 },
     });
-    expect(h.notices).toContainEqual(
-      expect.stringContaining("Rolled back to before this turn"),
-    );
+    expect(h.notices).toContainEqual(expect.stringContaining("Rolled back to before this turn"));
 
     // Last Turn with nothing after it still drops exactly itself.
     const last = harness({ keys: ["a", "b"] });
@@ -277,12 +275,13 @@ describe("Turn action controller", () => {
       params: { threadId: "thread-1", numTurns: 1 },
     });
 
-    // The Host always keeps the first Turn, so editing it only refills.
+    // The Host keeps the first Turn; editing it must not silently append.
     const first = harness({ keys: ["a", "b"] });
     first.controller.setCurrent({ threadId: "thread-1", turnKey: "a", turn: fakeTurn("first") });
     await flush();
     const firstCopy = first.controller.view({ chinese: false, blocked: null }).copy;
     expect(firstCopy.editNeedsConfirm).toBe(false);
+    expect(firstCopy.editDisabled).toBe(true);
     expect(firstCopy.editTitle).toContain("first turn cannot be dropped");
     first.controller.activate("edit");
     await flush();
@@ -301,7 +300,8 @@ describe("Turn action controller", () => {
     await flush();
     const limitedCopy = limited.controller.view({ chinese: false, blocked: null }).copy;
     expect(limitedCopy.editNeedsConfirm).toBe(false);
-    expect(limitedCopy.editTitle).toContain("to append");
+    expect(limitedCopy.editTitle).toContain("cannot be replaced");
+    expect(limitedCopy.editDisabled).toBe(true);
   });
 
   it("has no Host position for an official Thread", async () => {

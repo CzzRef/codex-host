@@ -718,6 +718,7 @@ export function installRendererBindingProbe(
   const promptReuse = installRendererComposerPromptReuse();
   const turnHeader = installRendererTurnHeader({
     getClient: () => modelControl,
+    openWorkspacePicker: (input) => branchWorktreeToggle.openForWorkspace(input),
   });
   let connectionDiagnostics: RendererConnectionDiagnostics | null = null;
   const settingsLifecycle = installRendererSettingsLifecycle(window, {

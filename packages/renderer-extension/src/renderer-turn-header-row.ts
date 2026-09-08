@@ -1,47 +1,33 @@
 import { TURN_ACTIONS_ATTRIBUTE } from "./renderer-turn-actions.js";
+import { turnSubtitle } from "./renderer-turn-subtitle.js";
 
 export const TURN_HEADER_INDEX_ATTRIBUTE = "data-codexhost-turn-header-index";
 export const TURN_HEADER_PROMPT_ATTRIBUTE = "data-codexhost-turn-header-prompt";
-export const TURN_HEADER_EXPAND_ATTRIBUTE = "data-codexhost-turn-header-expand";
 export const TURN_HEADER_PANEL_ATTRIBUTE = "data-codexhost-turn-header-panel";
-/** Values: `prev` | `next`. */
 export const TURN_HEADER_STEP_ATTRIBUTE = "data-codexhost-turn-header-step";
 export const TURN_HEADER_WORKSPACE_ATTRIBUTE = "data-codexhost-turn-header-workspace";
-/** Row-1 host for the core workspace chip while the Turn row stays single-line. */
-export const TURN_HEADER_CORE_ATTRIBUTE = "data-codexhost-turn-header-core";
-
-const PROMPT_LINE_MAX_CHARS = 200;
+export const TURN_HEADER_ENTRY_ATTRIBUTE = "data-codexhost-turn-header-entry";
 const NOTICE_MS = 4_000;
 
 export interface TurnHeaderRowState {
-  /** Turns the DOM window holds; the arrows can only reach these. */
   count: number;
   index: number | null;
-  /**
-   * Position to print. The Host's Turn list when it publishes one, because a
-   * virtualised transcript would otherwise label a 22-Turn Thread "Turn 1/3".
-   */
   position: { index: number; count: number } | null;
   pinned: boolean;
   nativeEdit: boolean;
   busy: boolean;
   reloading: boolean;
   chinese: boolean;
-  /** Full prompt text of the current Turn; only read while `pinned`. */
   promptText: string;
+  /** Only real, currently addressable transcript nodes; never synthetic Host rows. */
+  entries: Array<{ key: string; prompt: string; position: number | null }>;
 }
 
-/**
- * The header's DOM: the Turn row (index, prompt, expand chevron, action
- * cluster host), the prompt panel, the notice toast and the workspace row
- * host. Painting only; what to paint is decided by the header.
- */
 export interface TurnHeaderView {
   root: HTMLElement;
   cluster: HTMLElement;
+  /** Mounted beside the Composer, independently of the transcript header. */
   workspace: HTMLElement;
-  /** Row-1 slot the workspace row uses when it has nothing but the core chip. */
-  core: HTMLElement;
   paintRow(state: TurnHeaderRowState): void;
   notify(text: string): void;
   collapsePanel(): void;
@@ -57,8 +43,8 @@ export function createTurnHeaderView(
     overlayAttribute: string;
     className: string;
     onPromptClick(): void;
-    /** Step the current Turn explicitly; `-1` previous, `+1` next. */
     onStep(delta: -1 | 1): void;
+    onSelect(key: string): void;
   },
 ): TurnHeaderView {
   const root = ownerDocument.createElement("div");
@@ -74,144 +60,128 @@ export function createTurnHeaderView(
     button.className = "codexhost-turn-header-step";
     button.setAttribute(TURN_HEADER_STEP_ATTRIBUTE, delta < 0 ? "prev" : "next");
     button.textContent = delta < 0 ? "‹" : "›";
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      input.onStep(delta);
-    });
+    button.addEventListener("click", () => input.onStep(delta));
     return button;
   };
   const previous = step(-1);
   const next = step(1);
-  const index = ownerDocument.createElement("span");
+  const index = ownerDocument.createElement("button");
+  index.type = "button";
   index.className = "codexhost-turn-header-index";
   index.setAttribute(TURN_HEADER_INDEX_ATTRIBUTE, "true");
-  index.setAttribute("aria-live", "polite");
+  index.setAttribute("aria-expanded", "false");
   const prompt = ownerDocument.createElement("button");
   prompt.type = "button";
   prompt.className = "codexhost-turn-header-prompt";
   prompt.setAttribute(TURN_HEADER_PROMPT_ATTRIBUTE, "true");
-  prompt.hidden = true;
-  const spacer = ownerDocument.createElement("span");
-  spacer.className = "codexhost-turn-header-spacer";
-  const expand = ownerDocument.createElement("button");
-  expand.type = "button";
-  expand.className = "codexhost-turn-header-expand";
-  expand.setAttribute(TURN_HEADER_EXPAND_ATTRIBUTE, "true");
-  expand.setAttribute("aria-expanded", "false");
-  expand.textContent = "▾";
-  expand.hidden = true;
-  const panel = ownerDocument.createElement("div");
+  prompt.addEventListener("click", input.onPromptClick);
+  const panel = ownerDocument.createElement("nav");
   panel.className = "codexhost-turn-header-panel";
   panel.setAttribute(TURN_HEADER_PANEL_ATTRIBUTE, "true");
-  panel.setAttribute("role", "region");
   panel.hidden = true;
   const cluster = ownerDocument.createElement("div");
   cluster.className = "codexhost-turn-actions";
   cluster.setAttribute(TURN_ACTIONS_ATTRIBUTE, "true");
   const notice = ownerDocument.createElement("div");
   notice.className = "codexhost-turn-notice";
+  notice.setAttribute("role", "status");
   notice.hidden = true;
   const workspace = ownerDocument.createElement("div");
-  workspace.className = "codexhost-turn-header-row codexhost-workspace-surface";
+  workspace.className = "codexhost-composer-workspace codexhost-workspace-surface";
   workspace.setAttribute(TURN_HEADER_WORKSPACE_ATTRIBUTE, "empty");
-  const core = ownerDocument.createElement("div");
-  core.className = "codexhost-turn-header-core codexhost-workspace-surface";
-  core.setAttribute(TURN_HEADER_CORE_ATTRIBUTE, "true");
-  core.hidden = true;
-  row.append(previous, index, next, prompt, spacer, expand, core, cluster);
-  root.append(row, workspace, panel, notice);
-  let promptExpanded = false;
+  workspace.setAttribute(input.overlayAttribute, "true");
+  row.append(previous, index, next, prompt, cluster);
+  root.append(row, panel, notice);
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
-
   const collapsePanel = (): void => {
-    if (!promptExpanded) return;
-    promptExpanded = false;
+    if (panel.hidden) return;
+    const restore = panel.contains(ownerDocument.activeElement);
     panel.hidden = true;
-    expand.setAttribute("aria-expanded", "false");
+    index.setAttribute("aria-expanded", "false");
+    if (restore) index.focus({ preventScroll: true });
   };
-
-  prompt.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    input.onPromptClick();
+  index.addEventListener("click", () => {
+    if (!panel.hidden) {
+      collapsePanel();
+      return;
+    }
+    panel.hidden = false;
+    index.setAttribute("aria-expanded", "true");
+    panel.querySelector<HTMLElement>('[aria-current="step"]')?.focus({ preventScroll: true });
   });
-  expand.addEventListener("click", (event) => {
+  panel.addEventListener("keydown", (event) => {
+    const buttons = [...panel.querySelectorAll<HTMLButtonElement>("button")];
+    const current = buttons.indexOf(ownerDocument.activeElement as HTMLButtonElement);
+    const target =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? buttons.length - 1
+          : event.key === "ArrowDown"
+            ? current + 1
+            : event.key === "ArrowUp"
+              ? current - 1
+              : null;
+    if (target === null) return;
     event.preventDefault();
-    event.stopPropagation();
-    promptExpanded = !promptExpanded;
-    panel.hidden = !promptExpanded;
-    expand.setAttribute("aria-expanded", promptExpanded ? "true" : "false");
+    buttons[Math.max(0, Math.min(buttons.length - 1, target))]?.focus();
   });
-
   return {
     root,
     cluster,
     workspace,
-    core,
     paintRow(state) {
       const zh = state.chinese;
       const position =
         state.position ??
         (state.index === null ? null : { index: state.index, count: state.count });
-      if (!state.reloading) {
+      if (!state.reloading)
         index.textContent =
           position === null
             ? zh
               ? "还没有轮次"
               : "No turns yet"
-            : zh
-              ? `第 ${position.index + 1}/${position.count} 轮`
-              : `Turn ${position.index + 1}/${position.count}`;
-      }
+            : `${position.index + 1} / ${position.count} ▾`;
+      index.disabled = state.count === 0 || state.reloading;
+      index.setAttribute("aria-label", zh ? "选择轮次" : "Choose turn");
+      panel.setAttribute("aria-label", zh ? "已加载的轮次" : "Loaded turns");
       root.setAttribute("data-state", state.reloading ? "reloading" : "ready");
-      // One Turn has nowhere to step: the arrows would be permanent dead weight.
-      // A reloading transcript reports zero Turns for a moment; keep them then.
-      const singleTurn =
-        !state.reloading && state.count < 2 && (position?.count ?? state.count) < 2;
-      previous.hidden = singleTurn;
-      next.hidden = singleTurn;
-      // Bounds stay on the transcript window even though the label counts Host
-      // Turns: measured on a forked Thread whose inherited first Turn Desktop
-      // never renders, so a Host-bounded arrow would be permanently dead.
       previous.disabled = state.index === null || state.index <= 0;
       next.disabled = state.index === null || state.index >= state.count - 1;
       previous.setAttribute("aria-label", zh ? "上一轮" : "Previous turn");
       next.setAttribute("aria-label", zh ? "下一轮" : "Next turn");
-      root.setAttribute("data-native-edit", state.nativeEdit ? "true" : "false");
-      root.setAttribute("data-streaming", state.busy ? "true" : "false");
-      // While the row carries the prompt it belongs to the prompt; the core
-      // workspace chip fills the row only when there is no prompt to show.
-      root.setAttribute("data-pinned", state.pinned && !state.nativeEdit ? "true" : "false");
-      if (state.nativeEdit) {
-        prompt.hidden = false;
-        prompt.textContent = zh ? "正在编辑本轮" : "Editing this turn";
-        prompt.title = "";
-        expand.hidden = true;
-        spacer.hidden = true;
-        collapsePanel();
-        return;
+      root.setAttribute("data-native-edit", String(state.nativeEdit));
+      root.setAttribute("data-streaming", String(state.busy));
+      root.setAttribute("data-pinned", String(state.pinned && !state.nativeEdit));
+      prompt.textContent = state.nativeEdit
+        ? zh
+          ? "正在编辑本轮"
+          : "Editing this turn"
+        : turnSubtitle(state.promptText, zh);
+      prompt.disabled = state.nativeEdit || state.index === null;
+      prompt.title = zh ? "回到本轮原始提问" : "Go to the original request";
+      if (!panel.hidden) collapsePanel();
+      panel.replaceChildren();
+      state.entries.forEach((entry, loadedIndex) => {
+        const button = ownerDocument.createElement("button");
+        button.type = "button";
+        button.setAttribute(TURN_HEADER_ENTRY_ATTRIBUTE, entry.key);
+        if (loadedIndex === state.index) button.setAttribute("aria-current", "step");
+        const number = entry.position === null ? loadedIndex + 1 : entry.position + 1;
+        button.textContent = `${number}. ${turnSubtitle(entry.prompt, zh)}`;
+        button.addEventListener("click", () => {
+          collapsePanel();
+          input.onSelect(entry.key);
+        });
+        panel.append(button);
+      });
+      if ((position?.count ?? state.count) > state.count) {
+        const hint = ownerDocument.createElement("p");
+        hint.textContent = zh
+          ? `已加载 ${state.count} / ${position?.count} 轮；向上滚动可加载更早内容`
+          : `${state.count} / ${position?.count} turns loaded. Scroll up to load earlier turns.`;
+        panel.append(hint);
       }
-      if (state.pinned) {
-        prompt.hidden = false;
-        prompt.textContent = state.promptText.slice(0, PROMPT_LINE_MAX_CHARS);
-        prompt.title = zh ? "回到本轮开始" : "Scroll to this turn";
-        expand.setAttribute("aria-label", zh ? "展开完整提示词" : "Show the full prompt");
-        panel.textContent = state.promptText;
-        // Only a prompt the single line actually clipped has anything to expand.
-        // Measured with the chevron gone so the answer cannot depend on itself.
-        expand.hidden = true;
-        const clipped = prompt.scrollWidth > prompt.clientWidth + 1;
-        expand.hidden = !clipped;
-        if (!clipped) collapsePanel();
-        spacer.hidden = true;
-        return;
-      }
-      prompt.hidden = true;
-      prompt.textContent = "";
-      expand.hidden = true;
-      spacer.hidden = false;
-      collapsePanel();
     },
     notify(text) {
       notice.textContent = text;
@@ -229,6 +199,7 @@ export function createTurnHeaderView(
     dispose() {
       if (noticeTimer !== null) clearTimeout(noticeTimer);
       collapsePanel();
+      workspace.remove();
       root.remove();
     },
   };

@@ -19,7 +19,7 @@ const PREVIEW_GAP = 8;
 export interface WorkspaceRowState {
   threadId: string;
   composer: Element;
-  view: { root: HTMLElement; workspace: HTMLElement; core: HTMLElement };
+  view: { root: HTMLElement; workspace: HTMLElement };
   currentKey: string | null;
   filesExpanded: boolean;
   lastWorkspace: string;
@@ -33,10 +33,9 @@ export interface WorkspaceRowPainter {
 }
 
 /**
- * Paints the Turn header's workspace row from the files state: core chip,
- * touched roots behind `+N`, the file disclosure opening downward, and the
- * diff preview beside it. The header decides when to paint and where the
- * Composer is.
+ * Paints the independent Composer workspace dock: core identity, touched roots
+ * behind `+N`, an upward file list and explicitly opened file detail. The turn
+ * header owns the shared lifecycle and supplies layout bounds.
  */
 export function createWorkspaceRowPainter(options: {
   ownerDocument: Document;
@@ -45,6 +44,12 @@ export function createWorkspaceRowPainter(options: {
   chinese(): boolean;
   scheduleFrame(): void;
   syncNativeDiffVisibility(): void;
+  openWorkspacePicker?(input: {
+    projectRoot: string;
+    anchor: HTMLElement;
+    composer: Element;
+    threadId: string;
+  }): void;
 }): WorkspaceRowPainter {
   const { ownerDocument, filesState, preview } = options;
   return {
@@ -56,36 +61,62 @@ export function createWorkspaceRowPainter(options: {
       const signature = [
         snapshotSignature(snapshot, files, null),
         state.filesExpanded,
+        state.view.workspace.clientWidth,
         chinese,
         [...currentTurnPaths].join("\n"),
       ].join("|");
       if (signature === state.lastWorkspace) return;
       state.lastWorkspace = signature;
-      preview.hide();
+      preview.sync(state.composer, state.threadId, files);
       const grouped = groupConversationFilesByRepository(snapshot, files);
       if (grouped.unresolved.length > 0) {
         filesState.requestExtraPaths(state.threadId, grouped.unresolved);
       }
-      // Without changed files the workspace is one short chip: it rides in the
-      // Turn row so the header stays a single line, which is the whole point of
-      // "collapse to one row and expand on demand".
-      const compact = files.length === 0;
-      const host = compact ? state.view.core : state.view.workspace;
-      state.view.workspace.replaceChildren();
-      state.view.core.replaceChildren();
-      state.view.core.hidden = true;
+      const host = state.view.workspace;
+      const expandedRoots = new Set(
+        [
+          ...host.querySelectorAll<HTMLElement>(
+            '[data-codexhost-workspace-row][aria-expanded="true"]',
+          ),
+        ].map((entry) => entry.getAttribute("data-codexhost-workspace-root")),
+      );
+      const moreExpanded =
+        host.querySelector(`[${WORKSPACE_MORE_ATTRIBUTE}]`)?.getAttribute("aria-expanded") ===
+        "true";
+      const previousManage = host.querySelector<HTMLButtonElement>(
+        "[data-codexhost-workspace-manage]",
+      );
+      const focusedFile = host.contains(ownerDocument.activeElement)
+        ? (ownerDocument.activeElement?.getAttribute("data-codexhost-workspace-file") ?? null)
+        : null;
+      host.replaceChildren();
+      host.setAttribute(TURN_HEADER_WORKSPACE_ATTRIBUTE, "ready");
       if (grouped.groups.length === 0 && files.length === 0) {
-        state.view.workspace.setAttribute(TURN_HEADER_WORKSPACE_ATTRIBUTE, "empty");
+        host.textContent = chinese ? "工作区信息暂不可用" : "Workspace information unavailable";
         options.syncNativeDiffVisibility();
         return;
       }
-      state.view.workspace.setAttribute(
-        TURN_HEADER_WORKSPACE_ATTRIBUTE,
-        compact ? "empty" : "files",
-      );
-      state.view.core.hidden = !compact;
       const chips = renderWorkspaceChips(ownerDocument, grouped.groups, chinese);
       host.append(chips);
+      const core = grouped.groups.find((group) => group.core)?.repository;
+      if (core && options.openWorkspacePicker) {
+        const manage = previousManage ?? ownerDocument.createElement("button");
+        manage.type = "button";
+        manage.className = "codexhost-workspace-manage";
+        manage.setAttribute("data-codexhost-workspace-manage", "true");
+        manage.textContent = chinese ? "工作树 ▾" : "Worktrees ▾";
+        manage.setAttribute("aria-haspopup", "menu");
+        manage.title = chinese ? "管理工作树" : "Manage worktrees";
+        if (!previousManage) manage.setAttribute("aria-expanded", "false");
+        manage.onclick = () =>
+          options.openWorkspacePicker?.({
+            projectRoot: core.primaryRoot ?? core.root,
+            anchor: manage,
+            composer: state.composer,
+            threadId: state.threadId,
+          });
+        host.append(manage);
+      }
       if (files.length > 0) {
         host.append(
           renderFileDisclosure({
@@ -100,25 +131,42 @@ export function createWorkspaceRowPainter(options: {
               state.lastWorkspace = "";
               options.scheduleFrame();
             },
-            onPreview: (file, row, list) => {
+            onPreview: (file, row) => {
               preview.show({
                 file,
                 row,
-                list,
-                composerTop: state.composer.getBoundingClientRect().top,
-                minTop: state.view.root.getBoundingClientRect().bottom + PREVIEW_GAP,
+                threadId: state.threadId,
+                owner: state.composer,
+                bounds: () => ({
+                  composerTop: state.view.workspace.getBoundingClientRect().top,
+                  minTop: state.view.root.getBoundingClientRect().bottom + PREVIEW_GAP,
+                }),
+                onOpen: () => openConversationFile(ownerDocument, file),
+                restoreFocus: () => {
+                  const target = [
+                    ...host.querySelectorAll<HTMLElement>("[data-codexhost-workspace-file]"),
+                  ].find(
+                    (entry) => entry.getAttribute("data-codexhost-workspace-file") === file.path,
+                  );
+                  (target ?? host.querySelector<HTMLElement>("button"))?.focus({
+                    preventScroll: true,
+                  });
+                },
                 chinese,
               });
-            },
-            onPreviewLeave: () => preview.scheduleHide(),
-            onOpen: (file) => {
-              preview.hide();
-              openConversationFile(ownerDocument, file);
             },
           }),
         );
       }
       fitWorkspaceChips(chips);
+      for (const entry of host.querySelectorAll<HTMLElement>("[data-codexhost-workspace-row]")) {
+        if (expandedRoots.has(entry.getAttribute("data-codexhost-workspace-root"))) {
+          entry.setAttribute("aria-expanded", "true");
+          entry.querySelector(".codexhost-workspace-detail")?.setAttribute("aria-hidden", "false");
+        }
+      }
+      if (moreExpanded)
+        host.querySelector(`[${WORKSPACE_MORE_ATTRIBUTE}]`)?.setAttribute("aria-expanded", "true");
       const list = host.querySelector<HTMLElement>(".codexhost-workspace-files-list");
       if (list) {
         const room = Math.max(
@@ -127,11 +175,18 @@ export function createWorkspaceRowPainter(options: {
         );
         list.style.maxHeight = `min(300px, 42vh, ${Math.round(room)}px)`;
       }
+      if (focusedFile !== null) {
+        [...host.querySelectorAll<HTMLElement>("[data-codexhost-workspace-file]")]
+          .find((entry) => entry.getAttribute("data-codexhost-workspace-file") === focusedFile)
+          ?.focus({ preventScroll: true });
+      }
       options.syncNativeDiffVisibility();
     },
     collapse(state) {
-      for (const host of [state.view.workspace, state.view.core]) {
-        for (const more of host.querySelectorAll(`[${WORKSPACE_MORE_ATTRIBUTE}]`)) {
+      for (const host of [state.view.workspace]) {
+        for (const more of host.querySelectorAll(
+          `[${WORKSPACE_MORE_ATTRIBUTE}], [data-codexhost-workspace-row]`,
+        )) {
           more.setAttribute("aria-expanded", "false");
         }
       }

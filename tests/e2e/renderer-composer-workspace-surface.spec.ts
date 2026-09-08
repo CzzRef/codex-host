@@ -47,7 +47,7 @@ const { outputFiles } = await build({
       const turnSpecs = [
         ["turn-a", 320, "first prompt"],
         ["turn-b", 320, "second prompt"],
-        ["turn-c", 600, "third prompt"],
+        ["turn-c", 600, "这里是历史背景。请保持文件详情打开；滚动和切换轮次后仍可复制内容。"],
       ];
       // Desktop stamps data-turn-key on its paginated-history gap placeholder too.
       const gap = document.createElement("div");
@@ -137,9 +137,16 @@ const { outputFiles } = await build({
       review.textContent = "Review";
       review.style.width = "80px";
       review.style.height = "24px";
-      scroller.append(column, parent);
+      const surface = document.createElement("div");
+      surface.style.cssText = "position:relative;width:640px;height:560px;margin-top:44px";
+      scroller.style.marginTop = "0";
+      scroller.append(column);
+      surface.append(scroller, parent);
       document.body.style.margin = "0";
-      document.body.append(chrome, scroller, branch, runLocation, changes, review);
+      document.body.style.color = "#eee";
+      document.body.style.background = "#111";
+      document.body.style.fontFamily = "system-ui, sans-serif";
+      document.body.append(chrome, surface, branch, runLocation, changes, review);
       const turnElement = (key) => document.querySelector('[data-turn-key="history-content:turn:' + key + '"]');
       // column-reverse: scrollTop is 0 at the bottom and negative above it, so
       // the helpers only ever use clamped absolute targets or relative deltas.
@@ -173,7 +180,7 @@ const { outputFiles } = await build({
         select: () => false,
         selectWorkspace(selection) {
           globalThis.__workspaceSelections.push(selection ? selection.cwd : null);
-          return true;
+          return globalThis.__rejectWorkspaceSelection !== true;
         },
         draftCwd: () => null,
         clear: async () => undefined,
@@ -218,7 +225,7 @@ const { outputFiles } = await build({
               history: inspection.capabilities.history,
               historyRedoAvailable: false,
               rollback: { lastTurn: true, multiTurn: false },
-              turnIds: ["turn-a", "turn-b", "turn-c"],
+              turnIds: params.threadId === "thread-windowed" ? ["older", "turn-a", "turn-b", "turn-c", "later"] : ["turn-a", "turn-b", "turn-c"],
               locked: true,
               threadId: params.threadId,
             };
@@ -246,7 +253,7 @@ const { outputFiles } = await build({
                 ]
               : [];
             return {
-            threadId,
+            threadId: params.threadId,
             cwd: "/workspace/app",
             repositories: [
               ...external,
@@ -366,6 +373,33 @@ const { outputFiles } = await build({
         if (!fileListener) throw new Error("File-change listener is unavailable");
         fileListener({ threadId, itemId: "item-b", files: [], turnId: "turn-b" });
       };
+      const newThread = document.createElement("button");
+      newThread.setAttribute("aria-label", "New thread");
+      newThread.textContent = "New thread";
+      newThread.addEventListener("click", () => {
+        globalThis.__newThreadClicks = (globalThis.__newThreadClicks ?? 0) + 1;
+        // A native navigation is asynchronous; no cwd selection may happen yet.
+        setTimeout(() => {
+          if (globalThis.__replaceComposerOnNew) {
+            const unrelated = composer.cloneNode(true);
+            unrelated.querySelector("[data-above-composer-portal]").setAttribute("data-above-composer-conversation-id", "");
+            composer.replaceWith(unrelated);
+          } else portal.setAttribute("data-above-composer-conversation-id", "");
+          modeOwner.memoizedProps.conversationId = null;
+          modeOwner.memoizedProps.composerMode = "local";
+          branch.remove(); // The new draft also exercises missing-branch fallback.
+          runLocation.setAttribute("title", "new draft ready");
+        }, 100);
+      });
+      document.body.append(newThread);
+      globalThis.restoreOriginalComposer = () => {
+        parent.querySelector("[data-codex-composer-root]")?.replaceWith(composer);
+        portal.setAttribute("data-above-composer-conversation-id", "thread-windowed");
+        modeOwner.memoizedProps.conversationId = "thread-windowed";
+        document.body.append(branch);
+        runLocation.setAttribute("title", "restored original thread");
+      };
+      globalThis.switchRenderedThread = (next) => portal.setAttribute("data-above-composer-conversation-id", next);
       globalThis.disposeBinding = () => binding.dispose();
       } catch (error) {
         globalThis.__e2eError = error instanceof Error ? error.stack : String(error);
@@ -444,8 +478,8 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   // has passed under the header.
   await page.evaluate("globalThis.scrollTranscriptToTop()");
   // The gap placeholder is not a Turn: three Turns, and the first real Turn is current.
-  await expect(headerIndex).toHaveText("Turn 1/3");
-  await expect(headerPrompt).toBeHidden();
+  await expect(headerIndex).toHaveText("1 / 3 ▾");
+  await expect(headerPrompt).toBeVisible();
   const firstTurnBox = await page
     .locator('[data-turn-key="history-content:turn:turn-a"]')
     .boundingBox();
@@ -456,21 +490,21 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
     /only roll back its last turn; 2 turns follow/,
   );
   await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 8)");
-  await expect(headerIndex).toHaveText("Turn 2/3");
-  await expect(headerPrompt).toBeHidden();
+  await expect(headerIndex).toHaveText("2 / 3 ▾");
+  await expect(headerPrompt).toBeVisible();
   // Under the header but still inside the viewport: the bubble reads for itself
   // through Desktop's transparent chrome, so the header must not repeat it.
   await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 60)");
-  await expect(headerIndex).toHaveText("Turn 2/3");
-  await expect(headerPrompt).toBeHidden();
+  await expect(headerIndex).toHaveText("2 / 3 ▾");
+  await expect(headerPrompt).toBeVisible();
   await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 200)");
-  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(headerIndex).toHaveText("2 / 3 ▾");
   await expect(headerPrompt).toHaveText("second prompt");
   expect(await header.boundingBox()).toEqual(headerBox);
   // Clicking the prompt returns to this Turn's start and stays on this Turn.
   await headerPrompt.click();
   await page.waitForTimeout(800);
-  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(headerIndex).toHaveText("2 / 3 ▾");
   expect(
     await page.evaluate(() => {
       const node = document.querySelector('[data-turn-key="history-content:turn:turn-b"]');
@@ -480,6 +514,16 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
     }),
   ).toBe(8);
   await page.evaluate("globalThis.scrollTurnUnderHeader('turn-b', 200)");
+  await headerIndex.click();
+  const turnMenu = page.locator("[data-codexhost-turn-header-panel]");
+  await expect(turnMenu).toBeVisible();
+  await expect(turnMenu.locator("[data-codexhost-turn-header-entry]")).toHaveCount(3);
+  await turnMenu.getByRole("button", { name: "1. first prompt", exact: true }).click();
+  await expect(headerIndex).toHaveText("1 / 3 ▾");
+  await headerIndex.click();
+  await turnMenu.getByRole("button", { name: "2. second prompt", exact: true }).click();
+  await expect(headerIndex).toHaveText("2 / 3 ▾");
+  await page.waitForTimeout(800);
   // One later Turn on a last-turn-only Thread: rollback is offered behind a confirmation.
   await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeEnabled();
   await page.locator('[data-codexhost-turn-action="rollback"]').click();
@@ -487,8 +531,8 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await page.keyboard.press("Escape");
   await expect(page.locator("[data-codexhost-turn-confirm]")).toHaveCount(0);
   await page.evaluate("globalThis.scrollTurnUnderHeader('turn-c', 200)");
-  await expect(headerIndex).toHaveText("Turn 3/3");
-  await expect(headerPrompt).toHaveText("third prompt");
+  await expect(headerIndex).toHaveText("3 / 3 ▾");
+  await expect(headerPrompt).toHaveText("保持文件详情打开");
   // Redo is disabled until the Host reports a Redo slot.
   await expect(page.locator('[data-codexhost-turn-action="redo"]')).toBeDisabled();
   await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeDisabled();
@@ -509,8 +553,13 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(page.locator("[data-codexhost-turn-confirm]")).toContainText(
     "this turn and the later ones are dropped",
   );
+  await expect(page.locator("[data-codexhost-turn-confirm]")).toContainText(
+    "这里是历史背景。请保持文件详情打开；滚动和切换轮次后仍可复制内容。",
+  );
   await page.locator("[data-codexhost-turn-confirm] .codexhost-overlay-primary").click();
-  await expect(editorForEdit).toContainText("third prompt");
+  await expect(editorForEdit).toContainText(
+    "这里是历史背景。请保持文件详情打开；滚动和切换轮次后仍可复制内容。",
+  );
   await expect(page.locator(".codexhost-turn-notice")).toContainText("placed in the Composer");
   await editorForEdit.evaluate((node) => {
     node.textContent = "";
@@ -525,13 +574,13 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await page.evaluate("globalThis.setNativeEdit('turn-c', false)");
   await expect(header).toHaveAttribute("data-native-edit", "false");
   await expect(header.locator("[data-codexhost-turn-actions]")).toBeVisible();
-  await expect(headerPrompt).toHaveText("third prompt");
+  await expect(headerPrompt).toHaveText("保持文件详情打开");
   // Following the viewport across Turns never re-inspects the Thread.
   expect(await page.evaluate("globalThis.__threadInspectCalls")).toBe(inspectCallsAfterEdit);
   // With the transcript end in view the last Turn is current and its prompt is pinned.
   await page.evaluate("globalThis.scrollTranscriptToBottom()");
-  await expect(headerIndex).toHaveText("Turn 3/3");
-  await expect(headerPrompt).toHaveText("third prompt");
+  await expect(headerIndex).toHaveText("3 / 3 ▾");
+  await expect(headerPrompt).toHaveText("保持文件详情打开");
   // The arrows step the current Turn explicitly, so an earlier Turn can be
   // targeted even when the transcript cannot scroll; a real scroll hands the
   // choice back to the viewport.
@@ -539,77 +588,56 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   const stepNext = header.locator('[data-codexhost-turn-header-step="next"]');
   await expect(stepNext).toBeDisabled();
   await stepPrev.click();
-  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(headerIndex).toHaveText("2 / 3 ▾");
   await expect(page.locator('[data-codexhost-turn-action="rollback"]')).toBeEnabled();
   await stepPrev.click();
-  await expect(headerIndex).toHaveText("Turn 1/3");
+  await expect(headerIndex).toHaveText("1 / 3 ▾");
   await expect(stepPrev).toBeDisabled();
   await stepNext.click();
-  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(headerIndex).toHaveText("2 / 3 ▾");
   // The override expires after 600ms; the viewport rule must agree with it,
   // or the arrows would silently snap back and look dead.
   await page.waitForTimeout(800);
-  await expect(headerIndex).toHaveText("Turn 2/3");
+  await expect(headerIndex).toHaveText("2 / 3 ▾");
   await page.evaluate("globalThis.scrollTranscriptToBottom()");
-  await expect(headerIndex).toHaveText("Turn 3/3");
+  await expect(headerIndex).toHaveText("3 / 3 ▾");
 
-  // The workspace row lives in the header: nothing floats above the Composer any more.
-  const workspace = header.locator("[data-codexhost-turn-header-workspace]");
-  const coreSlot = header.locator("[data-codexhost-turn-header-core]");
-  await expect(page.locator("[data-codexhost-workspace-bar]")).toHaveCount(0);
-  await expect(page.locator("[data-codexhost-workspace-reserve]")).toHaveCount(0);
+  // The workspace participates in the Composer layout and survives turn changes.
+  const workspace = page.locator("[data-codexhost-turn-header-workspace]");
   const nativeChanges = page.locator('[data-slot="thread-summary-panel-item-button"]');
   const nativeReview = page.locator('[data-tab-id="diff"]');
   const composer = page.locator("[data-codex-composer-root]");
-  // The core workspace chip is always present once the Host knows the cwd, but
-  // with nothing changed it rides in the Turn row and the header stays a single
-  // line; native diff controls stay until the row has a file disclosure to
-  // replace them with.
-  await expect(workspace).toHaveAttribute("data-codexhost-turn-header-workspace", "empty");
-  await expect(workspace).toBeHidden();
-  await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
+  await expect(workspace).toBeVisible();
+  expect(
+    await workspace.evaluate((node) =>
+      node.nextElementSibling?.hasAttribute("data-codex-composer-root"),
+    ),
+  ).toBe(true);
   await expect(page.locator('[data-codexhost-workspace-core="true"]')).toContainText("app-feature");
-  // The chip is clipped to keep one line, so hovering must reveal the full root.
   const coreDetail = page.locator(
     '[data-codexhost-workspace-core="true"] .codexhost-workspace-detail',
   );
-  await expect(coreDetail).toHaveCount(1);
+  await expect(coreDetail).toBeHidden();
+  await page.locator('[data-codexhost-workspace-core="true"]').click();
+  await expect(coreDetail).toBeVisible();
   await expect(coreDetail).toContainText("/workspace/app");
-  // A native `title` would shadow it with the OS tooltip's ~1s delay.
-  expect(
-    await page
-      .locator('[data-codexhost-workspace-core="true"]')
-      .evaluate((node) => node.getAttribute("title")),
-  ).toBeNull();
-  await expect(page.locator("[data-codexhost-workspace-files]")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(coreDetail).toBeHidden();
   await expect(nativeChanges).toBeVisible();
   await expect(nativeReview).toBeVisible();
-  // Without a pinned prompt the chip fills the row, so the header is never
-  // an empty strip; with one, the chip steps aside and the prompt takes it.
   const headerSingleRow = await header.boundingBox();
   await page.evaluate("globalThis.scrollTurnUnderHeader('turn-c', 8)");
-  await expect(headerPrompt).toBeHidden();
-  await expect(header).toHaveAttribute("data-pinned", "false");
-  await expect(coreSlot).toBeVisible();
-  // Hovering the clipped chip reveals the full root, worktree and branch.
-  const detailOpacity = () =>
-    coreDetail.evaluate((node) => {
-      const view = node.ownerDocument.defaultView;
-      return view ? Number.parseFloat(view.getComputedStyle(node).opacity) : -1;
-    });
-  expect(await detailOpacity()).toBe(0);
-  await page.locator('[data-codexhost-workspace-core="true"]').hover();
-  await expect.poll(detailOpacity).toBe(1);
+  await expect(workspace).toBeVisible();
   await page.evaluate("globalThis.scrollTranscriptToBottom()");
-  await expect(headerPrompt).toHaveText("third prompt");
-  await expect(header).toHaveAttribute("data-pinned", "true");
-  await expect(coreSlot).toBeHidden();
+  await expect(workspace).toBeInViewport();
   expect((await header.boundingBox())?.height).toBe(headerSingleRow?.height);
+  const dockBox = await workspace.boundingBox();
+  const inputBox = await composer.boundingBox();
+  expect(dockBox && inputBox && dockBox.y + dockBox.height <= inputBox.y).toBe(true);
 
   await page.evaluate("globalThis.emitWorkspaceFiles()");
-  await expect(workspace).toHaveAttribute("data-codexhost-turn-header-workspace", "files");
+  await expect(workspace).toHaveAttribute("data-codexhost-turn-header-workspace", "ready");
   await expect(workspace).toBeVisible();
-  await expect(coreSlot).toBeHidden();
   // The second row costs exactly one line, and only once there is a change.
   const headerBoxWithFiles = await header.boundingBox();
   await expect(page.locator("[data-codexhost-workspace-row]")).toHaveCount(1);
@@ -649,39 +677,32 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
       fileListBox &&
       Math.abs(fileListBox.x + fileListBox.width - (headerBoxOpen.x + headerBoxOpen.width)) <= 12,
   ).toBe(true);
-  // The current Turn's files are tagged; src/bar.ts belongs to turn-a, not turn-c.
   await expect(fileRow).not.toHaveAttribute("data-codexhost-workspace-turn-file", "true");
-  await fileRow.hover();
   const preview = page.locator("[data-codexhost-workspace-preview]");
+  await fileRow.hover();
+  await expect(preview).toBeHidden();
+  await fileRow.click();
   await expect(preview).toBeVisible();
   await expect(preview).toContainText("+keep");
   await expect(preview).toContainText("src/bar.ts");
-  // The preview sits beside the list (never over it), under the header and above the Composer.
   const previewBox = await preview.boundingBox();
   const composerBox = await composer.boundingBox();
-  expect(
-    previewBox &&
-      fileListBox &&
-      (previewBox.x + previewBox.width <= fileListBox.x ||
-        previewBox.x >= fileListBox.x + fileListBox.width),
-  ).toBe(true);
   expect(
     previewBox && headerBoxOpen && previewBox.y >= headerBoxOpen.y + headerBoxOpen.height,
   ).toBe(true);
   expect(previewBox && composerBox && previewBox.y + previewBox.height <= composerBox.y).toBe(true);
-  // Moving the pointer into the preview keeps it (interactive, scrollable).
-  await preview.hover();
-  await page.waitForTimeout(250);
+  await page.evaluate("globalThis.scrollTranscriptToTop()");
+  await expect(preview).toBeVisible();
+  await page.evaluate("globalThis.scrollTranscriptToBottom()");
   await expect(preview).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(preview).toBeHidden();
-  await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
-  await page.locator(".codexhost-workspace-files-toggle").click();
-  await fileRow.hover();
+  await expect(fileRow).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(preview).toBeVisible();
-  await fileRow.click();
-  await expect(preview).toBeHidden();
+  await preview.getByRole("button", { name: "Open file", exact: true }).click();
   await expect.poll(async () => page.evaluate("globalThis.__changesClicks ?? 0")).toBe(1);
+  await expect(preview).toBeHidden();
 
   // A file outside every inspected root is resolved through the Host
   // (`extraPaths`) into an `external` chip; a 0-line file adds no root; the
@@ -701,8 +722,7 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(page.locator("[data-codexhost-workspace-files]")).toContainText("1 file changed");
   // Scrolling to turn-a makes its file the current Turn's and tags it first.
   await page.evaluate("globalThis.scrollTranscriptToTop()");
-  await expect(headerIndex).toHaveText("Turn 1/3");
-  await page.locator(".codexhost-workspace-files-toggle").click();
+  await expect(headerIndex).toHaveText("1 / 3 ▾");
   await expect(page.locator('[data-codexhost-workspace-file="src/bar.ts"]')).toHaveAttribute(
     "data-codexhost-workspace-turn-file",
     "true",
@@ -710,10 +730,10 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(page.locator('[data-codexhost-workspace-file="src/bar.ts"]')).toContainText(
     "this turn",
   );
-  // Scrolling the transcript closes the list again.
+  // Scrolling keeps the file list available.
   await page.evaluate("globalThis.scrollTranscriptToBottom()");
-  await expect(page.locator("[data-codexhost-workspace-file]")).toBeHidden();
-  await expect(headerIndex).toHaveText("Turn 3/3");
+  await expect(page.locator("[data-codexhost-workspace-file]")).toBeVisible();
+  await expect(headerIndex).toHaveText("3 / 3 ▾");
 
   // Many touched roots collapse to one line behind `+N`; hover previews the
   // hidden chips, click pins the list, and the header keeps its height.
@@ -735,11 +755,10 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect.poll(() => visibleRows.count()).toBeLessThanOrEqual(visibleAtFullWidth);
   await expect(page.locator('[data-codexhost-workspace-core="true"]')).toBeVisible();
   expect((await header.boundingBox())?.height).toBe(headerBoxWithFiles?.height);
-  await more.hover();
+  await more.click();
   await expect(page.locator(".codexhost-workspace-more-list")).toBeVisible();
   await expect(page.locator("[data-codexhost-workspace-more-row]").first()).toBeVisible();
   expect((await header.boundingBox())?.height).toBe(headerBoxWithFiles?.height);
-  await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
   await expect(more).toHaveAttribute("aria-expanded", "false");
@@ -772,6 +791,23 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await expect(option("260901-existing")).toContainText("uncommitted changes");
   // The primary checkout is not listed twice: "Local" already means it.
   await expect(option("source")).toHaveCount(0);
+  await expect(option("260901-existing")).toContainText(
+    "/workspace/source-worktrees/codex/260901-existing",
+  );
+  await expect(menu.locator(".codexhost-draft-worktree-current")).toContainText(
+    "/workspace/source",
+  );
+  await menu.getByRole("menuitem", { name: "Refresh worktrees", exact: true }).click();
+  await expect(option("260901-existing")).toBeVisible();
+  // A rejected draft policy never claims that the chosen worktree is active.
+  await page.evaluate("globalThis.__rejectWorkspaceSelection = true");
+  await option("260901-existing").click();
+  await expect(menu).toBeVisible();
+  await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "local");
+  await expect(menu.locator(".codexhost-draft-worktree-error")).toBeVisible();
+  await page.evaluate(
+    "globalThis.__rejectWorkspaceSelection = false; globalThis.__workspaceSelections = []",
+  );
   // Picking an existing worktree keeps Desktop on Local and routes cwd through the policy.
   await option("260901-existing").click();
   await expect(menu).toHaveCount(0);
@@ -783,7 +819,11 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   // that is what started Threads in the project root instead of the worktree.
   await page.evaluate(() => {
     const owner = document.querySelector('[data-composer-navigation-target="run-location"]');
-    const fiber = owner as unknown as { __reactFiber$fixture?: { return?: { memoizedProps?: { setComposerMode?: (mode: string) => void } } } };
+    const fiber = owner as unknown as {
+      __reactFiber$fixture?: {
+        return?: { memoizedProps?: { setComposerMode?: (mode: string) => void } };
+      };
+    };
     fiber.__reactFiber$fixture?.return?.memoizedProps?.setComposerMode?.("worktree");
   });
   await page.waitForTimeout(600);
@@ -894,9 +934,94 @@ test("Composer shows a compact changed-files workspace surface, draft worktree p
   await editor.press("Tab");
   await expect(editor).toContainText("现在是第二段");
 
+  // A different thread owns its own files; old-thread events cannot populate it.
+  await page.locator(".codexhost-workspace-files-toggle").click();
+  await page.locator('[data-codexhost-workspace-file="src/bar.ts"]').click();
+  await expect(preview).toBeVisible();
+  await expect(page.locator(".codexhost-turn-notice")).toBeHidden({ timeout: 5000 });
+  await page.screenshot({ path: test.info().outputPath("workspace-redesign-wide.png") });
+  await page.evaluate("globalThis.switchRenderedThread('thread-windowed')");
+  await expect(header).toHaveAttribute("data-codexhost-turn-header", "thread-windowed");
+  await expect(preview).toBeHidden();
+  await expect(workspace.locator("[data-codexhost-workspace-files]")).toHaveCount(0);
+  await page.evaluate("globalThis.emitWorkspaceFiles()");
+  await expect(workspace.locator("[data-codexhost-workspace-files]")).toHaveCount(0);
+  await headerIndex.click();
+  await expect(turnMenu).toBeVisible();
+  await expect(turnMenu.locator("[data-codexhost-turn-header-entry]")).toHaveCount(3);
+  await expect(turnMenu).toContainText("3 / 5 turns loaded");
+  await turnMenu.getByRole("button", { name: "3. second prompt", exact: true }).click();
+  await expect(headerIndex).toHaveText("3 / 5 ▾");
+  await expect(headerPrompt).toHaveText("second prompt");
+  await headerIndex.click();
+  await expect(turnMenu).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("workspace-redesign-turns.png") });
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    document.documentElement.classList.add("light");
+    document.body.style.background = "white";
+    document.body.style.color = "#222";
+    (document.querySelector("#transcript") as HTMLElement).style.background = "#f7f7f7";
+  });
+  await expect(header).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(workspace).toBeVisible();
+  await setComposerWidth("300px");
+  await expect(workspace).toBeInViewport();
+  await page.screenshot({ path: test.info().outputPath("workspace-redesign-light-narrow.png") });
+  // Current-conversation management opens a new native draft before setting cwd.
+  await setDraftConversation("thread-windowed");
+  const selectionsBeforeManage = await selections();
+  await page.locator("[data-codexhost-workspace-manage]").click();
+  await expect(menu).toBeVisible();
+  await expect(menu).toContainText("new conversation");
+  await page
+    .getByRole("button", { name: "New thread", exact: true })
+    .evaluate((node) => ((node as HTMLButtonElement).disabled = true));
+  await option("260901-existing").click();
+  await expect(menu.locator(".codexhost-draft-worktree-error")).toContainText(
+    "native new-conversation control is unavailable",
+  );
+  expect(await selections()).toEqual(selectionsBeforeManage);
+  await page
+    .getByRole("button", { name: "New thread", exact: true })
+    .evaluate((node) => ((node as HTMLButtonElement).disabled = false));
+  await page.evaluate("globalThis.__replaceComposerOnNew = true");
+  await option("260901-existing").click();
+  await expect.poll(() => page.evaluate("globalThis.__newThreadClicks ?? 0")).toBe(1);
+  await expect(picker).toBeVisible();
+  await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "local");
+  expect(await selections()).toEqual(selectionsBeforeManage);
+  await page.evaluate(
+    "globalThis.restoreOriginalComposer(); globalThis.__replaceComposerOnNew = false",
+  );
+  await expect(page.locator("[data-codexhost-workspace-manage]")).toBeVisible();
+  const selectionsBeforeVerifiedDraft = await selections();
+  await page.locator("[data-codexhost-workspace-manage]").click();
+  await option("260901-existing").click();
+  await expect.poll(() => page.evaluate("globalThis.__newThreadClicks ?? 0")).toBe(2);
+  await expect(picker).toBeVisible();
+  await expect(picker).toHaveAttribute("data-codexhost-draft-worktree-kind", "worktree");
+  await expect(picker).toContainText("260901-existing");
+  expect(await selections()).toEqual([
+    ...(selectionsBeforeVerifiedDraft as string[]),
+    "/workspace/source-worktrees/codex/260901-existing",
+  ]);
+  expect(
+    await picker.evaluate((node) =>
+      node.previousElementSibling?.hasAttribute("data-codex-composer-root"),
+    ),
+  ).toBe(true);
+  await expect(header).toHaveCount(0);
   await page.evaluate("globalThis.disposeBinding()");
   await expect(nativeChanges).toBeVisible();
   await expect(nativeReview).toBeVisible();
   await expect(header).toHaveCount(0);
   await expect(page.locator("[data-codexhost-transcript-reserve]")).toHaveCount(0);
+  expect(
+    await page
+      .locator("#transcript > div")
+      .first()
+      .evaluate((node) => (node as HTMLElement).style.paddingBottom),
+  ).toBe("120px");
+  await expect(workspace).toHaveCount(0);
 });

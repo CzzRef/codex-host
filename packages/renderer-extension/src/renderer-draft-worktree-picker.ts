@@ -3,6 +3,8 @@ import {
   type WorkspaceWorktreeListResult,
 } from "@codexhost/shared-contracts";
 
+import { OVERLAY_ROOT_SELECTOR } from "./renderer-overlay-layout.js";
+import { threadIdForComposer, visibleComposers } from "./renderer-thread-composer.js";
 import type { RendererModelClient } from "./renderer-model-client.js";
 import type { RendererDraftPrewarmPolicy } from "./versioned-renderer-adapter.js";
 
@@ -47,12 +49,16 @@ const PATH_PROP_NESTED_KEYS = [
 type DraftWorktreeMode = "local" | "worktree";
 
 export type DraftWorktreeSelection =
-  | { kind: "local" }
-  | { kind: "desktop" }
-  | { kind: "worktree"; root: string; name: string };
+  { kind: "local" } | { kind: "desktop" } | { kind: "worktree"; root: string; name: string };
 
 export interface RendererDraftWorktreePicker {
   refresh(): void;
+  openForWorkspace(input: {
+    projectRoot: string;
+    anchor: HTMLElement;
+    composer: Element;
+    threadId: string;
+  }): void;
   dispose(): void;
 }
 
@@ -417,6 +423,13 @@ function ensureStyle(ownerDocument: Document): void {
       color: #dc2626;
       white-space: normal;
     }
+    [${DRAFT_WORKTREE_MENU_ATTRIBUTE}] .codexhost-draft-worktree-current {
+      padding: 8px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      opacity: 0.72;
+      font-size: 11px;
+    }
     [${DRAFT_WORKTREE_MENU_ATTRIBUTE}] form {
       display: flex;
       gap: 6px;
@@ -492,6 +505,36 @@ export function installRendererDraftWorktreePicker(
   let createError: string | null = null;
   let createOpen = false;
   let notice: string | null = null;
+  let browsing: {
+    projectRoot: string;
+    anchor: HTMLElement;
+    composer: Element;
+    threadId: string;
+  } | null = null;
+  let pendingDraft: {
+    selection: DraftWorktreeSelection;
+    composer: Element;
+    threadId: string;
+  } | null = null;
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearPendingDraft = (): void => {
+    pendingDraft = null;
+    if (draftTimer !== null) clearTimeout(draftTimer);
+    draftTimer = null;
+  };
+  const newThreadControl = (): HTMLButtonElement | null => {
+    const candidates = [...root.querySelectorAll<HTMLButtonElement>("button")].filter(
+      (button) =>
+        !button.disabled &&
+        !button.closest(OVERLAY_ROOT_SELECTOR) &&
+        !button.closest(`[${DRAFT_WORKTREE_MENU_ATTRIBUTE}]`) &&
+        button.getClientRects().length > 0 &&
+        /^(?:new (?:thread|chat|task|conversation)|新建(?:任务|对话)|新对话|新任务)$/iu.test(
+          (button.getAttribute("aria-label") ?? "").trim(),
+        ),
+    );
+    return candidates.length === 1 ? (candidates[0] ?? null) : null;
+  };
 
   const copy = (): PickerCopy => pickerCopy(chineseLocale(documentNode));
 
@@ -502,6 +545,7 @@ export function installRendererDraftWorktreePicker(
   };
 
   const currentProjectRoot = (binding: DraftWorktreeModeBinding | null): string | null => {
+    if (browsing) return browsing.projectRoot;
     if (binding?.projectRoot) return binding.projectRoot;
     if (selection.kind === "worktree" && list) return list.root;
     const observed = policyOf()?.draftCwd?.();
@@ -512,8 +556,7 @@ export function installRendererDraftWorktreePicker(
     const policy = policyOf();
     if (!policy?.selectWorkspace) return cwd === null;
     try {
-      policy.selectWorkspace(cwd === null ? null : { cwd });
-      return true;
+      return policy.selectWorkspace(cwd === null ? null : { cwd });
     } catch {
       return false;
     }
@@ -581,7 +624,12 @@ export function installRendererDraftWorktreePicker(
       renderMenu();
       return;
     }
-    const state: WorktreeListState = { root: projectRoot, status: "loading", result: null, error: null };
+    const state: WorktreeListState = {
+      root: projectRoot,
+      status: "loading",
+      result: null,
+      error: null,
+    };
     list = state;
     renderMenu();
     const listWorktrees = client.listWorkspaceWorktrees.bind(client);
@@ -600,6 +648,47 @@ export function installRendererDraftWorktreePicker(
   };
 
   const choose = (next: DraftWorktreeSelection, binding: DraftWorktreeModeBinding | null): void => {
+    if (browsing) {
+      if (
+        !browsing.composer.isConnected ||
+        threadIdForComposer(browsing.composer) !== browsing.threadId
+      ) {
+        closeMenu();
+        clearPendingDraft();
+        return;
+      }
+      const start = newThreadControl();
+      if (!start || next.kind === "desktop") {
+        notice = chineseLocale(documentNode)
+          ? "无法定位应用的新对话入口，请先新建对话，再选择此工作树"
+          : "Open a new conversation in the app, then choose this worktree; its native new-conversation control is unavailable";
+        renderMenu();
+        return;
+      }
+      const source = browsing;
+      pendingDraft = {
+        composer: source.composer,
+        threadId: source.threadId,
+        selection:
+          next.kind === "local"
+            ? {
+                kind: "worktree",
+                root: source.projectRoot,
+                name:
+                  source.projectRoot.split(/[\\/]/u).filter(Boolean).at(-1) ?? source.projectRoot,
+              }
+            : next,
+      };
+      draftTimer = setTimeout(clearPendingDraft, 10_000);
+      closeMenu();
+      try {
+        start.click();
+      } catch {
+        clearPendingDraft();
+      }
+      scan();
+      return;
+    }
     const current = binding ?? findDraftWorktreeModeBinding(root);
     if (!current) return;
     notice = null;
@@ -611,7 +700,11 @@ export function installRendererDraftWorktreePicker(
       }
       requestMode(current, "local");
     } else {
-      applyWorkspace(null);
+      if (!applyWorkspace(null)) {
+        notice = copy().noHost;
+        renderMenu();
+        return;
+      }
       requestMode(current, next.kind === "desktop" ? "worktree" : "local");
     }
     selection = next;
@@ -631,6 +724,8 @@ export function installRendererDraftWorktreePicker(
       renderMenu();
       return;
     }
+    const sourceMenu = menu;
+    const sourceBrowsing = browsing;
     creating = true;
     createError = null;
     renderMenu();
@@ -642,6 +737,7 @@ export function installRendererDraftWorktreePicker(
         creating = false;
         createOpen = false;
         list = null;
+        if (menu !== sourceMenu || browsing !== sourceBrowsing) return;
         loadList(result.primaryRoot, true);
         choose(
           { kind: "worktree", root: result.worktree.root, name: result.worktree.name },
@@ -660,6 +756,8 @@ export function installRendererDraftWorktreePicker(
     if (!menu) return;
     menu.remove();
     menu = null;
+    browsing?.anchor.setAttribute("aria-expanded", "false");
+    browsing = null;
     chip?.setAttribute("aria-expanded", "false");
     documentNode.removeEventListener("pointerdown", onDocumentPointerDown, true);
     documentNode.removeEventListener("keydown", onDocumentKeyDown, true);
@@ -668,20 +766,24 @@ export function installRendererDraftWorktreePicker(
   const onDocumentPointerDown = (event: Event): void => {
     const target = event.target;
     if (!(target instanceof Node)) return;
-    if (menu?.contains(target) || chip?.contains(target)) return;
+    if (menu?.contains(target) || chip?.contains(target) || browsing?.anchor.contains(target))
+      return;
     closeMenu();
   };
 
   const onDocumentKeyDown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
+      const restore = browsing?.anchor ?? chip;
       closeMenu();
-      chip?.focus();
+      restore?.focus();
+      event.preventDefault();
     }
   };
 
   const placeMenu = (): void => {
-    if (!menu || !chip) return;
-    const rect = chip.getBoundingClientRect();
+    const anchor = browsing?.anchor ?? chip;
+    if (!menu || !anchor) return;
+    const rect = anchor.getBoundingClientRect();
     const viewportHeight = view?.innerHeight ?? documentNode.documentElement.clientHeight;
     const viewportWidth = view?.innerWidth ?? documentNode.documentElement.clientWidth;
     menu.style.left = `${Math.max(8, Math.min(rect.left, viewportWidth - menu.offsetWidth - 8))}px`;
@@ -716,6 +818,15 @@ export function installRendererDraftWorktreePicker(
     meta.className = "codexhost-draft-worktree-meta";
     meta.textContent = hint;
     button.append(name, meta);
+    if (extra?.title) {
+      button.style.flexWrap = "wrap";
+      const directory = documentNode.createElement("span");
+      directory.className = "codexhost-draft-worktree-path";
+      directory.style.cssText =
+        "flex-basis:100%;font-size:10px;opacity:0.65;white-space:normal;overflow-wrap:anywhere;text-align:left";
+      directory.textContent = extra.title;
+      button.append(directory);
+    }
     if (extra?.dirty) {
       const dirty = documentNode.createElement("span");
       dirty.className = "codexhost-draft-worktree-dirty";
@@ -736,14 +847,45 @@ export function installRendererDraftWorktreePicker(
     const binding = findDraftWorktreeModeBinding(root);
     const projectRoot = currentProjectRoot(binding);
     menu.replaceChildren();
+    const workspace = documentNode.createElement("div");
+    workspace.className = "codexhost-draft-worktree-current";
+    const cwd = browsing
+      ? browsing.projectRoot
+      : selection.kind === "worktree"
+        ? selection.root
+        : projectRoot;
+    workspace.textContent = browsing
+      ? chineseLocale(documentNode)
+        ? "选择工作树，在新对话中使用；当前对话目录保持不变"
+        : "Choose a worktree for a new conversation. This conversation keeps its directory."
+      : `${chineseLocale(documentNode) ? "发送目录" : "Send from"}: ${cwd ?? text.noRoot}`;
+    if (projectRoot) {
+      const refresh = documentNode.createElement("button");
+      refresh.type = "button";
+      refresh.setAttribute("role", "menuitem");
+      refresh.textContent = chineseLocale(documentNode) ? "刷新工作树" : "Refresh worktrees";
+      refresh.disabled = creating || list?.status === "loading";
+      refresh.addEventListener("click", () => loadList(projectRoot, true));
+      workspace.append(refresh);
+    }
+    menu.append(workspace);
 
     menu.append(
-      optionButton(text, text.local, text.localHint, selection.kind === "local", () =>
-        choose({ kind: "local" }, binding),
+      optionButton(
+        text,
+        text.local,
+        text.localHint,
+        !browsing && selection.kind === "local",
+        () => choose({ kind: "local" }, binding),
+        projectRoot ? { title: projectRoot } : undefined,
       ),
-      optionButton(text, text.desktop, text.desktopHint, selection.kind === "desktop", () =>
-        choose({ kind: "desktop" }, binding),
-      ),
+      ...(!browsing
+        ? [
+            optionButton(text, text.desktop, text.desktopHint, selection.kind === "desktop", () =>
+              choose({ kind: "desktop" }, binding),
+            ),
+          ]
+        : []),
     );
 
     const section = documentNode.createElement("div");
@@ -785,7 +927,7 @@ export function installRendererDraftWorktreePicker(
             text,
             entry.name,
             `${entry.branch ?? entry.headSha}${wasLast ? ` · ${text.last}` : ""}`,
-            selection.kind === "worktree" && selection.root === entry.root,
+            !browsing && selection.kind === "worktree" && selection.root === entry.root,
             () => choose({ kind: "worktree", root: entry.root, name: entry.name }, binding),
             { dirty: entry.dirty, title: entry.root },
           ),
@@ -851,6 +993,18 @@ export function installRendererDraftWorktreePicker(
       });
       form.addEventListener("keydown", (event) => event.stopPropagation());
       menu.append(form);
+      const destination = documentNode.createElement("div");
+      destination.className = "codexhost-draft-worktree-current";
+      const updateDestination = (): void => {
+        const name = input.value.trim();
+        const primary = (list?.result?.primaryRoot ?? projectRoot).replace(/[\\/]+$/u, "");
+        const separator = primary.includes("\\") ? "\\" : "/";
+        const plannedRoot = `${primary}-worktrees${separator}codex${separator}${name}`;
+        destination.textContent = `${chineseLocale(documentNode) ? "起点目录" : "Starting directory"}: ${projectRoot}\n${chineseLocale(documentNode) ? "分支" : "Branch"}: codex/${name}\n${chineseLocale(documentNode) ? "预计目录" : "Planned directory"}: ${plannedRoot}`;
+      };
+      input.addEventListener("input", updateDestination);
+      updateDestination();
+      menu.append(destination);
       if (!creating) {
         const focused = input;
         setTimeout(() => {
@@ -871,12 +1025,12 @@ export function installRendererDraftWorktreePicker(
   }
 
   const openMenu = (): void => {
-    if (menu || !chip) return;
+    if (menu || (!chip && !browsing)) return;
     menu = documentNode.createElement("div");
     menu.setAttribute(DRAFT_WORKTREE_MENU_ATTRIBUTE, "true");
     menu.setAttribute("role", "menu");
     (documentNode.body ?? documentNode.documentElement).append(menu);
-    chip.setAttribute("aria-expanded", "true");
+    (browsing?.anchor ?? chip)?.setAttribute("aria-expanded", "true");
     documentNode.addEventListener("pointerdown", onDocumentPointerDown, true);
     documentNode.addEventListener("keydown", onDocumentKeyDown, true);
     // A failed or never-attempted list (Host client not mounted yet) is retried
@@ -919,7 +1073,10 @@ export function installRendererDraftWorktreePicker(
     const value = chip.querySelector<HTMLElement>(".codexhost-draft-worktree-value");
     if (kind) kind.textContent = `${text.chip} ·`;
     if (value) value.textContent = draftWorktreeChipLabel(selection, text);
-    chip.title = selection.kind === "worktree" ? selection.root : "";
+    chip.title =
+      selection.kind === "worktree"
+        ? selection.root
+        : (currentProjectRoot(findDraftWorktreeModeBinding(root)) ?? "");
     chip.setAttribute("data-pending", pendingMode !== null ? "true" : "false");
     chip.setAttribute("data-codexhost-draft-worktree-kind", selection.kind);
   };
@@ -945,15 +1102,61 @@ export function installRendererDraftWorktreePicker(
     if (disposed) return;
     const binding = findDraftWorktreeModeBinding(root);
     const branchButtons = [...root.querySelectorAll("button")].filter(isSwitchBranchButton);
-    if (!binding || branchButtons.length !== 1) {
+    const drafts = visibleComposers(root).filter(
+      (composer) => threadIdForComposer(composer) === null,
+    );
+    const fallback = drafts.length === 1 ? drafts[0] : null;
+    if (pendingDraft) {
+      const sourceThread = threadIdForComposer(pendingDraft.composer);
+      if (
+        !pendingDraft.composer.isConnected ||
+        (sourceThread !== null && sourceThread !== pendingDraft.threadId)
+      ) {
+        clearPendingDraft();
+        notice = chineseLocale(documentNode)
+          ? "新草稿身份发生变化，请在此重新选择工作树"
+          : "The draft identity changed. Choose the worktree again in this draft.";
+      }
+    }
+    if (!binding) {
+      if (browsing) {
+        if (
+          !browsing.anchor.isConnected ||
+          threadIdForComposer(browsing.composer) !== browsing.threadId
+        )
+          closeMenu();
+        else {
+          placeMenu();
+          return;
+        }
+      }
+      resetDraft();
+      if (fallback) {
+        place(fallback);
+        if (chip) {
+          chip.disabled = true;
+          chip.textContent = chineseLocale(documentNode)
+            ? "工作区选择暂不可用"
+            : "Workspace selection unavailable";
+          chip.title = chineseLocale(documentNode)
+            ? "未找到当前草稿的工作区控制"
+            : "The current draft has no workspace control";
+        }
+      } else removeChip();
+      return;
+    }
+    const anchor = branchButtons.length === 1 ? branchButtons[0] : fallback;
+    if (!anchor) {
       removeChip();
       resetDraft();
       return;
     }
-    const anchor = branchButtons[0];
-    if (!anchor) return;
     if (chipAnchor !== anchor) removeChip();
     place(anchor);
+    if (chip?.disabled) {
+      removeChip();
+      place(anchor);
+    }
 
     if (!activeDraft) {
       activeDraft = true;
@@ -982,6 +1185,18 @@ export function installRendererDraftWorktreePicker(
         selection = { kind: "local" };
       }
     }
+    if (pendingDraft) {
+      const pending = pendingDraft;
+      const sourceThread = pending.composer.isConnected
+        ? threadIdForComposer(pending.composer)
+        : null;
+      if (sourceThread !== null && sourceThread !== pending.threadId) clearPendingDraft();
+      else if (sourceThread === null && drafts.length === 1 && drafts[0] === pending.composer) {
+        clearPendingDraft();
+        choose(pending.selection, binding);
+        return;
+      }
+    }
     paintChip();
     // Prefetch once the Host client is mounted so the first open is instant.
     const projectRoot = currentProjectRoot(binding);
@@ -1007,7 +1222,12 @@ export function installRendererDraftWorktreePicker(
   });
   observer.observe(documentNode.documentElement ?? documentNode, {
     attributes: true,
-    attributeFilter: ["aria-haspopup", "data-composer-navigation-target", "title"],
+    attributeFilter: [
+      "aria-haspopup",
+      "data-composer-navigation-target",
+      "title",
+      "data-above-composer-conversation-id",
+    ],
     childList: true,
     subtree: true,
   });
@@ -1027,12 +1247,27 @@ export function installRendererDraftWorktreePicker(
 
   return {
     refresh: scan,
+    openForWorkspace(input) {
+      if (disposed || !isAbsoluteWorkspacePath(input.projectRoot)) return;
+      if (browsing?.anchor === input.anchor && menu) {
+        closeMenu();
+        return;
+      }
+      closeMenu();
+      clearPendingDraft();
+      browsing = input;
+      createOpen = false;
+      createError = null;
+      notice = null;
+      openMenu();
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
       observer.disconnect();
       if (timer !== null) clearTimeout(timer);
       clearVerificationTimer();
+      clearPendingDraft();
       view?.removeEventListener("codexhost:draft-workspace-changed", onWorkspaceChanged);
       view?.removeEventListener("resize", onViewportChange);
       documentNode.removeEventListener("scroll", onViewportChange, true);

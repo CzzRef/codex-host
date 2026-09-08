@@ -1,3 +1,5 @@
+> Historical design for the earlier delivery slices. The approved 2026-09-08 redesign supersedes the header workspace row, hover preview and append-only Edit fallback. Current behavior and validation are owned by the [workspace redesign specification](../../../vibe/specs/260908/0905-workspace-interaction/spec.md) and the [current surface specification](specs/renderer-composer-workspace-surface/spec.md).
+
 ## Context
 
 Live Codex Desktop Thread Composer (`data-composer-placement="thread"`) sits in a `flex flex-col gap-2` parent with no sibling above it. Official `data-above-composer-portal` exists as a React child but is empty and `empty:hidden`. Inserting into that portal is wiped on re-render. The established pattern is a renderer-owned sibling immediately before `[data-codex-composer-root]`.

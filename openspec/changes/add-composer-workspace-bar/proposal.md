@@ -9,7 +9,7 @@ Codex Desktop's Thread Composer has an empty slot above the input. Users current
 - Keep the list live when HEAD, the worktree, or the Thread cwd changes.
 - Later slices in this change: conversation-scoped file-change summary, an official Switch-branch worktree checkbox defaulting to a new worktree, and Tab-reusable implicit composer prompts.
 - Slice 3 of the 260903 worktree surface overhaul replaces that checkbox with a Host-managed draft worktree picker: Host lists and creates named linked worktrees (`codexhost/workspace/worktree/list|create`, additive only), the desktop-control draft policy rewrites the draft's `thread/start` cwd, and the Renderer offers Local / Desktop temporary worktree / existing / new.
-- The pinned Turn header (260903 transcript turn header) moves the workspace surface into the header's second row at the top of the transcript: `第 N/M 轮` + the current Turn's prompt once its bubble scrolls out + Edit / Rollback / Redo in row one, core worktree / touched roots (`+N`, downward lists, hover preview) / file disclosure in row two. The bar above the Composer, its bottom padding, the hover `⋯` chip and the floating Turn action cluster are removed.
+- The 260908 interaction redesign separates the Turn header from the Composer workspace surface: a numbered loaded-turn menu and task subtitle above; persistent cwd/worktree identity near the input; explicit, persistent file details with close/Escape/focus restoration. It supersedes the 260903 second-row/hover layout. The existing Host action semantics remain, with unsupported replacement edits disabled instead of appended. See [implementation owner](../../../vibe/specs/260908/0905-workspace-interaction/spec.md).
 
 ## Capabilities
 

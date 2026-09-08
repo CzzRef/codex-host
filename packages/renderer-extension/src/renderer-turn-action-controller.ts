@@ -140,16 +140,16 @@ export function createTurnActionController(options: {
    * Edit's real effect. Desktop's pencil keeps owning official Turns. Otherwise
    * Edit rolls the Thread back past this Turn so resending replaces it — the
    * Host always keeps the first Turn, and a `lastTurnOnly` Harness can only
-   * drop one, so those cases fall back to appending.
+   * drop one, so editing is unavailable in those cases.
    */
   const editModeNow = (): { mode: EditMode; reason?: "firstTurn" | "unsupported" } => {
-    if (!current) return { mode: "append", reason: "unsupported" };
+    if (!current) return { mode: "unavailable", reason: "unsupported" };
     if (nativePencil()) return { mode: "native" };
-    if (currentPosition() <= 0) return { mode: "append", reason: "firstTurn" };
+    if (currentPosition() <= 0) return { mode: "unavailable", reason: "firstTurn" };
     const support = rollbackSupportFor(rollbackCapability);
     const drops = laterTurns() + 1;
     if (support === "none" || (support === "lastTurnOnly" && drops > 1))
-      return { mode: "append", reason: "unsupported" };
+      return { mode: "unavailable", reason: "unsupported" };
     return { mode: "replace" };
   };
 
@@ -162,7 +162,7 @@ export function createTurnActionController(options: {
       redoAvailable,
       rollbackSupport: rollbackSupportFor(rollbackCapability),
       editMode: edit.mode,
-      ...(edit.reason ? { editAppendReason: edit.reason } : {}),
+      ...(edit.reason ? { editUnavailableReason: edit.reason } : {}),
     });
   };
 
@@ -301,7 +301,12 @@ export function createTurnActionController(options: {
       }
     },
     view(input) {
-      return { copy: copyFor(input.chinese), confirming, blocked: input.blocked };
+      return {
+        copy: copyFor(input.chinese),
+        confirming,
+        blocked: input.blocked,
+        prompt: current?.turn ? turnPromptText(current.turn) : "",
+      };
     },
     activate(id) {
       if (!current) return;
@@ -311,6 +316,7 @@ export function createTurnActionController(options: {
         options.onChange();
         return;
       }
+      if (id === "edit" && copy.editDisabled) return;
       if (id === "edit" && !copy.editNeedsConfirm) {
         clickEdit(copy);
         return;
@@ -324,7 +330,7 @@ export function createTurnActionController(options: {
       const pending = confirming;
       confirming = null;
       const copy = copyFor(options.chinese());
-      if (pending === "edit") {
+      if (pending === "edit" && !copy.editDisabled) {
         const inclusive = editModeNow().mode === "replace";
         // Read the prompt before the rollback: an inclusive rollback may take
         // the Turn's nodes with it on a paginated transcript.

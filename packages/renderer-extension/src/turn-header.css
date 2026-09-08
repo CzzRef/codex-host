@@ -4,16 +4,14 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 4px;
   margin: 0;
-  padding: 6px 8px;
-  border: 1px solid rgb(255 255 255 / 10%);
+  padding: 5px 8px;
+  border: 1px solid rgb(127 127 127 / 20%);
   border-top: 0;
-  border-radius: 0 0 12px 12px;
-  /* Opaque: the header sits over transcript text, which must never show through. */
+  border-radius: 0 0 10px 10px;
   background: var(--codexhost-turn-header-bg, rgb(17 17 17));
   color: inherit;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
   font-size: 12px;
   line-height: 16px;
   pointer-events: auto;
@@ -26,142 +24,112 @@
 .codexhost-turn-header-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
   min-height: 28px;
 }
-.codexhost-turn-header-step {
-  flex: 0 0 auto;
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 6px;
-  background: rgb(24 24 24);
-  color: rgb(255 255 255 / 72%);
-  cursor: pointer;
+.codexhost-turn-header button {
   font: inherit;
-  font-size: 14px;
-  line-height: 1;
 }
-.codexhost-turn-header-step:hover:not(:disabled) {
-  background: rgb(44 44 44);
-  color: #fff;
-}
-.codexhost-turn-header-step:disabled {
-  color: rgb(255 255 255 / 30%);
-  cursor: default;
-}
-.codexhost-turn-header-step:focus-visible {
-  outline: 2px solid #339cff;
-  outline-offset: 2px;
-}
+.codexhost-turn-header-step,
 .codexhost-turn-header-index {
   flex: 0 0 auto;
-  color: rgb(255 255 255 / 72%);
+  appearance: none;
+  min-height: 26px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.codexhost-turn-header-step {
+  width: 24px;
+  font-size: 18px !important;
+}
+.codexhost-turn-header button:hover:not(:disabled) {
+  background: rgb(127 127 127 / 12%);
+}
+.codexhost-turn-header button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.codexhost-turn-header button:focus-visible {
+  outline: 2px solid #339cff;
+  outline-offset: 1px;
 }
 .codexhost-turn-header[data-streaming="true"] .codexhost-turn-header-index {
   box-shadow: inset 0 -1px 0 rgb(51 156 255 / 60%);
 }
 .codexhost-turn-header-prompt {
-  /* Zero basis: the prompt takes the leftover width instead of forcing the
-     row to overflow and squeezing the workspace chip into an ellipsis. */
   flex: 1 1 0;
-  min-width: 120px;
+  min-width: 0;
   appearance: none;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  padding: 4px 6px;
-  font: inherit;
-  text-align: left;
+  padding: 4px 8px;
+  font-weight: 550 !important;
+  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.codexhost-turn-header-prompt:hover {
-  background: rgb(255 255 255 / 7%);
-}
-.codexhost-turn-header-prompt:focus-visible,
-.codexhost-turn-header-expand:focus-visible {
-  outline: 2px solid #339cff;
-  outline-offset: 2px;
-}
-.codexhost-turn-header[data-native-edit="true"] .codexhost-turn-header-prompt {
-  color: rgb(255 255 255 / 62%);
-  cursor: default;
-  font-style: italic;
-}
-.codexhost-turn-header-prompt[hidden],
-.codexhost-turn-header-expand[hidden],
-.codexhost-turn-header-panel[hidden],
-.codexhost-turn-header .codexhost-turn-notice[hidden] {
-  display: none;
-}
-.codexhost-turn-header-spacer {
-  flex: 1 1 auto;
-}
-.codexhost-turn-header-expand {
-  flex: 0 0 auto;
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 6px;
-  background: rgb(24 24 24);
-  color: rgb(255 255 255 / 72%);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-}
-.codexhost-turn-header-expand:hover,
-.codexhost-turn-header-expand[aria-expanded="true"] {
-  background: rgb(44 44 44);
-  color: #fff;
-}
 .codexhost-turn-header-panel {
   position: absolute;
   left: 0;
-  right: 0;
-  /* Flush with the header: a gap would show transcript text through the seam. */
-  top: 100%;
+  top: calc(100% + 6px);
   z-index: 4;
   box-sizing: border-box;
-  max-height: min(160px, 40vh);
+  width: min(420px, 100%);
+  max-height: min(360px, 50vh);
   overflow: auto;
-  padding: 8px 10px;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-top: 0;
-  border-radius: 0 0 12px 12px;
-  background: rgb(24 24 24);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 38%);
-  white-space: pre-wrap;
-  word-break: break-word;
+  padding: 6px;
+  border: 1px solid rgb(127 127 127 / 24%);
+  border-radius: 10px;
+  background: var(--codexhost-turn-header-bg, rgb(17 17 17));
+  box-shadow: 0 8px 28px rgb(0 0 0 / 24%);
+}
+.codexhost-turn-header-panel button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.codexhost-turn-header-panel button[aria-current="step"] {
+  background: rgb(51 156 255 / 14%);
+}
+.codexhost-turn-header-panel p {
+  margin: 8px;
+  font-size: 11px;
+  opacity: 0.65;
+}
+.codexhost-turn-header-panel[hidden],
+.codexhost-turn-header .codexhost-turn-notice[hidden] {
+  display: none;
 }
 .codexhost-turn-header .codexhost-turn-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-left: auto;
 }
-/* The open panel continues the header, so the header stops rounding here. */
-.codexhost-turn-header:has(.codexhost-turn-header-panel:not([hidden])) {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-/* Desktop's own edit mode owns the Turn; codexhost's actions step aside. */
 .codexhost-turn-header[data-native-edit="true"] .codexhost-turn-actions {
   display: none;
 }
-/* Under a top-pinned host, tooltips open downward instead of into the title bar. */
 .codexhost-turn-header .codexhost-overlay-tooltip {
   bottom: auto;
   top: calc(100% + 8px);
@@ -175,64 +143,76 @@
   max-width: min(320px, 100%);
   box-sizing: border-box;
   padding: 8px 12px;
-  border: 1px solid rgba(127, 127, 127, 0.3);
+  border: 1px solid rgb(127 127 127 / 30%);
   border-radius: 10px;
-  background: rgb(20 20 20);
+  background: var(--codexhost-turn-header-bg, rgb(20 20 20));
   color: inherit;
-  font-size: 12px;
-  line-height: 16px;
   pointer-events: none;
 }
-/* Inside the header, dropdowns hang from the header itself, clear of its bottom edge. */
-.codexhost-turn-header .codexhost-workspace-surface [data-codexhost-workspace-files],
-.codexhost-turn-header .codexhost-workspace-surface [data-codexhost-workspace-more] {
-  position: static;
-}
-.codexhost-turn-header .codexhost-workspace-surface .codexhost-workspace-files-list {
-  right: 8px;
-  top: calc(100% + 6px);
-}
-.codexhost-turn-header .codexhost-workspace-surface .codexhost-workspace-more-list {
-  left: 8px;
-  top: calc(100% + 6px);
-}
-/* Nothing to say about the workspace: the header stays a single Turn row. */
-.codexhost-turn-header-row.codexhost-workspace-surface[data-codexhost-turn-header-workspace="empty"] {
-  display: none;
-}
-/*
- * Row-1 slot for the core workspace chip while there are no changed files.
- * It yields width to the prompt, which is the reason the header exists.
- */
-.codexhost-turn-header-core {
-  flex: 0 1 auto;
-  min-width: 0;
-  min-height: 0;
-  max-width: 200px;
-  overflow: hidden;
-}
-/* A pinned prompt is why the header exists: the chip steps aside for it. */
-.codexhost-turn-header[data-pinned="true"] .codexhost-turn-header-core {
-  display: none;
-}
-.codexhost-turn-header-core[hidden] {
-  display: none;
-}
-.codexhost-turn-header-core .codexhost-workspace-chips {
-  flex: 0 1 auto;
-}
-/*
- * Workspace chips are clipped to keep the header on one line, so the full root
- * path, worktree owner and branch live in a hover tooltip. Inside the header it
- * opens downward, like every other panel here.
- */
-.codexhost-turn-header [data-codexhost-workspace-row] {
+/* An actual Composer sibling: its height participates in the native layout. */
+.codexhost-composer-workspace {
   position: relative;
+  z-index: 33;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: inherit;
 }
-.codexhost-turn-header .codexhost-workspace-detail {
-  bottom: auto;
-  top: calc(100% + 6px);
-  translate: 0 -4px;
-  white-space: pre-line;
-  max-width: 420px;
+.codexhost-composer-workspace .codexhost-workspace-files-list,
+.codexhost-composer-workspace .codexhost-workspace-more-list {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+.light .codexhost-turn-header,
+[data-theme="light"] .codexhost-turn-header,
+:root.light {
+  --codexhost-turn-header-bg: #fff;
+}
+.codexhost-composer-workspace {
+  container-type: inline-size;
+}
+.codexhost-composer-workspace [data-codexhost-workspace-row] > .codexhost-workspace-worktree,
+.codexhost-composer-workspace [data-codexhost-workspace-row] > .codexhost-workspace-row-stats {
+  display: none;
+}
+.codexhost-composer-workspace [data-codexhost-workspace-row] > .codexhost-workspace-tree {
+  flex: 1 1 auto;
+}
+.codexhost-composer-workspace [data-codexhost-workspace-row] > .codexhost-workspace-branch {
+  flex: 0 1 auto;
+  max-width: 40%;
+}
+@container (max-width: 360px) {
+  .codexhost-composer-workspace .codexhost-workspace-summary-stats {
+    display: none;
+  }
+  .codexhost-composer-workspace [data-codexhost-workspace-row] > .codexhost-workspace-branch {
+    display: none;
+  }
+}
+.codexhost-turn-header .codexhost-overlay-confirm {
+  background: var(--codexhost-turn-header-bg, #151515);
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+}
+.codexhost-turn-header .codexhost-overlay-confirm p {
+  max-height: min(280px, 40vh);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+:root.light,
+:root[data-theme="light"],
+body.light,
+body[data-theme="light"] {
+  --codexhost-turn-header-bg: #fff;
+}
+.light .codexhost-turn-header .codexhost-overlay-chip,
+[data-theme="light"] .codexhost-turn-header .codexhost-overlay-chip {
+  background: #f3f3f3;
+  border-color: rgb(0 0 0 / 12%);
 }
