@@ -1,10 +1,8 @@
 <!-- codenote-agent-ecosystem:start -->
 # codex-host AI entry
 
-Source: CodeNote compact core sha256:787ce42655fe037a2e69262bfcf3a0a397406c949dd44146785471aad70cc4eb.
-
-If ../../CzzProj/CodeNote/AiRef/VibePractice/Vibe_Rules/VibeAi.md exists, load that core, its short routing/README.md and the applicable short host adapter once; apply both baseline guards selected by that router. Otherwise load [vibe/rules/global-core.generated.md](vibe/rules/global-core.generated.md); it is a deterministic portable projection. Reuse unchanged context during the task.
+Load ../../CzzProj/CodeNote/AiRef/VibePractice/Vibe_Rules/VibeAi.md, its short routing/README.md and the applicable short host adapter once; apply both baseline guards selected by that router. Global rules live only in CodeNote; this project keeps no portable copy. If that checkout is unavailable, report the missing central dependency and pause only the actions that need it. Reuse unchanged context during the task.
 
 Load [project rules](vibe/rules/README.md). Detailed project procedures are conditional on the affected code, UI, data or runtime surface. Routine replies use concise numbered points; omit empty modules. Other tool entries route to this file.
-<!-- projection-sha256: 63d8744bacb3beab09946c2e54cdf922b0def29e6a7bc324e13ff2f0fc95935b -->
+<!-- projection-sha256: 2caa00e002d9fcad79c9a2f25b4eb14b60a26b7a2f1bfec58d11c8576ecd652c -->
 <!-- codenote-agent-ecosystem:end -->
